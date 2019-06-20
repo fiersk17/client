@@ -70,6 +70,8 @@ protocol home {
   }
 
   variant HomeScreenTodo switch (HomeScreenTodoType t) {
+    case VERIFY_ALL_PHONE_NUMBER: PhoneNumber;
+    case VERIFY_ALL_EMAIL: EmailAddress;
     default: void;
   }
 

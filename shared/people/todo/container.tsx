@@ -21,6 +21,7 @@ type TodoOwnProps = {
   subText: string
   todoType: Types.TodoType
   buttons: Array<TaskButton>
+  userData: string
 }
 
 const installLinkURL = 'https://keybase.io/download'
@@ -218,6 +219,7 @@ const VerifyAllEmailConnector = connect(
       },
     ] as Array<TaskButton>,
     confirmLabel: '',
+    instructions: `Your email address ${ownProps.userData} is unverified.`,
     onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
     onDismiss: dispatchProps.onDismiss,
   })
@@ -245,6 +247,7 @@ const VerifyAllPhoneNumberConnector = connect(
       },
     ] as Array<TaskButton>,
     confirmLabel: '',
+    instructions: `Your number ${ownProps.userData} is unverified.`,
     onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
     onDismiss: dispatchProps.onDismiss,
   })
@@ -265,6 +268,7 @@ const LegacyEmailVisibilityConnector = connect(
         type: 'Success',
       },
     ] as Array<TaskButton>,
+    instructions: `Allow friends to find you using ${ownProps.userData}`,
     onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
     onDismiss: dispatchProps.onDismiss,
     subText: 'Your email will never appear on your public profile.',

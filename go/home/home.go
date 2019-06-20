@@ -35,12 +35,8 @@ type Home struct {
 }
 
 type rawGetHome struct {
-	Status libkb.AppStatus     `json:"status"`
-	Home   keybase1.HomeScreen `json:"home"`
-}
-
-func (r *rawGetHome) GetAppStatus() *libkb.AppStatus {
-	return &r.Status
+	libkb.AppStatusEmbed
+	Home keybase1.HomeScreen `json:"home"`
 }
 
 func NewHome(g *libkb.GlobalContext) *Home {

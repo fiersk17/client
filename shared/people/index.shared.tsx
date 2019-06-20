@@ -26,6 +26,7 @@ export const itemToComponent: (item: Types.PeopleScreenItem, props: Props) => Re
           key={item.todoType}
           subText={''}
           buttons={[]}
+          userData={item.userData}
         />
       )
     case 'notification':

@@ -154,6 +154,20 @@
       "cases": [
         {
           "label": {
+            "name": "VERIFY_ALL_PHONE_NUMBER",
+            "def": false
+          },
+          "body": "PhoneNumber"
+        },
+        {
+          "label": {
+            "name": "VERIFY_ALL_EMAIL",
+            "def": false
+          },
+          "body": "EmailAddress"
+        },
+        {
+          "label": {
             "def": true
           },
           "body": null

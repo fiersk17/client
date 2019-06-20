@@ -317,13 +317,59 @@ func (e HomeScreenTodoType) String() string {
 }
 
 type HomeScreenTodo struct {
-	T__ HomeScreenTodoType `codec:"t" json:"t"`
+	T__                    HomeScreenTodoType `codec:"t" json:"t"`
+	VerifyAllPhoneNumber__ *PhoneNumber       `codec:"verifyAllPhoneNumber,omitempty" json:"verifyAllPhoneNumber,omitempty"`
+	VerifyAllEmail__       *EmailAddress      `codec:"verifyAllEmail,omitempty" json:"verifyAllEmail,omitempty"`
 }
 
 func (o *HomeScreenTodo) T() (ret HomeScreenTodoType, err error) {
 	switch o.T__ {
+	case HomeScreenTodoType_VERIFY_ALL_PHONE_NUMBER:
+		if o.VerifyAllPhoneNumber__ == nil {
+			err = errors.New("unexpected nil value for VerifyAllPhoneNumber__")
+			return ret, err
+		}
+	case HomeScreenTodoType_VERIFY_ALL_EMAIL:
+		if o.VerifyAllEmail__ == nil {
+			err = errors.New("unexpected nil value for VerifyAllEmail__")
+			return ret, err
+		}
 	}
 	return o.T__, nil
+}
+
+func (o HomeScreenTodo) VerifyAllPhoneNumber() (res PhoneNumber) {
+	if o.T__ != HomeScreenTodoType_VERIFY_ALL_PHONE_NUMBER {
+		panic("wrong case accessed")
+	}
+	if o.VerifyAllPhoneNumber__ == nil {
+		return
+	}
+	return *o.VerifyAllPhoneNumber__
+}
+
+func (o HomeScreenTodo) VerifyAllEmail() (res EmailAddress) {
+	if o.T__ != HomeScreenTodoType_VERIFY_ALL_EMAIL {
+		panic("wrong case accessed")
+	}
+	if o.VerifyAllEmail__ == nil {
+		return
+	}
+	return *o.VerifyAllEmail__
+}
+
+func NewHomeScreenTodoWithVerifyAllPhoneNumber(v PhoneNumber) HomeScreenTodo {
+	return HomeScreenTodo{
+		T__:                    HomeScreenTodoType_VERIFY_ALL_PHONE_NUMBER,
+		VerifyAllPhoneNumber__: &v,
+	}
+}
+
+func NewHomeScreenTodoWithVerifyAllEmail(v EmailAddress) HomeScreenTodo {
+	return HomeScreenTodo{
+		T__:              HomeScreenTodoType_VERIFY_ALL_EMAIL,
+		VerifyAllEmail__: &v,
+	}
 }
 
 func NewHomeScreenTodoDefault(t HomeScreenTodoType) HomeScreenTodo {
@@ -335,6 +381,20 @@ func NewHomeScreenTodoDefault(t HomeScreenTodoType) HomeScreenTodo {
 func (o HomeScreenTodo) DeepCopy() HomeScreenTodo {
 	return HomeScreenTodo{
 		T__: o.T__.DeepCopy(),
+		VerifyAllPhoneNumber__: (func(x *PhoneNumber) *PhoneNumber {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.VerifyAllPhoneNumber__),
+		VerifyAllEmail__: (func(x *EmailAddress) *EmailAddress {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.VerifyAllEmail__),
 	}
 }
 

@@ -51,7 +51,7 @@ export const todoTypeToInstructions: {[K in Types.TodoType]: string} = {
     'Follow at least one person on Keybase. A "follow" is a signed snapshot of someone. It strengthens Keybase and your own security.',
   gitRepo:
     'Create an encrypted Git repository! Only you will be able to decrypt any of it. And it’s so easy!',
-  legacyEmailVisibility: 'Allow friends to find you using $EMAIL?',
+  legacyEmailVisibility: '', // dynamic text, defined in connector in todo/container.tsx
   none: '',
   paperkey:
     'Please make a paper key. Unlike your account password, paper keys can provision new devices and recover data, for ultimate safety.',
@@ -59,8 +59,8 @@ export const todoTypeToInstructions: {[K in Types.TodoType]: string} = {
   team:
     'Create a team! Keybase team chats are end-to-end encrypted - unlike Slack - and work for any kind of group, from casual friends to large communities.',
   teamShowcase: `Tip: Keybase team chats are private, but you can choose to publish that you're an admin. Check out the team settings on any team you manage.`,
-  verifyAllEmail: 'Your email address $EMAIL is unverified.',
-  verifyAllPhoneNumber: 'Your number $PHONE is unverified.',
+  verifyAllEmail: '', // dynamic text, defined in connector in todo/container.tsx
+  verifyAllPhoneNumber: '', // dynamic text, defined in connector in todo/container.tsx
 }
 export const todoTypeToConfirmLabel: {[K in Types.TodoType]: string} = {
   addEmail: 'Add email',
@@ -136,6 +136,18 @@ export const reduceRPCItemToPeopleItem = (
     // Todo item
     // @ts-ignore todo is actually typed as void?
     const todoType = todoTypeEnumToType[(item.data.todo && item.data.todo.t) || 0]
+    // Some of the todo items contain additional data about user.
+    let userData = ''
+    if (item.data.todo && item.data.todo.t) {
+      switch (item.data.todo.t) {
+        case RPCTypes.HomeScreenTodoType.verifyAllEmail:
+          userData = item.data.todo.verifyAllEmail
+          break
+        case RPCTypes.HomeScreenTodoType.verifyAllPhoneNumber:
+          userData = item.data.todo.verifyAllPhoneNumber
+          break
+      }
+    }
     return list.push(
       makeTodo({
         badged: badged,
@@ -145,6 +157,7 @@ export const reduceRPCItemToPeopleItem = (
         instructions: todoTypeToInstructions[todoType],
         todoType,
         type: 'todo',
+        userData: userData,
       })
     )
   } else if (item.data.t === RPCTypes.HomeScreenItemType.people) {
@@ -232,6 +245,7 @@ export const makeTodo = I.Record<Types._Todo>({
   instructions: '',
   todoType: 'none',
   type: 'todo',
+  userData: '',
 })
 
 export const makeFollowedNotification = I.Record<Types._FollowedNotification>({
