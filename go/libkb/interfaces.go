@@ -729,6 +729,8 @@ type HiddenTeamChainManager interface {
 	Tail(MetaContext, keybase1.TeamID) (*keybase1.LinkTriple, error)
 	// Load the latest data for the given team ID, and just return it wholesale.
 	Load(MetaContext, keybase1.TeamID) (dat *keybase1.HiddenTeamChain, err error)
+	// Untrusted hint of what a team's latest seqno is
+	HintLatestSeqno(m MetaContext, id keybase1.TeamID, seqno keybase1.Seqno) error
 }
 
 type TeamAuditor interface {

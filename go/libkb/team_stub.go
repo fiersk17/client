@@ -172,6 +172,9 @@ func (n nullHiddenTeamChainManager) Advance(MetaContext, keybase1.HiddenTeamChai
 func (n nullHiddenTeamChainManager) Load(MetaContext, keybase1.TeamID) (*keybase1.HiddenTeamChain, error) {
 	return nil, fmt.Errorf("null hidden team chain manager")
 }
+func (n nullHiddenTeamChainManager) HintLatestSeqno(m MetaContext, id keybase1.TeamID, seqno keybase1.Seqno) error {
+	return nil
+}
 
 func newNullHiddenTeamChainManager() nullHiddenTeamChainManager {
 	return nullHiddenTeamChainManager{}
