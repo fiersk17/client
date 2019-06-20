@@ -1112,10 +1112,9 @@ const refreshTrustlineAcceptedAssets = (state, {payload: {accountID}}) =>
   })
 
 const refreshTrustlinePopularAssets = () =>
-  // @ts-ignore error will go away after rebase
   RPCStellarTypes.localListPopularAssetsLocalRpcPromise().then(({assets, totalCount}) =>
     WalletsGen.createSetTrustlinePopularAssets({
-      assets: assets.map(asset => rpcAssetToAssetDescription(asset)),
+      assets: assets ? assets.map((asset: RPCStellarTypes.Asset) => rpcAssetToAssetDescription(asset)) : [],
       totalCount,
     })
   )
