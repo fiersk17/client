@@ -24,6 +24,8 @@ export const itemToComponent: (item: Types.PeopleScreenItem, props: Props) => Re
           dismissable={item.dismissable}
           icon={item.icon}
           key={item.todoType}
+          subText={''}
+          buttons={[]}
         />
       )
     case 'notification':

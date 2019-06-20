@@ -1410,6 +1410,11 @@ export enum HomeScreenTodoType {
   teamShowcase = 10,
   avatarUser = 11,
   avatarTeam = 12,
+  addPhoneNumber = 13,
+  verifyAllPhoneNumber = 14,
+  verifyAllEmail = 15,
+  legacyEmailVisibility = 16,
+  addEmail = 17,
   annoncementPlaceholder = 10000,
 }
 

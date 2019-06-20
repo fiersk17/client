@@ -255,6 +255,11 @@ const (
 	HomeScreenTodoType_TEAM_SHOWCASE           HomeScreenTodoType = 10
 	HomeScreenTodoType_AVATAR_USER             HomeScreenTodoType = 11
 	HomeScreenTodoType_AVATAR_TEAM             HomeScreenTodoType = 12
+	HomeScreenTodoType_ADD_PHONE_NUMBER        HomeScreenTodoType = 13
+	HomeScreenTodoType_VERIFY_ALL_PHONE_NUMBER HomeScreenTodoType = 14
+	HomeScreenTodoType_VERIFY_ALL_EMAIL        HomeScreenTodoType = 15
+	HomeScreenTodoType_LEGACY_EMAIL_VISIBILITY HomeScreenTodoType = 16
+	HomeScreenTodoType_ADD_EMAIL               HomeScreenTodoType = 17
 	HomeScreenTodoType_ANNONCEMENT_PLACEHOLDER HomeScreenTodoType = 10000
 )
 
@@ -274,6 +279,11 @@ var HomeScreenTodoTypeMap = map[string]HomeScreenTodoType{
 	"TEAM_SHOWCASE":           10,
 	"AVATAR_USER":             11,
 	"AVATAR_TEAM":             12,
+	"ADD_PHONE_NUMBER":        13,
+	"VERIFY_ALL_PHONE_NUMBER": 14,
+	"VERIFY_ALL_EMAIL":        15,
+	"LEGACY_EMAIL_VISIBILITY": 16,
+	"ADD_EMAIL":               17,
 	"ANNONCEMENT_PLACEHOLDER": 10000,
 }
 
@@ -291,6 +301,11 @@ var HomeScreenTodoTypeRevMap = map[HomeScreenTodoType]string{
 	10:    "TEAM_SHOWCASE",
 	11:    "AVATAR_USER",
 	12:    "AVATAR_TEAM",
+	13:    "ADD_PHONE_NUMBER",
+	14:    "VERIFY_ALL_PHONE_NUMBER",
+	15:    "VERIFY_ALL_EMAIL",
+	16:    "LEGACY_EMAIL_VISIBILITY",
+	17:    "ADD_EMAIL",
 	10000: "ANNONCEMENT_PLACEHOLDER",
 }
 

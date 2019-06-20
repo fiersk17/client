@@ -1,5 +1,5 @@
 import * as React from 'react'
-import {Task} from '.'
+import {Task, TaskButton} from '.'
 import * as PeopleGen from '../../actions/people-gen'
 import * as Types from '../../constants/types/people'
 import * as Tabs from '../../constants/tabs'
@@ -18,12 +18,40 @@ type TodoOwnProps = {
   dismissable: boolean
   icon: IconType
   instructions: string
+  subText: string
   todoType: Types.TodoType
+  buttons: Array<TaskButton>
 }
 
 const installLinkURL = 'https://keybase.io/download'
 const onSkipTodo = (type: Types.TodoType, dispatch) => () => dispatch(PeopleGen.createSkipTodo({type}))
 const mapStateToProps = state => ({myUsername: state.config.username || ''})
+
+const AddEmailConnector = connect(
+  mapStateToProps,
+  dispatch => ({
+    _onConfirm: username => dispatch(ProfileGen.createEditAvatar()),
+    onDismiss: onSkipTodo('addEmail', dispatch),
+  }),
+  (stateProps, dispatchProps, ownProps: TodoOwnProps) => ({
+    ...ownProps,
+    onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
+    onDismiss: dispatchProps.onDismiss,
+  })
+)(Task)
+
+const AddPhoneNumberConnector = connect(
+  mapStateToProps,
+  dispatch => ({
+    _onConfirm: username => dispatch(ProfileGen.createEditAvatar()),
+    onDismiss: onSkipTodo('addPhoneNumber', dispatch),
+  }),
+  (stateProps, dispatchProps, ownProps: TodoOwnProps) => ({
+    ...ownProps,
+    onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
+    onDismiss: dispatchProps.onDismiss,
+  })
+)(Task)
 
 const AvatarTeamConnector = connect(
   mapStateToProps,
@@ -168,8 +196,87 @@ const TeamShowcaseConnector = connect(
   (s, d, o: TodoOwnProps) => ({...o, ...s, ...d})
 )(Task)
 
+const VerifyAllEmailConnector = connect(
+  mapStateToProps,
+  dispatch => ({
+    _onConfirm: username => dispatch(ProfileGen.createEditAvatar()),
+    onDismiss: () => {},
+  }),
+  (stateProps, dispatchProps, ownProps: TodoOwnProps) => ({
+    ...ownProps,
+    buttons: [
+      {
+        label: 'Verify',
+        onClick: () => {},
+        type: 'Success',
+      },
+      {
+        label: 'Manage email',
+        mode: 'Secondary',
+        onClick: () => {},
+        type: 'Default',
+      },
+    ] as Array<TaskButton>,
+    confirmLabel: '',
+    onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
+    onDismiss: dispatchProps.onDismiss,
+  })
+)(Task)
+
+const VerifyAllPhoneNumberConnector = connect(
+  mapStateToProps,
+  dispatch => ({
+    _onConfirm: username => dispatch(ProfileGen.createEditAvatar()),
+    onDismiss: () => {},
+  }),
+  (stateProps, dispatchProps, ownProps: TodoOwnProps) => ({
+    ...ownProps,
+    buttons: [
+      {
+        label: 'Verify',
+        onClick: () => {},
+        type: 'Success',
+      },
+      {
+        label: 'Manage numbers',
+        mode: 'Secondary',
+        onClick: () => {},
+        type: 'Default',
+      },
+    ] as Array<TaskButton>,
+    confirmLabel: '',
+    onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
+    onDismiss: dispatchProps.onDismiss,
+  })
+)(Task)
+
+const LegacyEmailVisibilityConnector = connect(
+  mapStateToProps,
+  dispatch => ({
+    _onConfirm: username => dispatch(ProfileGen.createEditAvatar()),
+    onDismiss: onSkipTodo('legacyEmailVisibility', dispatch),
+  }),
+  (stateProps, dispatchProps, ownProps: TodoOwnProps) => ({
+    ...ownProps,
+    buttons: [
+      {
+        label: 'Make searchable',
+        onClick: () => {},
+        type: 'Success',
+      },
+    ] as Array<TaskButton>,
+    onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
+    onDismiss: dispatchProps.onDismiss,
+    subText: 'Your email will never appear on your public profile.',
+  })
+)(Task)
+
 const TaskChooser = (props: TodoOwnProps) => {
   switch (props.todoType) {
+    case todoTypes.addEmail:
+      return <AddEmailConnector {...props} />
+    case todoTypes.addPhoneNumber:
+      return <AddPhoneNumberConnector {...props} />
     case todoTypes.avatarTeam:
       return <AvatarTeamConnector {...props} />
     case todoTypes.avatarUser:
@@ -194,6 +301,12 @@ const TaskChooser = (props: TodoOwnProps) => {
       return <GitRepoConnector {...props} />
     case todoTypes.teamShowcase:
       return <TeamShowcaseConnector {...props} />
+    case todoTypes.verifyAllEmail:
+      return <VerifyAllEmailConnector {...props} />
+    case todoTypes.verifyAllPhoneNumber:
+      return <VerifyAllPhoneNumberConnector {...props} />
+    case todoTypes.legacyEmailVisibility:
+      return <LegacyEmailVisibilityConnector {...props} />
   }
   return null
 }
