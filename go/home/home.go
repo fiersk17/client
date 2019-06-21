@@ -1,3 +1,6 @@
+// Copyright 2019 Keybase, Inc. All rights reserved. Use of
+// this source code is governed by the included BSD license.
+
 package home
 
 import (
@@ -75,6 +78,10 @@ func (h *Home) getToCache(ctx context.Context, markedViewed bool, numPeopleWante
 		return err
 	}
 	home := raw.Home
+
+	if err := getUserData(mctx, &home); err != nil {
+		return err
+	}
 
 	newPeopleCache := &peopleCache{
 		all: home.FollowSuggestions,

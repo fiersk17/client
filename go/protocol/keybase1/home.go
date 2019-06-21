@@ -316,10 +316,16 @@ func (e HomeScreenTodoType) String() string {
 	return ""
 }
 
+// Most of TODO items do not carry additional data, but some do. e.g. TODO
+// item to tell user to verify their email address will carry that email
+// address.
+//
+// This data does not come from the server.
 type HomeScreenTodo struct {
-	T__                    HomeScreenTodoType `codec:"t" json:"t"`
-	VerifyAllPhoneNumber__ *PhoneNumber       `codec:"verifyAllPhoneNumber,omitempty" json:"verifyAllPhoneNumber,omitempty"`
-	VerifyAllEmail__       *EmailAddress      `codec:"verifyAllEmail,omitempty" json:"verifyAllEmail,omitempty"`
+	T__                     HomeScreenTodoType `codec:"t" json:"t"`
+	VerifyAllPhoneNumber__  *PhoneNumber       `codec:"verifyAllPhoneNumber,omitempty" json:"verifyAllPhoneNumber,omitempty"`
+	VerifyAllEmail__        *EmailAddress      `codec:"verifyAllEmail,omitempty" json:"verifyAllEmail,omitempty"`
+	LegacyEmailVisibility__ *EmailAddress      `codec:"legacyEmailVisibility,omitempty" json:"legacyEmailVisibility,omitempty"`
 }
 
 func (o *HomeScreenTodo) T() (ret HomeScreenTodoType, err error) {
@@ -332,6 +338,11 @@ func (o *HomeScreenTodo) T() (ret HomeScreenTodoType, err error) {
 	case HomeScreenTodoType_VERIFY_ALL_EMAIL:
 		if o.VerifyAllEmail__ == nil {
 			err = errors.New("unexpected nil value for VerifyAllEmail__")
+			return ret, err
+		}
+	case HomeScreenTodoType_LEGACY_EMAIL_VISIBILITY:
+		if o.LegacyEmailVisibility__ == nil {
+			err = errors.New("unexpected nil value for LegacyEmailVisibility__")
 			return ret, err
 		}
 	}
@@ -358,6 +369,16 @@ func (o HomeScreenTodo) VerifyAllEmail() (res EmailAddress) {
 	return *o.VerifyAllEmail__
 }
 
+func (o HomeScreenTodo) LegacyEmailVisibility() (res EmailAddress) {
+	if o.T__ != HomeScreenTodoType_LEGACY_EMAIL_VISIBILITY {
+		panic("wrong case accessed")
+	}
+	if o.LegacyEmailVisibility__ == nil {
+		return
+	}
+	return *o.LegacyEmailVisibility__
+}
+
 func NewHomeScreenTodoWithVerifyAllPhoneNumber(v PhoneNumber) HomeScreenTodo {
 	return HomeScreenTodo{
 		T__:                    HomeScreenTodoType_VERIFY_ALL_PHONE_NUMBER,
@@ -369,6 +390,13 @@ func NewHomeScreenTodoWithVerifyAllEmail(v EmailAddress) HomeScreenTodo {
 	return HomeScreenTodo{
 		T__:              HomeScreenTodoType_VERIFY_ALL_EMAIL,
 		VerifyAllEmail__: &v,
+	}
+}
+
+func NewHomeScreenTodoWithLegacyEmailVisibility(v EmailAddress) HomeScreenTodo {
+	return HomeScreenTodo{
+		T__:                     HomeScreenTodoType_LEGACY_EMAIL_VISIBILITY,
+		LegacyEmailVisibility__: &v,
 	}
 }
 
@@ -395,6 +423,13 @@ func (o HomeScreenTodo) DeepCopy() HomeScreenTodo {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.VerifyAllEmail__),
+		LegacyEmailVisibility__: (func(x *EmailAddress) *EmailAddress {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.LegacyEmailVisibility__),
 	}
 }
 

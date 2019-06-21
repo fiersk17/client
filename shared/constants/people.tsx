@@ -146,6 +146,9 @@ export const reduceRPCItemToPeopleItem = (
         case RPCTypes.HomeScreenTodoType.verifyAllPhoneNumber:
           userData = item.data.todo.verifyAllPhoneNumber
           break
+        case RPCTypes.HomeScreenTodoType.legacyEmailVisibility:
+          userData = item.data.todo.legacyEmailVisibility
+          break
       }
     }
     return list.push(
