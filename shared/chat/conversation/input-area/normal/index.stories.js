@@ -1,7 +1,7 @@
 // @flow
 import * as React from 'react'
 import * as Sb from '../../../../stories/storybook'
-import {Set} from 'immutable'
+import {List, Set} from 'immutable'
 import {Box2} from '../../../../common-adapters/box'
 import {platformStyles} from '../../../../styles'
 import Input, {type Props as InputProps} from '.'
@@ -35,6 +35,10 @@ const provider = Sb.createPropProviderWithCommon({
     selected: 0,
     visible: ownProps.visible,
   }),
+  Typing: ownProps => ({
+    conversationIDKey: ownProps.conversationIDKey,
+    names: Set(),
+  }),
   UserMentionHud: ownProps => {
     const users = [
       {fullName: 'Marco Munizaga', username: 'marcopolo'},
@@ -59,10 +63,8 @@ type Props = {
   isEditExploded: boolean,
   isEditing: boolean,
   isExploding: boolean,
-  isExplodingNew: boolean,
   explodingModeSeconds: number,
   pendingWaiting: boolean,
-  typing: Set<string>,
 }
 
 // On mobile, we want full width and height. On desktop, we we want to
@@ -89,10 +91,10 @@ const InputContainer = (props: Props) => {
       Sb.action('getUnsentText')()
       return props.isEditing ? 'some text' : ''
     },
+    isActiveForFocus: true,
     isEditExploded: props.isEditExploded,
     isEditing: props.isEditing,
     isExploding: props.isExploding,
-    isExplodingNew: props.isExplodingNew,
     onAttach: (paths: Array<string>) => {
       // This will always be called with an empty array, since some
       // browsers don't have the path property set on File.
@@ -101,7 +103,8 @@ const InputContainer = (props: Props) => {
     onCancelEditing: Sb.action('onCancelEditing'),
     onEditLastMessage: Sb.action('onEditLastMessage'),
     onFilePickerError: Sb.action('onFilePickerError'),
-    onSeenExplodingMessages: Sb.action('onSeenExplodingMessages'),
+    onRequestScrollDown: Sb.action('onRequestScrollDown'),
+    onRequestScrollUp: Sb.action('onRequestScrollUp'),
     onSubmit: (text: string) => {
       Sb.action('onSubmit')(text)
     },
@@ -109,8 +112,20 @@ const InputContainer = (props: Props) => {
     quoteText: '',
     sendTyping: Sb.action('sendTyping'),
     setUnsentText: Sb.action('setUnsentText'),
-    showWalletsIcon: !props.isEditing && props.typing.size <= 1,
-    typing: props.typing,
+    showWalletsIcon: !props.isEditing,
+    suggestChannels: List(['general', 'random', 'spelunky', 'music', 'vidya-games']),
+    suggestCommands: [
+      {description: 'Hide current or given conv', name: 'hide', usage: '[conversation]'},
+      {description: 'Message a user', name: 'msg', usage: '<conversation> <msg>'},
+      {description: 'Send a shrug', name: 'shrug', usage: ''},
+    ],
+    suggestUsers: List([
+      {fullName: 'Danny Ayoub', username: 'ayoubd'},
+      {fullName: 'Chris Nojima', username: 'chrisnojima'},
+      {fullName: 'Mike Maxim', username: 'mikem'},
+      {fullName: 'Alex Gessner', username: 'xgess'},
+    ]),
+    unsentTextRefresh: false,
   }
 
   return (
@@ -128,42 +143,7 @@ const load = () => {
         isEditing={false}
         isEditExploded={false}
         pendingWaiting={false}
-        typing={Set()}
         isExploding={false}
-        isExplodingNew={false}
-        explodingModeSeconds={0}
-      />
-    ))
-    .add('Typing 1', () => (
-      <InputContainer
-        isEditing={false}
-        isEditExploded={false}
-        pendingWaiting={false}
-        typing={Set(['chris'])}
-        isExploding={false}
-        isExplodingNew={false}
-        explodingModeSeconds={0}
-      />
-    ))
-    .add('Typing 2', () => (
-      <InputContainer
-        isEditing={false}
-        isEditExploded={false}
-        pendingWaiting={false}
-        typing={Set(['chris', 'strib'])}
-        isExploding={false}
-        isExplodingNew={false}
-        explodingModeSeconds={0}
-      />
-    ))
-    .add('Typing 3', () => (
-      <InputContainer
-        isEditing={false}
-        isEditExploded={false}
-        pendingWaiting={false}
-        typing={Set(['chris', 'strib', 'fred'])}
-        isExploding={false}
-        isExplodingNew={false}
         explodingModeSeconds={0}
       />
     ))
@@ -172,9 +152,7 @@ const load = () => {
         isEditing={true}
         isEditExploded={false}
         pendingWaiting={false}
-        typing={Set()}
         isExploding={false}
-        isExplodingNew={false}
         explodingModeSeconds={0}
       />
     ))
@@ -183,9 +161,7 @@ const load = () => {
         isEditing={false}
         isEditExploded={false}
         pendingWaiting={true}
-        typing={Set()}
         isExploding={false}
-        isExplodingNew={false}
         explodingModeSeconds={0}
       />
     ))
@@ -194,9 +170,7 @@ const load = () => {
         isEditing={false}
         isEditExploded={false}
         pendingWaiting={false}
-        typing={Set()}
         isExploding={true}
-        isExplodingNew={true}
         explodingModeSeconds={0}
       />
     ))

@@ -1,4 +1,5 @@
 // @flow
+// TODO deprecate
 import * as shared from './shared'
 import * as Constants from '../constants/tracker'
 import Friendships from './friendships.desktop'
@@ -11,6 +12,8 @@ import * as Styles from '../styles'
 import {stateColors} from '../util/tracker'
 import {ADD_TO_TEAM_ZINDEX, AVATAR_SIZE, BACK_ZINDEX, SEARCH_CONTAINER_ZINDEX} from '../constants/profile'
 import Folders from './folders/container'
+import UserProofs from './user-proofs'
+import UserBio from './user-bio'
 
 import type {UserTeamShowcase} from '../constants/types/rpc-gen'
 import type {Proof} from '../constants/types/tracker'
@@ -82,10 +85,18 @@ const _ShowcasedTeamRow = (
 )
 const ShowcasedTeamRow = Kb.OverlayParentHOC(_ShowcasedTeamRow)
 
+type AddressState = {
+  storedAttachmentRef: any,
+}
+
 class _StellarFederatedAddress extends React.PureComponent<
-  StellarFederatedAddressProps & Kb.OverlayParentProps
+  StellarFederatedAddressProps & Kb.OverlayParentProps,
+  AddressState
 > {
-  _attachmentRef = null
+  state: AddressState = {
+    storedAttachmentRef: null,
+  }
+
   _toastRef: ?Kb._ToastContainer = null
   _onCopyAddress = () => {
     this._toastRef && this._toastRef.copy()
@@ -97,7 +108,10 @@ class _StellarFederatedAddress extends React.PureComponent<
     stellarAddress: this.props.stellarAddress,
   })
 
-  _getAttachmentRef = () => this._attachmentRef
+  _storeAttachmentRef = r => {
+    this.setState({storedAttachmentRef: r})
+  }
+  _getAttachmentRef = () => this.state.storedAttachmentRef
 
   render() {
     const stellarAddressNameStyle = {
@@ -105,8 +119,11 @@ class _StellarFederatedAddress extends React.PureComponent<
       color: this.props.currentlyFollowing ? Styles.globalColors.green : Styles.globalColors.blue,
     }
     return (
-      <Kb.Box2 direction="horizontal" ref={r => (this._attachmentRef = r)}>
-        <Kb.ToastContainer innerRef={r => (this._toastRef = r)} getAttachmentRef={this._getAttachmentRef} />
+      <Kb.Box2 direction="horizontal" ref={r => this._storeAttachmentRef(r)}>
+        <Kb.ToastContainer
+          ref={r => (this._toastRef = r)}
+          getAttachmentRef={this.state.storedAttachmentRef && this._getAttachmentRef}
+        />
         <Kb.Box style={styles.iconContainer}>
           <Kb.Icon
             style={styles.service}
@@ -125,7 +142,7 @@ class _StellarFederatedAddress extends React.PureComponent<
               style={styles.proofName}
               ref={this.props.setAttachmentRef}
             >
-              <Kb.WithTooltip text={this.props.showingMenu ? '' : 'Stellar Federated Address'}>
+              <Kb.WithTooltip text={this.props.showingMenu ? '' : 'Stellar Federation Address'}>
                 <Kb.Text
                   inline={true}
                   type="Body"
@@ -136,7 +153,7 @@ class _StellarFederatedAddress extends React.PureComponent<
                 </Kb.Text>
               </Kb.WithTooltip>
               <Kb.FloatingMenu
-                attachTo={this.props.getAttachmentRef}
+                attachTo={this.state.storedAttachmentRef && this._getAttachmentRef}
                 closeOnSelect={true}
                 containerStyle={styles.floatingStellarAddressMenu}
                 items={this._menuItems}
@@ -160,7 +177,7 @@ class ProfileRender extends React.PureComponent<Props, State> {
     selectedProofMenuRowIndex: null,
   }
   _selectedProofMenuRowRef: ?React.Component<any>
-  _proofList: ?Kb.UserProofs = null
+  _proofList: ?UserProofs = null
   _scrollContainer: ?React.Component<any, any> = null
 
   _proofMenuContent(proof: Proof) {
@@ -233,7 +250,7 @@ class ProfileRender extends React.PureComponent<Props, State> {
                 overlayColor={Styles.globalColors.blue}
               />
               {!!proof.mTime && (
-                <Kb.Text type="BodySmall" style={{color: Styles.globalColors.black_40, textAlign: 'center'}}>
+                <Kb.Text center={true} type="BodySmall" style={{color: Styles.globalColors.black_50}}>
                   Posted on
                   <br />
                   {moment(proof.mTime).format('ddd MMM D, YYYY')}
@@ -334,7 +351,8 @@ class ProfileRender extends React.PureComponent<Props, State> {
           >
             <Kb.Box2 direction="vertical" style={{flexGrow: 1}}>
               <Kb.Text
-                style={{margin: Styles.globalMargins.tiny, textAlign: 'center', width: '100%'}}
+                center={true}
+                style={{margin: Styles.globalMargins.tiny, width: '100%'}}
                 type="BodySemibold"
                 backgroundMode="HighRisk"
               >
@@ -343,7 +361,7 @@ class ProfileRender extends React.PureComponent<Props, State> {
             </Kb.Box2>
             <Kb.Box2 direction="vertical" style={{flexShrink: 1, justifyContent: 'center'}}>
               <Kb.Icon
-                color={Styles.globalColors.black_40}
+                color={Styles.globalColors.black_50}
                 onClick={this.props.onClearAddUserToTeamsResults}
                 style={{padding: Styles.globalMargins.tiny}}
                 type="iconfont-close"
@@ -376,8 +394,13 @@ class ProfileRender extends React.PureComponent<Props, State> {
             }
             style={{...styleSearchContainer, opacity: this.state.searchHovered ? 0.8 : 1}}
           >
-            <Kb.Icon style={styleSearch} type="iconfont-search" color={Styles.globalColors.white_75} />
-            <Kb.Text style={styleSearchText} type="Body">
+            <Kb.Icon
+              fontSize={Styles.isMobile ? 20 : 16}
+              style={styles.searchIcon}
+              type="iconfont-search"
+              color={Styles.globalColors.white_75}
+            />
+            <Kb.Text style={styles.searchText} type="BodySemibold">
               Search people
             </Kb.Text>
           </Kb.Box>
@@ -392,7 +415,7 @@ class ProfileRender extends React.PureComponent<Props, State> {
           <Kb.Box style={{...styleHeader, backgroundColor: trackerStateColors.header.background}} />
           <Kb.Box style={{...Styles.globalStyles.flexBoxRow, minHeight: 300}}>
             <Kb.Box style={styleBioColumn}>
-              <Kb.UserBio
+              <UserBio
                 type="Profile"
                 editFns={this.props.bioEditFns}
                 loading={loading}
@@ -418,7 +441,6 @@ class ProfileRender extends React.PureComponent<Props, State> {
                   onRequestLumens={this.props.onRequestLumens}
                   onUnfollow={this.props.onUnfollow}
                   onAcceptProofs={this.props.onAcceptProofs}
-                  waiting={this.props.waiting}
                 />
               )}
             </Kb.Box>
@@ -451,7 +473,7 @@ class ProfileRender extends React.PureComponent<Props, State> {
                   </Kb.Box>
                 )}
                 {(loading || this.props.proofs.length > 0) && (
-                  <Kb.UserProofs
+                  <UserProofs
                     type={'proofs'}
                     ref={c => {
                       this._proofList = c
@@ -463,16 +485,16 @@ class ProfileRender extends React.PureComponent<Props, State> {
                     showingMenuIndex={this.state.selectedProofMenuRowIndex}
                   />
                 )}
-                {!!this.props.stellarAddress && !loading && (
+                {!!this.props.stellarFederationAddress && !loading && (
                   <StellarFederatedAddress
-                    currentlyFollowing={this.props.isYou || this.props.currentlyFollowing}
-                    stellarAddress={this.props.stellarAddress}
+                    currentlyFollowing={!this.props.isYou && this.props.currentlyFollowing}
+                    stellarAddress={this.props.stellarFederationAddress}
                     onSendOrRequest={this.props.onSendOrRequestStellarAddress}
                     onCopyAddress={this.props.onCopyStellarAddress}
                   />
                 )}
                 {!loading && !this.props.serverActive && missingProofs.length > 0 && (
-                  <Kb.UserProofs
+                  <UserProofs
                     type={'missingProofs'}
                     username={this.props.username}
                     missingProofs={missingProofs}
@@ -606,17 +628,6 @@ const styleSearchContainer = {
   zIndex: SEARCH_CONTAINER_ZINDEX,
 }
 
-const styleSearch = {
-  padding: 3,
-}
-
-const styleSearchText = {
-  ...styleSearch,
-  color: Styles.globalColors.white_75,
-  position: 'relative',
-  top: -1,
-}
-
 const styleShowcasedTeamContainer = {
   ...Styles.globalStyles.flexBoxRow,
   alignItems: 'flex-start',
@@ -680,6 +691,14 @@ const styles = Styles.styleSheetCreate({
     flex: 1,
     marginTop: 2,
   },
+  searchIcon: {
+    paddingRight: Styles.globalMargins.tiny,
+    position: 'relative',
+    top: 1,
+  },
+  searchText: {
+    color: Styles.globalColors.white_75,
+  },
   service: Styles.collapseStyles([
     Styles.desktopStyles.clickable,
     {
@@ -695,17 +714,6 @@ const styles = Styles.styleSheetCreate({
     isElectron: {
       color: Styles.globalColors.green,
       ...Styles.desktopStyles.clickable,
-    },
-  }),
-  toastText: Styles.platformStyles({
-    common: {
-      color: Styles.globalColors.white,
-      textAlign: 'center',
-    },
-    isMobile: {
-      paddingLeft: 10,
-      paddingRight: 10,
-      paddingTop: 5,
     },
   }),
 })

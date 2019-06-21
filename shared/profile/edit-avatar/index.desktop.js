@@ -1,6 +1,5 @@
 // @flow
 import * as React from 'react'
-import * as ReactDOM from 'react-dom'
 import * as Kb from '../../common-adapters'
 import * as Styles from '../../styles'
 import fs from 'fs'
@@ -42,8 +41,7 @@ const VIEWPORT_CENTER = AVATAR_SIZE / 2
 
 class EditAvatar extends React.Component<_Props, State> {
   _file: ?HTMLInputElement
-  _image: ?Kb.OrientedImage
-
+  _image = React.createRef()
   constructor(props: _Props) {
     super(props)
     this.state = {
@@ -69,10 +67,6 @@ class EditAvatar extends React.Component<_Props, State> {
       viewingCenterX: 0,
       viewingCenterY: 0,
     }
-  }
-
-  _imageSetRef = (ref: ?Kb.OrientedImage) => {
-    this._image = ref
   }
 
   _filePickerFiles = () => (this._file && this._file.files) || []
@@ -158,11 +152,6 @@ class EditAvatar extends React.Component<_Props, State> {
     this.setState({imageSource: path})
   }
 
-  _getImage = (): HTMLImageElement => {
-    const img: HTMLImageElement = (ReactDOM.findDOMNode(this._image): any)
-    return img
-  }
-
   _onImageLoad = (e: SyntheticEvent<any>) => {
     // TODO: Make RPC to check file size and warn them before they try submitting.
 
@@ -221,9 +210,9 @@ class EditAvatar extends React.Component<_Props, State> {
   }
 
   _onMouseDown = (e: SyntheticMouseEvent<any>) => {
-    if (!this.state.hasPreview) return
+    if (!this.state.hasPreview || !this._image) return
 
-    const img = this._getImage()
+    const img = this._image.current
 
     this.setState({
       dragStartX: e.pageX,
@@ -235,9 +224,9 @@ class EditAvatar extends React.Component<_Props, State> {
   }
 
   _onMouseUp = () => {
-    if (!this.state.hasPreview) return
+    if (!this.state.hasPreview || !this._image) return
 
-    const img = this._getImage()
+    const img = this._image.current
 
     this.setState({
       dragStopX: img && img.style.left ? parseInt(img.style.left, 10) : this.state.dragStopX,
@@ -320,7 +309,7 @@ class EditAvatar extends React.Component<_Props, State> {
               </Kb.Text>
             </Kb.Box>
           )}
-          <Kb.Text type="Body" style={styles.instructions}>
+          <Kb.Text center={true} type="Body" style={styles.instructions}>
             Drag and drop a {this.props.teamname ? 'team' : 'profile'} avatar or{' '}
             <Kb.Text type="BodyPrimaryLink" className="hover-underline" onClick={this._filePickerOpen}>
               browse your computer for one
@@ -348,7 +337,7 @@ class EditAvatar extends React.Component<_Props, State> {
               </Kb.Box>
             )}
             <Kb.OrientedImage
-              ref={this._imageSetRef}
+              forwardedRef={this._image}
               src={this.state.imageSource}
               style={{
                 height: this.state.scaledImageHeight,
@@ -417,8 +406,8 @@ const HoverBox = Styles.styled(Kb.Box)({
     backgroundColor: Styles.globalColors.white,
     borderColor: Styles.globalColors.lightGrey2,
   },
-  '&:hover': {borderColor: Styles.globalColors.black_40},
-  '&:hover .icon': {color: Styles.globalColors.black_40},
+  '&:hover': {borderColor: Styles.globalColors.black_50},
+  '&:hover .icon': {color: Styles.globalColors.black_50},
   '.dropping &': {
     backgroundColor: Styles.globalColors.blue_60,
     borderColor: Styles.globalColors.blue_60,
@@ -466,7 +455,6 @@ const styles = Styles.styleSheetCreate({
   },
   instructions: {
     maxWidth: 200,
-    textAlign: 'center',
   },
   spinner: {
     left: '50%',

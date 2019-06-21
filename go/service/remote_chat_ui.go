@@ -94,10 +94,16 @@ func (r *RemoteChatUI) ChatStellarDataError(ctx context.Context, msg string) (bo
 	})
 }
 
-func (r *RemoteChatUI) ChatStellarDone(ctx context.Context) error {
-	return r.cli.ChatStellarDone(ctx, r.sessionID)
+func (r *RemoteChatUI) ChatStellarDone(ctx context.Context, canceled bool) error {
+	return r.cli.ChatStellarDone(ctx, chat1.ChatStellarDoneArg{
+		SessionID: r.sessionID,
+		Canceled:  canceled,
+	})
 }
 
-func (r *RemoteChatUI) ChatPostReadyToSend(ctx context.Context) error {
-	return r.cli.ChatPostReadyToSend(ctx, r.sessionID)
+func (r *RemoteChatUI) ChatShowManageChannels(ctx context.Context, teamname string) error {
+	return r.cli.ChatShowManageChannels(ctx, chat1.ChatShowManageChannelsArg{
+		SessionID: r.sessionID,
+		Teamname:  teamname,
+	})
 }

@@ -81,6 +81,7 @@ export default function(state: Types.State = initialState, action: ProfileGen.Ac
         })
       )
     case ProfileGen.cancelAddProof: // fallthrough
+    case ProfileGen.recheckProof: // fallthrough
     case ProfileGen.checkProof:
       return state.merge({errorCode: null, errorText: ''})
     case ProfileGen.submitBTCAddress:
@@ -100,6 +101,7 @@ export default function(state: Types.State = initialState, action: ProfileGen.Ac
     case ProfileGen.submitRevokeProof:
     case ProfileGen.submitUsername:
     case ProfileGen.uploadAvatar:
+    case ProfileGen.editAvatar:
       return state
     default:
       Flow.ifFlowComplainsAboutThisFunctionYouHaventHandledAllCasesInASwitch(action)

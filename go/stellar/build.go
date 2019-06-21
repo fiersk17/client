@@ -3,15 +3,19 @@ package stellar
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/keybase/client/go/engine"
+	"github.com/keybase/client/go/externals"
 	"github.com/keybase/client/go/libkb"
 	"github.com/keybase/client/go/protocol/keybase1"
 	"github.com/keybase/client/go/protocol/stellar1"
 	"github.com/keybase/client/go/slotctx"
 	"github.com/keybase/client/go/stellar/stellarcommon"
 	"github.com/keybase/stellarnet"
+	stellarAddress "github.com/stellar/go/address"
 )
 
 func StartBuildPaymentLocal(mctx libkb.MetaContext) (res stellar1.BuildPaymentID, err error) {
@@ -148,20 +152,22 @@ func BuildPaymentLocal(mctx libkb.MetaContext, arg stellar1.BuildPaymentLocalArg
 						Message: fmt.Sprintf("Because it's %s first transaction, you must send at least %s XLM.", them, amount),
 					})
 				}
+				var sendingToSelf bool
+				var selfSendErr error
 				if recipient.AccountID == nil {
 					// Sending a payment to a target with no account. (relay)
 					minAmountXLM = "2.01"
 					addMinBanner(bannerTheir, minAmountXLM)
 				} else {
+					sendingToSelf, _, selfSendErr = bpc.OwnsAccount(mctx, stellar1.AccountID(recipient.AccountID.String()))
 					isFunded, err := bpc.IsAccountFunded(mctx, stellar1.AccountID(recipient.AccountID.String()))
 					if err != nil {
 						log("error checking recipient funding status %v: %v", *recipient.AccountID, err)
 					} else if !isFunded {
 						// Sending to a non-funded stellar account.
 						minAmountXLM = "1"
-						owns, _, err := bpc.OwnsAccount(mctx, stellar1.AccountID(recipient.AccountID.String()))
-						log("OwnsAccount (to) -> owns:%v err:%v", owns, err)
-						if !owns || err != nil {
+						log("OwnsAccount (to) -> owns:%v err:%v", sendingToSelf, selfSendErr)
+						if !sendingToSelf || selfSendErr != nil {
 							// Likely sending to someone else's account.
 							addMinBanner(bannerTheir, minAmountXLM)
 						} else {
@@ -172,6 +178,12 @@ func BuildPaymentLocal(mctx libkb.MetaContext, arg stellar1.BuildPaymentLocalArg
 							})
 						}
 					}
+				}
+				if !sendingToSelf && !fromPrimaryAccount {
+					res.Banners = append(res.Banners, stellar1.SendBannerLocal{
+						Level:   "info",
+						Message: "Your Keybase username will not be linked to this transaction.",
+					})
 				}
 			}
 		}
@@ -207,10 +219,32 @@ func BuildPaymentLocal(mctx libkb.MetaContext, arg stellar1.BuildPaymentLocalArg
 			// Check that the sender has enough asset available.
 			// Note: When adding support for sending non-XLM assets, check the asset instead of XLM here.
 			availableToSendXLM, err := bpc.AvailableXLMToSend(mctx, fromInfo.from)
-			availableToSendXLM = SubtractFeeSoft(mctx, availableToSendXLM)
 			if err != nil {
 				log("error getting available balance: %v", err)
 			} else {
+				availableToSendXLM = SubtractFeeSoft(mctx, availableToSendXLM)
+				availableToSendFormatted := availableToSendXLM + " XLM"
+				availableToSendXLMFmt, err := FormatAmount(mctx,
+					availableToSendXLM, false, FmtTruncate)
+				if err == nil {
+					availableToSendFormatted = availableToSendXLMFmt + " XLM"
+				}
+				if arg.Currency != nil && amountX.rate != nil {
+					// If the user entered an amount in outside currency and an exchange
+					// rate is available, attempt to show them available balance in that currency.
+					availableToSendOutside, err := stellarnet.ConvertXLMToOutside(availableToSendXLM, amountX.rate.Rate)
+					if err != nil {
+						log("error converting available-to-send", err)
+					} else {
+						formattedATS, err := FormatCurrencyWithCodeSuffix(mctx,
+							availableToSendOutside, amountX.rate.Currency, FmtTruncate)
+						if err != nil {
+							log("error formatting available-to-send", err)
+						} else {
+							availableToSendFormatted = formattedATS
+						}
+					}
+				}
 				cmp, err := stellarnet.CompareStellarAmounts(availableToSendXLM, amountX.amountOfAsset)
 				switch {
 				case err != nil:
@@ -218,30 +252,11 @@ func BuildPaymentLocal(mctx libkb.MetaContext, arg stellar1.BuildPaymentLocalArg
 				case cmp == -1:
 					log("Send amount is more than available to send %v > %v", amountX.amountOfAsset, availableToSendXLM)
 					readyChecklist.amount = false // block sending
-					res.AmountErrMsg = fmt.Sprintf("Your available to send is *%s XLM*.", availableToSendXLM)
-					availableToSendXLMFmt, err := FormatAmount(
-						availableToSendXLM, false, FmtTruncate)
-					if err == nil {
-						res.AmountErrMsg = fmt.Sprintf("Your available to send is *%s XLM*.", availableToSendXLMFmt)
-					}
-					if arg.Currency != nil && amountX.rate != nil {
-						// If the user entered an amount in outside currency and an exchange
-						// rate is available, attempt to show them available balance in that currency.
-						availableToSendOutside, err := stellarnet.ConvertXLMToOutside(availableToSendXLM, amountX.rate.Rate)
-						if err != nil {
-							log("error converting available-to-send", err)
-						} else {
-							formattedATS, err := FormatCurrencyWithCodeSuffix(mctx,
-								availableToSendOutside, amountX.rate.Currency, FmtTruncate)
-							if err != nil {
-								log("error formatting available-to-send", err)
-							} else {
-								res.AmountErrMsg = fmt.Sprintf("Your available to send is *%s*.", formattedATS)
-							}
-						}
-					}
+					res.AmountErrMsg = fmt.Sprintf("Your available to send is *%s*.", availableToSendFormatted)
+
 				default:
 					// Welcome back. How was your stay at the error handling hotel?
+					res.AmountAvailable = availableToSendFormatted + " available"
 				}
 			}
 		}
@@ -297,8 +312,6 @@ func BuildPaymentLocal(mctx libkb.MetaContext, arg stellar1.BuildPaymentLocalArg
 				ToIsAccountID: arg.ToIsAccountID,
 				Amount:        amountX.amountOfAsset,
 				Asset:         amountX.asset,
-				SecretNote:    arg.SecretNote,
-				PublicMemo:    arg.PublicMemo,
 			}
 		}
 	}
@@ -333,6 +346,7 @@ func ReviewPaymentLocal(mctx libkb.MetaContext, stellarUI stellar1.UiInterface, 
 	seqno := 0
 	notify := func(banners []stellar1.SendBannerLocal, nextButton reviewButtonState) chan struct{} {
 		seqno++
+		seqno := seqno                    // Shadow seqno to freeze it for the goroutine below.
 		receivedCh := make(chan struct{}) // channel closed when the notification has been acked.
 		mctx.CDebugf("sending UIPaymentReview bid:%v sessionID:%v seqno:%v nextButton:%v banners:%v",
 			arg.Bid, arg.SessionID, seqno, nextButton, len(banners))
@@ -344,6 +358,7 @@ func ReviewPaymentLocal(mctx libkb.MetaContext, stellarUI stellar1.UiInterface, 
 				SessionID: arg.SessionID,
 				Msg: stellar1.UIPaymentReviewed{
 					Bid:        arg.Bid,
+					ReviewID:   arg.ReviewID,
 					Seqno:      seqno,
 					Banners:    banners,
 					NextButton: string(nextButton),
@@ -372,12 +387,51 @@ func ReviewPaymentLocal(mctx libkb.MetaContext, stellarUI stellar1.UiInterface, 
 
 	notify(nil, reviewButtonSpinning)
 
+	wantFollowingCheck := true
+
 	if data.Frozen.ToIsAccountID {
 		mctx.CDebugf("skipping identify for account ID recipient: %v", data.Frozen.To)
 		data.ReadyToSend = true
-	} else {
-		recipientAssertion := data.Frozen.To
-		recipientUV := data.Frozen.ToUV
+		wantFollowingCheck = false
+	}
+
+	recipientAssertion := data.Frozen.To
+	// how would you have this before identify?  from LookupRecipient?
+	// does that mean that identify is happening twice?
+	recipientUV := data.Frozen.ToUV
+
+	// check if it is a federation address
+	if strings.Contains(recipientAssertion, stellarAddress.Separator) {
+		name, domain, err := stellarAddress.Split(recipientAssertion)
+		// if there is an error, let this fall through and get identified
+		if err == nil {
+			if domain != "keybase.io" {
+				mctx.CDebugf("skipping identify for federation address recipient: %s", data.Frozen.To)
+				data.ReadyToSend = true
+				wantFollowingCheck = false
+			} else {
+				mctx.CDebugf("identifying keybase user %s in federation address recipient: %s", name, data.Frozen.To)
+				recipientAssertion = name
+			}
+		}
+	} else if !isKeybaseAssertion(mctx, recipientAssertion) { // assume assertion resolution happened already.
+		data.ReadyToSend = true
+		wantFollowingCheck = false
+	}
+
+	mctx.CDebugf("wantFollowingCheck: %v", wantFollowingCheck)
+	var stickyBanners []stellar1.SendBannerLocal
+	if wantFollowingCheck {
+		if isFollowing, err := isFollowingForReview(mctx, recipientAssertion); err == nil && !isFollowing {
+			stickyBanners = []stellar1.SendBannerLocal{{
+				Level:   "warning",
+				Message: fmt.Sprintf("You are not following %v. Are you sure this is the right person?", recipientAssertion),
+			}}
+			notify(stickyBanners, reviewButtonSpinning)
+		}
+	}
+
+	if !data.ReadyToSend {
 		mctx.CDebugf("identifying recipient: %v", recipientAssertion)
 
 		identifySuccessCh := make(chan struct{}, 1)
@@ -416,14 +470,16 @@ func ReviewPaymentLocal(mctx libkb.MetaContext, stellarUI stellar1.UiInterface, 
 			case <-mctx.Ctx().Done():
 				return mctx.Ctx().Err()
 			case <-identifyErrCh:
+				stickyBanners = nil
 				notify([]stellar1.SendBannerLocal{{
 					Level:   "error",
-					Message: fmt.Sprintf("Error while identifying %v", recipientAssertion),
+					Message: fmt.Sprintf("Error while identifying %v. Please check your network and try again.", recipientAssertion),
 				}}, reviewButtonDisabled)
 			case <-identifyTrackFailCh:
+				stickyBanners = nil
 				notify([]stellar1.SendBannerLocal{{
 					Level:         "error",
-					Message:       fmt.Sprintf("Some of %v's proofs have changed since you last followed them. Please review", recipientAssertion),
+					Message:       fmt.Sprintf("Some of %v's proofs have changed since you last followed them.", recipientAssertion),
 					ProofsChanged: true,
 				}}, reviewButtonDisabled)
 			case <-identifySuccessCh:
@@ -436,7 +492,7 @@ func ReviewPaymentLocal(mctx libkb.MetaContext, stellarUI stellar1.UiInterface, 
 	if err := mctx.Ctx().Err(); err != nil {
 		return err
 	}
-	receivedEnableCh := notify(nil, reviewButtonEnabled)
+	receivedEnableCh := notify(stickyBanners, reviewButtonEnabled)
 
 	// Stay open until this call gets canceled or until frontend
 	// acks a notification that enables the button.
@@ -506,6 +562,48 @@ func identifyForReview(mctx libkb.MetaContext, assertion string,
 		return
 	}
 	sendSuccess()
+}
+
+// Whether the logged-in user following the recipient.
+// Unresolved assertions will false negative.
+func isFollowingForReview(mctx libkb.MetaContext, assertion string) (isFollowing bool, err error) {
+	// The 'following' check blocks sending, and is not that important, so impose a timeout.
+	var cancel func()
+	mctx, cancel = mctx.WithTimeout(time.Second * 5)
+	defer cancel()
+	err = mctx.G().GetFullSelfer().WithSelf(mctx.Ctx(), func(u *libkb.User) error {
+		idTable := u.IDTable()
+		if idTable == nil {
+			return nil
+		}
+		targetUsername := libkb.NewNormalizedUsername(assertion)
+		for _, track := range idTable.GetTrackList() {
+			if trackedUsername, err := track.GetTrackedUsername(); err == nil {
+				if trackedUsername.Eq(targetUsername) {
+					isFollowing = true
+					return nil
+				}
+			}
+		}
+		return nil
+	})
+	return isFollowing, err
+}
+
+func isKeybaseAssertion(mctx libkb.MetaContext, assertion string) bool {
+	expr, err := externals.AssertionParse(mctx.G(), string(assertion))
+	if err != nil {
+		mctx.CDebugf("error parsing assertion: %s", err)
+		return false
+	}
+	switch expr.(type) {
+	case libkb.AssertionKeybase:
+		return true
+	case *libkb.AssertionKeybase:
+		return true
+	default:
+		return false
+	}
 }
 
 func BuildRequestLocal(mctx libkb.MetaContext, arg stellar1.BuildRequestLocalArg) (res stellar1.BuildRequestResLocal, err error) {
@@ -663,7 +761,7 @@ func buildPaymentAmountHelper(mctx libkb.MetaContext, bpc BuildPaymentCache, arg
 			return res
 		}
 		res.amountOfAsset = xlmAmount
-		xlmAmountFormatted, err := FormatAmountDescriptionXLM(xlmAmount)
+		xlmAmountFormatted, err := FormatAmountDescriptionXLM(mctx, xlmAmount)
 		if err != nil {
 			log("error formatting converted XLM amount: %v", err)
 			res.amountErrMsg = fmt.Sprintf("Could not convert to XLM")
@@ -751,7 +849,7 @@ func buildPaymentAmountHelper(mctx libkb.MetaContext, bpc BuildPaymentCache, arg
 			res.worthInfo = ""
 		}
 
-		res.displayAmountXLM, err = FormatAmountDescriptionXLM(arg.Amount)
+		res.displayAmountXLM, err = FormatAmountDescriptionXLM(mctx, arg.Amount)
 		if err != nil {
 			log("error formatting xlm %q: %s", arg.Amount, err)
 			res.displayAmountXLM = ""
@@ -782,7 +880,7 @@ func buildPaymentWorthInfo(mctx libkb.MetaContext, rate stellar1.OutsideExchange
 	if err != nil {
 		return "", err
 	}
-	amountXLMFormatted, err := FormatAmountDescriptionXLM(amountXLM)
+	amountXLMFormatted, err := FormatAmountDescriptionXLM(mctx, amountXLM)
 	if err != nil {
 		return "", err
 	}
@@ -829,8 +927,8 @@ type frozenPayment struct {
 	ToIsAccountID bool
 	Amount        string
 	Asset         stellar1.Asset
-	SecretNote    string
-	PublicMemo    string
+	// SecretNote and PublicMemo are not checked because
+	// frontend may not call build when the user changes the notes.
 }
 
 func newBuildPaymentEntry(bid stellar1.BuildPaymentID) *buildPaymentEntry {
@@ -874,13 +972,6 @@ func (b *buildPaymentData) CheckReadyToSend(arg stellar1.SendPaymentLocalArg) er
 	}
 	if !arg.Asset.Eq(b.Frozen.Asset) {
 		return fmt.Errorf("mismatched asset: %v != %v", arg.Asset, b.Frozen.Asset)
-	}
-	if arg.SecretNote != b.Frozen.SecretNote {
-		// Don't log the secret memo.
-		return fmt.Errorf("mismatched secret note")
-	}
-	if arg.PublicMemo != b.Frozen.PublicMemo {
-		return fmt.Errorf("mismatched public memo: '%v' != '%v'", arg.PublicMemo, b.Frozen.PublicMemo)
 	}
 	return nil
 }

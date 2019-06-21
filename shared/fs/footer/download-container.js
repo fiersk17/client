@@ -15,9 +15,12 @@ const mapStateToProps = (state, {downloadKey}: OwnProps) => ({
 })
 
 const mapDispatchToProps = dispatch => ({
-  _canceler: (key: string) => dispatch(FsGen.createCancelDownload({key})),
+  _canceler: (key: string) => {
+    dispatch(FsGen.createCancelDownload({key}))
+    dispatch(FsGen.createDismissDownload({key}))
+  },
   _dismisser: (key: string) => dispatch(FsGen.createDismissDownload({key})),
-  _opener: (p: Types.LocalPath) => dispatch(FsGen.createOpenLocalPathInSystemFileManager({path: p})),
+  _opener: (p: Types.LocalPath) => dispatch(FsGen.createOpenLocalPathInSystemFileManager({localPath: p})),
 })
 
 const mergeProps = ({_download}, {_opener, _dismisser, _canceler}, {downloadKey}) =>

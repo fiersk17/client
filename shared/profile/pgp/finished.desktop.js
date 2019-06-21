@@ -43,7 +43,9 @@ class Finished extends React.Component<Props, State> {
             label="Store encrypted private key on Keybase's server"
           />
           <Kb.Text style={styleUploadTextSublabel} type="BodySmall">
-            {'Allows you to download & import your key to other devices.'}
+            {
+              'Allows you to download & import your key to other devices. You might need to enter your Keybase passphrase.'
+            }
           </Kb.Text>
         </Kb.Box>
         <Kb.Button
@@ -101,7 +103,7 @@ const styleUploadContainer = {
 }
 
 const styleUploadTextSublabel = {
-  color: Styles.globalColors.black_40,
+  color: Styles.globalColors.black_50,
   marginLeft: CHECKBOX_SIZE + CHECKBOX_MARGIN,
 }
 

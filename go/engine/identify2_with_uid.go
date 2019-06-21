@@ -438,7 +438,11 @@ func (e *Identify2WithUID) untrackedFastPath(m libkb.MetaContext) (ret bool) {
 func (e *Identify2WithUID) runReturnError(m libkb.MetaContext) (err error) {
 
 	m.CDebugf("+ acquire singleflight lock for %s", e.arg.Uid)
-	lock := locktab.AcquireOnName(m.Ctx(), m.G(), e.arg.Uid.String())
+	lock, err := locktab.AcquireOnNameWithContext(m.Ctx(), m.G(), e.arg.Uid.String())
+	if err != nil {
+		m.CDebugf("| error acquiring singleflight lock for %s: %v", e.arg.Uid, err)
+		return err
+	}
 	m.CDebugf("- acquired singleflight lock")
 
 	defer func() {
@@ -524,7 +528,7 @@ func (e *Identify2WithUID) runReturnError(m libkb.MetaContext) (err error) {
 	// since it will the foreground context will disappear after we unblock.
 	m = m.BackgroundWithLogTags()
 
-	if (!e.useTracking || e.arg.IdentifyBehavior.UnblockDespiteTracking()) && !e.useRemoteAssertions() && e.allowEarlyOuts() {
+	if (!e.useTracking && !e.useRemoteAssertions() && e.allowEarlyOuts()) || e.arg.IdentifyBehavior.UnblockThenForceIDTable() {
 		e.unblock(m /* isFinal */, false, nil)
 	}
 
@@ -532,7 +536,7 @@ func (e *Identify2WithUID) runReturnError(m libkb.MetaContext) (err error) {
 }
 
 func (e *Identify2WithUID) allowEarlyOuts() bool {
-	return !e.arg.NeedProofSet
+	return !e.arg.NeedProofSet && !e.arg.IdentifyBehavior.UnblockThenForceIDTable()
 }
 
 func (e *Identify2WithUID) getNow(m libkb.MetaContext) time.Time {

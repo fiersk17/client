@@ -73,7 +73,7 @@ function SpaceInfo({
   return (
     <Box style={{...globalStyles.flexBoxRow, alignItems: 'center'}}>
       <Text
-        style={{color: globalColors.black_40, fontSize: 12, marginRight: globalMargins.xtiny}}
+        style={{color: globalColors.black_50, fontSize: 12, marginRight: globalMargins.xtiny}}
         type={'BodySmallSemibold'}
       >
         {freeSpace} FREE
@@ -191,7 +191,7 @@ function PaymentInfo({
       >
         <Box style={globalStyles.flexBoxColumn}>
           <Text type="Body">{name}</Text>
-          <Text style={{color: isBroken ? globalColors.red : globalColors.black_40}} type="BodySmall">
+          <Text style={{color: isBroken ? globalColors.red : globalColors.black_50}} type="BodySmall">
             **** {last4Digits} {isBroken ? ' (broken)' : ''}
           </Text>
         </Box>
@@ -278,6 +278,26 @@ function AccountEmail({
   )
 }
 
+function AccountFirstEmail({onChangeEmail}: {onChangeEmail: () => void}) {
+  return (
+    <Box
+      style={{
+        ...globalStyles.flexBoxRow,
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        minHeight: ROW_HEIGHT,
+      }}
+    >
+      <Text type="Body">
+        No e-mail set. You should{' '}
+        <Text type="BodyPrimaryLink" onClick={onChangeEmail}>
+          add an e-mail address.
+        </Text>
+      </Text>
+    </Box>
+  )
+}
+
 function AccountPassphrase({onChangePassphrase}: {onChangePassphrase: () => void}) {
   return (
     <Box style={{...globalStyles.flexBoxRow, alignItems: 'center', minHeight: ROW_HEIGHT}}>
@@ -294,6 +314,23 @@ function AccountPassphrase({onChangePassphrase}: {onChangePassphrase: () => void
   )
 }
 
+function AccountFirstPassphrase({onChangePassphrase}: {onChangePassphrase: () => void}) {
+  return (
+    <Box style={{...globalStyles.flexBoxRow, alignItems: 'center', minHeight: ROW_HEIGHT}}>
+      <Text type="Body" style={{marginRight: globalMargins.xtiny}}>
+        Passphrase:
+      </Text>
+      <Text type="Body">
+        Not set! You should{' '}
+        <Text type="Body" style={{color: globalColors.blue}} link={true} onClick={onChangePassphrase}>
+          set a passphrase
+        </Text>
+        .
+      </Text>
+    </Box>
+  )
+}
+
 function Account({
   email,
   isVerified,
@@ -301,19 +338,26 @@ function Account({
   onChangePassphrase,
   onChangeRememberPassphrase,
   rememberPassphrase,
+  hasRandomPW,
 }: AccountProps) {
+  const Passphrase = hasRandomPW ? AccountFirstPassphrase : AccountPassphrase
+  const Email = email ? AccountEmail : AccountFirstEmail
   return (
     <Box style={{...globalStyles.flexBoxColumn, marginBottom: globalMargins.medium}}>
-      <AccountEmail email={email} isVerified={isVerified} onChangeEmail={onChangeEmail} />
+      <Email email={email} isVerified={isVerified} onChangeEmail={onChangeEmail} />
       <Divider />
-      <AccountPassphrase onChangePassphrase={onChangePassphrase} />
-      <Divider />
-      <Checkbox
-        checked={rememberPassphrase}
-        label="Remember my passphrase"
-        onCheck={onChangeRememberPassphrase}
-        style={{paddingTop: globalMargins.small}}
-      />
+      <Passphrase onChangePassphrase={onChangePassphrase} />
+      {!hasRandomPW && (
+        <>
+          <Divider />
+          <Checkbox
+            checked={rememberPassphrase}
+            label="Remember my passphrase"
+            onCheck={onChangeRememberPassphrase}
+            style={{paddingTop: globalMargins.small}}
+          />
+        </>
+      )}
     </Box>
   )
 }

@@ -1,4 +1,5 @@
 // @flow
+// TODO deprecate
 import React, {Component, PureComponent} from 'react'
 import ReactList from 'react-list'
 import TabBar, {TabBarItem} from '../common-adapters/tab-bar'
@@ -49,7 +50,12 @@ class UserEntry extends PureComponent<UserEntryProps> {
     return (
       <Box style={userEntryContainerStyle} onClick={this._onClick}>
         <Avatar style={userEntryAvatarStyle} size={64} username={username} showFollowingStatus={true} />
-        <Text type="BodySemibold" className="hover-underline" style={userEntryUsernameStyle(following)}>
+        <Text
+          center={true}
+          type="BodySemibold"
+          className="hover-underline"
+          style={userEntryUsernameStyle(following)}
+        >
           {username}
         </Text>
         <Text type="BodySmall" style={userEntryFullnameStyle}>
@@ -77,11 +83,10 @@ const userEntryAvatarStyle = {
 
 const userEntryUsernameStyle = following => ({
   color: following ? globalColors.green : globalColors.blue,
-  textAlign: 'center',
 })
 
 const userEntryFullnameStyle = {
-  color: globalColors.black_40,
+  color: globalColors.black_50,
   textAlign: 'center',
 }
 

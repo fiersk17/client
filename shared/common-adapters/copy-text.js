@@ -79,12 +79,12 @@ class _CopyText extends React.Component<Props, State> {
         direction="horizontal"
         style={Styles.collapseStyles([styles.container, this.props.containerStyle])}
       >
-        {/* $FlowIssue innerRef not typed yet */}
-        <ToastContainer innerRef={r => (this._toastRef = r)} getAttachmentRef={this._getAttachmentRef} />
+        <ToastContainer ref={r => (this._toastRef = r)} getAttachmentRef={this._getAttachmentRef} />
         <Text
           lineClamp={lineClamp}
           type="Body"
           selectable={true}
+          center={true}
           style={styles.text}
           allowHighlightText={true}
           ref={r => (this._textRef = r)}
@@ -157,11 +157,11 @@ const styles = Styles.styleSheetCreate({
       borderRadius: Styles.borderRadius,
       flexGrow: 1,
       position: 'relative',
+      width: '100%',
     },
     isElectron: {
       maxWidth: 460,
       overflow: 'hidden',
-      width: '100%',
     },
     isMobile: {
       minHeight: 40,
@@ -196,10 +196,7 @@ const styles = Styles.styleSheetCreate({
     },
   }),
   toastText: Styles.platformStyles({
-    common: {
-      color: Styles.globalColors.white,
-      textAlign: 'center',
-    },
+    common: { color: Styles.globalColors.white },
     isMobile: {
       paddingLeft: 10,
       paddingRight: 10,

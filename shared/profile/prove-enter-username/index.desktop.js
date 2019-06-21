@@ -1,8 +1,9 @@
 // @flow
 import React, {Component} from 'react'
-import {Box, Box2, Icon, InfoNote, Text, Button, Input, PlatformIcon} from '../../common-adapters'
+import {Box, Box2, Icon, InfoNote, Text, WaitingButton, Input, PlatformIcon} from '../../common-adapters'
 import {globalStyles, globalColors, globalMargins, desktopStyles, collapseStyles} from '../../styles'
 import {platformText} from './shared'
+import {waitingKey} from '../../constants/profile'
 import type {PlatformsExpandedType} from '../../constants/types/more'
 import type {Props} from '.'
 import openURL from '../../util/open-url'
@@ -23,7 +24,7 @@ function UsernameTips({platform}: {platform: PlatformsExpandedType}) {
     return (
       <InfoNote containerStyle={styleInfoNote}>
         <Box2 direction="vertical" style={{textAlign: 'center'}}>
-          <Text type="BodySmall" style={{textAlign: 'center'}}>
+          <Text center={true} type="BodySmall">
             You can find your Facebook username at
           </Text>
           <Box2 direction="horizontal">
@@ -74,7 +75,12 @@ class PrivateEnterUsernameRender extends Component<Props, State> {
   }
 
   render() {
-    const {headerText, floatingLabelText, hintText} = platformText[this.props.platform]
+    const pt = platformText[this.props.platform]
+    if (!pt) {
+      // TODO support generic proofs
+      throw new Error(`Proofs for platform ${this.props.platform} are unsupported.`)
+    }
+    const {headerText, floatingLabelText, hintText} = pt
 
     return (
       <Box style={styleContainer}>
@@ -101,13 +107,16 @@ class PrivateEnterUsernameRender extends Component<Props, State> {
         />
         <UsernameTips platform={this.props.platform} />
         <Box style={{...globalStyles.flexBoxRow, marginTop: 32}}>
-          <Button
+          <WaitingButton
+            waitingKey={waitingKey}
+            onlyDisable={true}
             type="Secondary"
             onClick={this.props.onCancel}
             label="Cancel"
             style={{marginRight: globalMargins.tiny}}
           />
-          <Button
+          <WaitingButton
+            waitingKey={waitingKey}
             type="Primary"
             disabled={!this.props.canContinue}
             onClick={() => this.handleContinue()}

@@ -167,6 +167,7 @@ const (
 	AppLinkType_GIT      AppLinkType = 5
 	AppLinkType_DEVICES  AppLinkType = 6
 	AppLinkType_SETTINGS AppLinkType = 7
+	AppLinkType_TEAMS    AppLinkType = 8
 )
 
 func (o AppLinkType) DeepCopy() AppLinkType { return o }
@@ -180,6 +181,7 @@ var AppLinkTypeMap = map[string]AppLinkType{
 	"GIT":      5,
 	"DEVICES":  6,
 	"SETTINGS": 7,
+	"TEAMS":    8,
 }
 
 var AppLinkTypeRevMap = map[AppLinkType]string{
@@ -191,6 +193,7 @@ var AppLinkTypeRevMap = map[AppLinkType]string{
 	5: "GIT",
 	6: "DEVICES",
 	7: "SETTINGS",
+	8: "TEAMS",
 }
 
 func (e AppLinkType) String() string {
@@ -509,11 +512,12 @@ func (o HomeUserSummary) DeepCopy() HomeUserSummary {
 }
 
 type HomeScreen struct {
-	LastViewed        Time              `codec:"lastViewed" json:"lastViewed"`
-	Version           int               `codec:"version" json:"version"`
-	Visits            int               `codec:"visits" json:"visits"`
-	Items             []HomeScreenItem  `codec:"items" json:"items"`
-	FollowSuggestions []HomeUserSummary `codec:"followSuggestions" json:"followSuggestions"`
+	LastViewed           Time              `codec:"lastViewed" json:"lastViewed"`
+	Version              int               `codec:"version" json:"version"`
+	Visits               int               `codec:"visits" json:"visits"`
+	Items                []HomeScreenItem  `codec:"items" json:"items"`
+	FollowSuggestions    []HomeUserSummary `codec:"followSuggestions" json:"followSuggestions"`
+	AnnouncementsVersion int               `codec:"announcementsVersion" json:"announcementsVersion"`
 }
 
 func (o HomeScreen) DeepCopy() HomeScreen {
@@ -543,6 +547,7 @@ func (o HomeScreen) DeepCopy() HomeScreen {
 			}
 			return ret
 		})(o.FollowSuggestions),
+		AnnouncementsVersion: o.AnnouncementsVersion,
 	}
 }
 

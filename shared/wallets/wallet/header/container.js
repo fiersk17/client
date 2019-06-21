@@ -1,11 +1,14 @@
 // @flow
 import {connect, isMobile} from '../../../util/container'
+import {memoize} from '../../../util/memoize'
 import * as Constants from '../../../constants/wallets'
 import * as Types from '../../../constants/types/wallets'
 import * as WalletsGen from '../../../actions/wallets-gen'
 import Header from '.'
 
-type OwnProps = {navigateAppend: (...Array<any>) => any, navigateUp: () => any}
+const otherUnreadPayments = memoize((map, accID) => !!map.delete(accID).some(Boolean))
+
+type OwnProps = {navigateAppend: (...Array<any>) => any, onBack: () => void}
 
 const mapStateToProps = state => {
   const accountID = Constants.getSelectedAccount(state)
@@ -14,6 +17,8 @@ const mapStateToProps = state => {
     accountID: selectedAccount.accountID,
     isDefaultWallet: selectedAccount.isDefault,
     keybaseUser: state.config.username,
+    sendDisabled: !isMobile && !!state.wallets.mobileOnlyMap.getIn([selectedAccount.accountID]),
+    unreadPayments: otherUnreadPayments(state.wallets.unreadPaymentsMap, selectedAccount.accountID),
     walletName: selectedAccount.name,
   }
 }
@@ -55,12 +60,11 @@ const mapDispatchToProps = (dispatch, ownProps) => ({
         },
       ])
     ),
-  onBack: isMobile ? () => dispatch(ownProps.navigateUp()) : null,
 })
 
 const mergeProps = (stateProps, dispatchProps, ownProps) => ({
   ...stateProps,
-  onBack: dispatchProps.onBack,
+  onBack: isMobile ? ownProps.onBack : null,
   onReceive: () => dispatchProps._onReceive(stateProps.accountID),
   onRequest: () => dispatchProps._onGoToSendReceive(stateProps.accountID, 'keybaseUser', true),
   onSendToAnotherAccount: () => dispatchProps._onGoToSendReceive(stateProps.accountID, 'otherAccount', false),
@@ -68,7 +72,9 @@ const mergeProps = (stateProps, dispatchProps, ownProps) => ({
   onSendToStellarAddress: () =>
     dispatchProps._onGoToSendReceive(stateProps.accountID, 'stellarPublicKey', false),
   onSettings: () => dispatchProps._onSettings(stateProps.accountID),
-  onShowSecretKey: () => dispatchProps._onShowSecretKey(stateProps.accountID, stateProps.walletName),
+  onShowSecretKey: stateProps.sendDisabled
+    ? null
+    : () => dispatchProps._onShowSecretKey(stateProps.accountID, stateProps.walletName),
 })
 
 export default connect<OwnProps, _, _, _, _>(

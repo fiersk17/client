@@ -4,36 +4,16 @@ import React, {PureComponent} from 'react'
 import SimpleMarkdown from 'simple-markdown'
 import Text from '../text'
 import logger from '../../logger'
-import type {MarkdownMeta, Props as MarkdownProps} from '../markdown'
+import type {Props as MarkdownProps} from '.'
 import {emojiIndexByChar, emojiRegex, tldExp, commonTlds} from './emoji-gen'
 import {isMobile} from '../../constants/platform'
-import {specialMentions} from '../../constants/chat2'
 import {reactOutput, previewOutput, bigEmojiOutput, markdownStyles} from './react'
-import {type ConversationIDKey} from '../../constants/types/chat2'
-
-function createMentionRegex(meta: ?MarkdownMeta): ?RegExp {
-  if (!meta || !meta.mentionsAt || !meta.mentionsChannel) {
-    return null
-  }
-
-  if (meta.mentionsChannel === 'none' && meta.mentionsAt.isEmpty()) {
-    return null
-  }
-
-  return new RegExp(`^@(${[...specialMentions, ...meta.mentionsAt.toArray()].join('|')})\\b`)
-}
-
-function createChannelRegex(meta: ?MarkdownMeta): ?RegExp {
-  if (!meta || !meta.mentionsChannelName || meta.mentionsChannelName.isEmpty()) {
-    return null
-  }
-
-  return new RegExp(`^#(${meta.mentionsChannelName.keySeq().join('|')})\\b`)
-}
 
 function createKbfsPathRegex(): ?RegExp {
   const username = `(?:[a-zA-Z0-9]+_?)+` // from go/kbun/username.go
-  const usernames = `${username}(?:,${username})*`
+  const socialAssertion = `[-_a-zA-Z0-9.]+@[a-zA-Z.]+`
+  const user = `(?:(?:${username})|(?:${socialAssertion}))`
+  const usernames = `${user}(?:,${user})*`
   const teamName = `${username}(?:\\.${username})*`
   const tlfType = `/(?:private|public|team)`
   const tlf = `/(?:(?:private|public)/${usernames}(#${usernames})?|team/${teamName})`
@@ -43,22 +23,22 @@ function createKbfsPathRegex(): ?RegExp {
 
 const kbfsPathMatcher = SimpleMarkdown.inlineRegex(createKbfsPathRegex())
 
+const serviceBeginDecorationTag = '\\$\\>kb\\$'
+const serviceEndDecorationTag = '\\$\\<kb\\$'
 function createServiceDecorationRegex(): ?RegExp {
-  return new RegExp(`^\\$\\>kb\\$(((?!\\$\\<kb\\$).)*)\\$\\<kb\\$`)
+  return new RegExp(
+    `^${serviceBeginDecorationTag}(((?!${serviceEndDecorationTag}).)*)${serviceEndDecorationTag}`
+  )
 }
 
 const serviceDecorationMatcher = SimpleMarkdown.inlineRegex(createServiceDecorationRegex())
-
-function channelNameToConvID(meta: ?MarkdownMeta, channel: string): ?ConversationIDKey {
-  return meta && meta.mentionsChannelName && meta.mentionsChannelName.get(channel)
-}
 
 const _makeLinkRegex = () => {
   const valid = `[:,!]*[\\w=#%~\\-_~&@+\\u00c0-\\uffff]`
   const paranthesisPaired = `([(]${valid}+[)])`
   const afterDomain = `(?:\\/|${paranthesisPaired}|${valid}|[.?]+[\\w/=])`
   return new RegExp(
-    `^( *)((https?:\\/\\/)?[\\w-]+(\\.[\\w-]+)+(:\\d+)?((?:\\/|\\?[\\w=])${afterDomain}*)?)`,
+    `^( *)(https?:\\/\\/)?([\\w-]+(\\.[\\w-]+)+(:\\d+)?((?:\\/|\\?[\\w=])${afterDomain}*)?)`,
     'i'
   )
 }
@@ -66,7 +46,7 @@ const _makeLinkRegex = () => {
 const _linkRegex = _makeLinkRegex()
 
 // TODO, when named groups are supported on mobile, we can use this instead
-// const linkRegex = /^( *)((https?:\/\/)?[\w-]+(?<tld>\.[\w-]+)+\.?(:\d+)?(\/\S*)?)\b/i
+// const linkRegex = /^( *)(https?:\/\/)?([\w-]+(?<tld>\.[\w-]+)+\.?(:\d+)?(\/\S*)?)\b/i
 // This copies the functionality of this named group
 // $FlowIssue treat this like a RegExp
 const linkRegex: RegExp = {
@@ -79,6 +59,7 @@ const linkRegex: RegExp = {
     return null
   },
 }
+
 // Only allow a small set of characters before a url
 const beforeLinkRegex = /[\s/(]/
 const inlineLinkMatch = SimpleMarkdown.inlineRegex(linkRegex)
@@ -130,6 +111,9 @@ const wordBoundryLookBehindMatch = matchFn => (source, state, lookbehind) => {
 }
 
 // Rules are defined here, the react components for these types are defined in markdown-react.js
+//
+// TODO: Type rules. In particular, use a better type for State than
+// that provided by simple-markdown, which is {[string]: any}.
 const rules = {
   blockQuote: {
     ...SimpleMarkdown.defaultRules.blockQuote,
@@ -162,29 +146,6 @@ const rules = {
         content: parse(content, nextState),
       }
     },
-  },
-  channel: {
-    // Just needs to be a higher order than mentions
-    match: (source, state, lookBehind) => {
-      const channelRegex = createChannelRegex(state.markdownMeta)
-      if (!channelRegex) {
-        return null
-      }
-
-      const matches = SimpleMarkdown.inlineRegex(channelRegex)(source, state, lookBehind)
-      // Also check that the lookBehind is not text
-      if (matches && (!lookBehind || lookBehind.match(/\B$/))) {
-        return matches
-      }
-
-      return null
-    },
-    order: SimpleMarkdown.defaultRules.autolink.order + 0.5,
-    parse: (capture, parse, state) => ({
-      content: capture[1],
-      convID: channelNameToConvID(state.markdownMeta, capture[1]),
-      type: 'channel',
-    }),
   },
   del: {
     ...SimpleMarkdown.defaultRules.del,
@@ -278,7 +239,14 @@ const rules = {
     },
     order: SimpleMarkdown.defaultRules.newline.order + 0.5,
     parse: function(capture, parse, state) {
-      return {content: capture[2], spaceInFront: capture[1]}
+      const ret = {
+        afterProtocol: capture[3],
+        content: undefined,
+        protocol: capture[2] || '',
+        spaceInFront: capture[1],
+      }
+      ret.content = ret.protocol + ret.afterProtocol
+      return ret
     },
   },
   mailto: {
@@ -294,28 +262,6 @@ const rules = {
     parse: function(capture, parse, state) {
       return {content: capture[2], mailto: `mailto:${capture[2]}`, spaceInFront: capture[1]}
     },
-  },
-  mention: {
-    // A decent enough starting template
-    // We'll change most of the stuff here anyways
-    ...SimpleMarkdown.defaultRules.autolink,
-    match: (source, state, lookBehind) => {
-      const mentionRegex = createMentionRegex(state.markdownMeta)
-      if (!mentionRegex) {
-        return null
-      }
-
-      const matches = SimpleMarkdown.inlineRegex(mentionRegex)(source, state, lookBehind)
-      // Also check that the lookBehind is not text
-      if (matches && (!lookBehind || lookBehind.match(/\B$/))) {
-        return matches
-      }
-      return null
-    },
-    parse: capture => ({
-      content: capture[1],
-      type: 'mention',
-    }),
   },
   newline: {
     // handle newlines, keep this to handle \n w/ other matchers
@@ -370,8 +316,8 @@ const rules = {
   serviceDecoration: {
     match: (source, state, lookBehind) => {
       return serviceDecorationMatcher(source, state, lookBehind)
-    }, // high
-    order: SimpleMarkdown.defaultRules.autolink.order + 1,
+    },
+    order: 1,
     parse: capture => ({
       content: capture[1],
       type: 'serviceDecoration',
@@ -415,7 +361,7 @@ class SimpleMarkdownComponent extends PureComponent<MarkdownProps, {hasError: bo
     return {hasError: true}
   }
 
-  componentDidCatch(error: any) {
+  componentDidCatch(error: Error) {
     logger.error('Error rendering markdown')
     logger.debug('Error rendering markdown', error)
   }
@@ -433,18 +379,24 @@ class SimpleMarkdownComponent extends PureComponent<MarkdownProps, {hasError: bo
     let output
     try {
       parseTree = simpleMarkdownParser((this.props.children || '').trim() + '\n', {
-        disableAutoBlockNewlines: true,
         // This flag adds 2 new lines at the end of our input. One is necessary to parse the text as a paragraph, but the other isn't
         // So we add our own new line
+        disableAutoBlockNewlines: true,
         inline: false,
         markdownMeta: this.props.meta,
       })
 
+      const state = {
+        allowFontScaling,
+        markdownMeta: this.props.meta,
+        styleOverride,
+      }
+
       output = this.props.preview
         ? previewOutput(parseTree)
         : isAllEmoji(parseTree)
-        ? bigEmojiOutput(parseTree, {allowFontScaling, markdownMeta: this.props.meta, styleOverride})
-        : reactOutput(parseTree, {allowFontScaling, markdownMeta: this.props.meta, styleOverride})
+        ? bigEmojiOutput(parseTree, state)
+        : reactOutput(parseTree, state)
     } catch (e) {
       logger.error('Error parsing markdown')
       logger.debug('Error parsing markdown', e)

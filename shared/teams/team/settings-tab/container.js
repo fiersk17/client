@@ -6,7 +6,7 @@ import * as TeamsGen from '../../../actions/teams-gen'
 import {connect} from '../../../util/container'
 import {Settings} from '.'
 import {anyWaiting} from '../../../constants/waiting'
-import {navigateAppend} from '../../../actions/route-tree'
+import * as RouteTreeGen from '../../../actions/route-tree-gen'
 
 export type OwnProps = {
   teamname: string,
@@ -28,7 +28,12 @@ const mapStateToProps = (state, {teamname}: OwnProps) => {
     publicityMember,
     publicityTeam,
     teamname,
-    waitingForSavePublicity: anyWaiting(state, `setPublicity:${teamname}`, `getDetails:${teamname}`),
+    waitingForSavePublicity: anyWaiting(
+      state,
+      `team:${teamname}`,
+      `teamRetention:${teamname}`,
+      `teamSettings:${teamname}`
+    ),
     yourOperations: Constants.getCanPerform(state, teamname),
   }
 }
@@ -38,22 +43,32 @@ const mapDispatchToProps = dispatch => ({
     dispatch(TeamsGen.createSetPublicity({settings, teamname})),
   _saveRetentionPolicy: (teamname: Types.Teamname, policy: RetentionPolicy) =>
     dispatch(TeamsGen.createSaveTeamRetentionPolicy({policy, teamname})),
-  _showRetentionWarning: (days: number, onConfirm: () => void, entityType: 'big team' | 'small team') =>
-    dispatch(navigateAppend([{props: {days, entityType, onConfirm}, selected: 'retentionWarning'}])),
+  _showRetentionWarning: (
+    policy: RetentionPolicy,
+    onConfirm: () => void,
+    entityType: 'big team' | 'small team'
+  ) =>
+    dispatch(
+      RouteTreeGen.createNavigateAppend({
+        path: [{props: {entityType, onConfirm, policy}, selected: 'retentionWarning'}],
+      })
+    ),
   setOpenTeamRole: (newOpenTeamRole: Types.TeamRoleType, setNewOpenTeamRole: Types.TeamRoleType => void) => {
     dispatch(
-      navigateAppend([
-        {
-          props: {
-            allowAdmin: false,
-            allowOwner: false,
-            onComplete: setNewOpenTeamRole,
-            pluralizeRoleName: true,
-            selectedRole: newOpenTeamRole,
+      RouteTreeGen.createNavigateAppend({
+        path: [
+          {
+            props: {
+              allowAdmin: false,
+              allowOwner: false,
+              onComplete: setNewOpenTeamRole,
+              pluralizeRoleName: true,
+              selectedRole: newOpenTeamRole,
+            },
+            selected: 'controlledRolePicker',
           },
-          selected: 'controlledRolePicker',
-        },
-      ])
+        ],
+      })
     )
   },
 })
@@ -69,7 +84,7 @@ const mergeProps = (stateProps, dispatchProps) => {
       if (stateProps.yourOperations.setRetentionPolicy) {
         showRetentionWarning &&
           dispatchProps._showRetentionWarning(
-            policy.days,
+            policy,
             () => dispatchProps._saveRetentionPolicy(stateProps.teamname, policy),
             stateProps.isBigTeam ? 'big team' : 'small team'
           )

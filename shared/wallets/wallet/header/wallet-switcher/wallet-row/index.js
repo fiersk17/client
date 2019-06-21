@@ -14,22 +14,25 @@ type Props = {|
 
 const styles = Styles.styleSheetCreate({
   amount: {
-    color: Styles.globalColors.black_40,
+    color: Styles.globalColors.black_50,
   },
   avatar: {marginRight: Styles.globalMargins.xtiny},
-  badge: {
-    marginLeft: 6,
-  },
   containerBox: {
+    alignItems: 'center',
     backgroundColor: Styles.globalColors.white,
+    flexDirection: 'row',
     height: 48,
+    justifyContent: 'space-between',
     width: '100%',
   },
+  firstRowContainer: {
+    alignItems: 'center',
+  },
   icon: {
-    alignSelf: 'center',
     height: 32,
     marginLeft: Styles.globalMargins.tiny,
     marginRight: Styles.globalMargins.tiny,
+    minWidth: 32,
   },
   rowContainer: {
     alignItems: 'center',
@@ -41,27 +44,24 @@ const styles = Styles.styleSheetCreate({
     ...Styles.globalStyles.fontSemibold,
     color: Styles.globalColors.black_75,
   },
-  unread: {
-    backgroundColor: Styles.globalColors.orange,
-    borderRadius: 6,
-    flexShrink: 0,
-    height: Styles.globalMargins.tiny,
-    width: Styles.globalMargins.tiny,
-  },
-  unreadContainer: {
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    flex: 1,
-    justifyContent: 'flex-end',
-    paddingRight: Styles.globalMargins.tiny,
-  },
 })
 
 const WalletRow = (props: Props) => {
+  const emptyIcon = <Kb.Box2 direction="horizontal" style={styles.icon} />
+  const rightIcon = (
+    <Kb.Box2 direction="horizontal" style={styles.icon}>
+      {props.isSelected ? (
+        <Kb.Icon type="iconfont-check" color={Styles.globalColors.blue} />
+      ) : props.unreadPayments > 0 ? (
+        <Kb.Badge badgeNumber={props.unreadPayments} />
+      ) : null}
+    </Kb.Box2>
+  )
   return (
     <Kb.ClickableBox onClick={props.onSelect} style={styles.containerBox}>
+      {/* Just needed for proper centering */ emptyIcon}
       <Kb.Box2 direction="vertical" style={styles.rowContainer}>
-        <Kb.Box2 direction="horizontal" fullWidth={true}>
+        <Kb.Box2 direction="horizontal" style={styles.firstRowContainer}>
           {!!props.keybaseUser && (
             <Kb.Avatar
               size={16}
@@ -69,7 +69,7 @@ const WalletRow = (props: Props) => {
               username={props.keybaseUser}
             />
           )}
-          <Kb.Text type="BodySemibold" style={props.isSelected ? styles.titleSelected : styles.title}>
+          <Kb.Text type="BodyBig" style={props.isSelected ? styles.titleSelected : styles.title}>
             {props.name}
           </Kb.Text>
         </Kb.Box2>
@@ -77,15 +77,10 @@ const WalletRow = (props: Props) => {
           {props.contents}
         </Kb.Text>
       </Kb.Box2>
-      {!!props.unreadPayments && <UnreadIcon unreadPayments={props.unreadPayments} />}
+      {rightIcon}
     </Kb.ClickableBox>
   )
 }
 
-const UnreadIcon = (props: {unreadPayments: number}) => (
-  <Kb.Box2 direction="horizontal" style={styles.unreadContainer}>
-    <Kb.Box2 direction="vertical" style={styles.unread} />
-  </Kb.Box2>
-)
 export type {Props}
 export {WalletRow}

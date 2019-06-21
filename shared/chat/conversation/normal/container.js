@@ -4,7 +4,7 @@ import * as Constants from '../../../constants/chat2'
 import * as WaitingConstants from '../../../constants/waiting'
 import * as Chat2Gen from '../../../actions/chat2-gen'
 import * as TrackerGen from '../../../actions/tracker-gen'
-import * as RouteTree from '../../../actions/route-tree'
+import * as RouteTreeGen from '../../../actions/route-tree-gen'
 import Normal from '.'
 import {compose, connect, withStateHandlers} from '../../../util/container'
 import {chatTab} from '../../../constants/tabs'
@@ -36,18 +36,20 @@ const mapDispatchToProps = dispatch => ({
       path: p,
     }))
     dispatch(
-      RouteTree.navigateAppend([
-        {props: {conversationIDKey, pathAndOutboxIDs}, selected: 'attachmentGetTitles'},
-      ])
+      RouteTreeGen.createNavigateAppend({
+        path: [{props: {conversationIDKey, pathAndOutboxIDs}, selected: 'attachmentGetTitles'}],
+      })
     )
   },
   _onPaste: (conversationIDKey: Types.ConversationIDKey, data: Buffer) =>
     dispatch(Chat2Gen.createAttachmentPasted({conversationIDKey, data})),
   _onToggleInfoPanel: (isOpen: boolean, conversationIDKey: Types.ConversationIDKey) => {
     if (isOpen) {
-      dispatch(RouteTree.navigateTo(['conversation'], [chatTab]))
+      dispatch(RouteTreeGen.createNavigateTo({parentPath: [chatTab], path: ['conversation']}))
     } else {
-      dispatch(RouteTree.navigateAppend([{props: {conversationIDKey}, selected: 'infoPanel'}]))
+      dispatch(
+        RouteTreeGen.createNavigateAppend({path: [{props: {conversationIDKey}, selected: 'infoPanel'}]})
+      )
     }
   },
   onCancelSearch: () =>
@@ -80,10 +82,13 @@ export default compose(
     mergeProps
   ),
   withStateHandlers(
-    {focusInputCounter: 0, listScrollDownCounter: 0},
+    {focusInputCounter: 0, scrollListDownCounter: 0, scrollListUpCounter: 0},
     {
       onFocusInput: ({focusInputCounter}) => () => ({focusInputCounter: focusInputCounter + 1}),
-      onScrollDown: ({listScrollDownCounter}) => () => ({listScrollDownCounter: listScrollDownCounter + 1}),
+      onRequestScrollDown: ({scrollListDownCounter}) => () => ({
+        scrollListDownCounter: scrollListDownCounter + 1,
+      }),
+      onRequestScrollUp: ({scrollListUpCounter}) => () => ({scrollListUpCounter: scrollListUpCounter + 1}),
     }
   )
 )(Normal)

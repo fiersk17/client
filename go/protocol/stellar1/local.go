@@ -4,28 +4,35 @@
 package stellar1
 
 import (
-	"errors"
 	"github.com/keybase/go-framed-msgpack-rpc/rpc"
 	context "golang.org/x/net/context"
 )
 
 type WalletAccountLocal struct {
-	AccountID          AccountID     `codec:"accountID" json:"accountID"`
-	IsDefault          bool          `codec:"isDefault" json:"isDefault"`
-	Name               string        `codec:"name" json:"name"`
-	BalanceDescription string        `codec:"balanceDescription" json:"balanceDescription"`
-	Seqno              string        `codec:"seqno" json:"seqno"`
-	CurrencyLocal      CurrencyLocal `codec:"currencyLocal" json:"currencyLocal"`
+	AccountID           AccountID     `codec:"accountID" json:"accountID"`
+	IsDefault           bool          `codec:"isDefault" json:"isDefault"`
+	Name                string        `codec:"name" json:"name"`
+	BalanceDescription  string        `codec:"balanceDescription" json:"balanceDescription"`
+	Seqno               string        `codec:"seqno" json:"seqno"`
+	CurrencyLocal       CurrencyLocal `codec:"currencyLocal" json:"currencyLocal"`
+	AccountMode         AccountMode   `codec:"accountMode" json:"accountMode"`
+	AccountModeEditable bool          `codec:"accountModeEditable" json:"accountModeEditable"`
+	IsFunded            bool          `codec:"isFunded" json:"isFunded"`
+	CanSubmitTx         bool          `codec:"canSubmitTx" json:"canSubmitTx"`
 }
 
 func (o WalletAccountLocal) DeepCopy() WalletAccountLocal {
 	return WalletAccountLocal{
-		AccountID:          o.AccountID.DeepCopy(),
-		IsDefault:          o.IsDefault,
-		Name:               o.Name,
-		BalanceDescription: o.BalanceDescription,
-		Seqno:              o.Seqno,
-		CurrencyLocal:      o.CurrencyLocal.DeepCopy(),
+		AccountID:           o.AccountID.DeepCopy(),
+		IsDefault:           o.IsDefault,
+		Name:                o.Name,
+		BalanceDescription:  o.BalanceDescription,
+		Seqno:               o.Seqno,
+		CurrencyLocal:       o.CurrencyLocal.DeepCopy(),
+		AccountMode:         o.AccountMode.DeepCopy(),
+		AccountModeEditable: o.AccountModeEditable,
+		IsFunded:            o.IsFunded,
+		CanSubmitTx:         o.CanSubmitTx,
 	}
 }
 
@@ -184,7 +191,7 @@ type PaymentLocal struct {
 	AmountDescription   string          `codec:"amountDescription" json:"amountDescription"`
 	Delta               BalanceDelta    `codec:"delta" json:"delta"`
 	Worth               string          `codec:"worth" json:"worth"`
-	WorthCurrency       string          `codec:"worthCurrency" json:"worthCurrency"`
+	WorthAtSendTime     string          `codec:"worthAtSendTime" json:"worthAtSendTime"`
 	IssuerDescription   string          `codec:"issuerDescription" json:"issuerDescription"`
 	IssuerAccountID     *AccountID      `codec:"issuerAccountID,omitempty" json:"issuerAccountID,omitempty"`
 	FromType            ParticipantType `codec:"fromType" json:"fromType"`
@@ -200,6 +207,8 @@ type PaymentLocal struct {
 	Note                string          `codec:"note" json:"note"`
 	NoteErr             string          `codec:"noteErr" json:"noteErr"`
 	Unread              bool            `codec:"unread" json:"unread"`
+	BatchID             string          `codec:"batchID" json:"batchID"`
+	FromAirdrop         bool            `codec:"fromAirdrop" json:"fromAirdrop"`
 }
 
 func (o PaymentLocal) DeepCopy() PaymentLocal {
@@ -213,7 +222,7 @@ func (o PaymentLocal) DeepCopy() PaymentLocal {
 		AmountDescription: o.AmountDescription,
 		Delta:             o.Delta.DeepCopy(),
 		Worth:             o.Worth,
-		WorthCurrency:     o.WorthCurrency,
+		WorthAtSendTime:   o.WorthAtSendTime,
 		IssuerDescription: o.IssuerDescription,
 		IssuerAccountID: (func(x *AccountID) *AccountID {
 			if x == nil {
@@ -241,6 +250,8 @@ func (o PaymentLocal) DeepCopy() PaymentLocal {
 		Note:                o.Note,
 		NoteErr:             o.NoteErr,
 		Unread:              o.Unread,
+		BatchID:             o.BatchID,
+		FromAirdrop:         o.FromAirdrop,
 	}
 }
 
@@ -315,7 +326,7 @@ type PaymentDetailsLocal struct {
 	AmountDescription   string          `codec:"amountDescription" json:"amountDescription"`
 	Delta               BalanceDelta    `codec:"delta" json:"delta"`
 	Worth               string          `codec:"worth" json:"worth"`
-	WorthCurrency       string          `codec:"worthCurrency" json:"worthCurrency"`
+	WorthAtSendTime     string          `codec:"worthAtSendTime" json:"worthAtSendTime"`
 	IssuerDescription   string          `codec:"issuerDescription" json:"issuerDescription"`
 	IssuerAccountID     *AccountID      `codec:"issuerAccountID,omitempty" json:"issuerAccountID,omitempty"`
 	FromType            ParticipantType `codec:"fromType" json:"fromType"`
@@ -333,6 +344,8 @@ type PaymentDetailsLocal struct {
 	PublicNote          string          `codec:"publicNote" json:"publicNote"`
 	PublicNoteType      string          `codec:"publicNoteType" json:"publicNoteType"`
 	ExternalTxURL       string          `codec:"externalTxURL" json:"externalTxURL"`
+	BatchID             string          `codec:"batchID" json:"batchID"`
+	FromAirdrop         bool            `codec:"fromAirdrop" json:"fromAirdrop"`
 }
 
 func (o PaymentDetailsLocal) DeepCopy() PaymentDetailsLocal {
@@ -347,7 +360,7 @@ func (o PaymentDetailsLocal) DeepCopy() PaymentDetailsLocal {
 		AmountDescription: o.AmountDescription,
 		Delta:             o.Delta.DeepCopy(),
 		Worth:             o.Worth,
-		WorthCurrency:     o.WorthCurrency,
+		WorthAtSendTime:   o.WorthAtSendTime,
 		IssuerDescription: o.IssuerDescription,
 		IssuerAccountID: (func(x *AccountID) *AccountID {
 			if x == nil {
@@ -377,6 +390,8 @@ func (o PaymentDetailsLocal) DeepCopy() PaymentDetailsLocal {
 		PublicNote:          o.PublicNote,
 		PublicNoteType:      o.PublicNoteType,
 		ExternalTxURL:       o.ExternalTxURL,
+		BatchID:             o.BatchID,
+		FromAirdrop:         o.FromAirdrop,
 	}
 }
 
@@ -434,6 +449,7 @@ type BuildPaymentResLocal struct {
 	DisplayAmountXLM    string            `codec:"displayAmountXLM" json:"displayAmountXLM"`
 	DisplayAmountFiat   string            `codec:"displayAmountFiat" json:"displayAmountFiat"`
 	SendingIntentionXLM bool              `codec:"sendingIntentionXLM" json:"sendingIntentionXLM"`
+	AmountAvailable     string            `codec:"amountAvailable" json:"amountAvailable"`
 	Banners             []SendBannerLocal `codec:"banners" json:"banners"`
 }
 
@@ -452,6 +468,7 @@ func (o BuildPaymentResLocal) DeepCopy() BuildPaymentResLocal {
 		DisplayAmountXLM:    o.DisplayAmountXLM,
 		DisplayAmountFiat:   o.DisplayAmountFiat,
 		SendingIntentionXLM: o.SendingIntentionXLM,
+		AmountAvailable:     o.AmountAvailable,
 		Banners: (func(x []SendBannerLocal) []SendBannerLocal {
 			if x == nil {
 				return nil
@@ -531,16 +548,17 @@ func (o BuildRequestResLocal) DeepCopy() BuildRequestResLocal {
 }
 
 type RequestDetailsLocal struct {
-	Id                KeybaseRequestID     `codec:"id" json:"id"`
-	FromAssertion     string               `codec:"fromAssertion" json:"fromAssertion"`
-	FromCurrentUser   bool                 `codec:"fromCurrentUser" json:"fromCurrentUser"`
-	ToUserType        ParticipantType      `codec:"toUserType" json:"toUserType"`
-	ToAssertion       string               `codec:"toAssertion" json:"toAssertion"`
-	Amount            string               `codec:"amount" json:"amount"`
-	Asset             *Asset               `codec:"asset,omitempty" json:"asset,omitempty"`
-	Currency          *OutsideCurrencyCode `codec:"currency,omitempty" json:"currency,omitempty"`
-	AmountDescription string               `codec:"amountDescription" json:"amountDescription"`
-	Status            RequestStatus        `codec:"status" json:"status"`
+	Id                 KeybaseRequestID     `codec:"id" json:"id"`
+	FromAssertion      string               `codec:"fromAssertion" json:"fromAssertion"`
+	FromCurrentUser    bool                 `codec:"fromCurrentUser" json:"fromCurrentUser"`
+	ToUserType         ParticipantType      `codec:"toUserType" json:"toUserType"`
+	ToAssertion        string               `codec:"toAssertion" json:"toAssertion"`
+	Amount             string               `codec:"amount" json:"amount"`
+	Asset              *Asset               `codec:"asset,omitempty" json:"asset,omitempty"`
+	Currency           *OutsideCurrencyCode `codec:"currency,omitempty" json:"currency,omitempty"`
+	AmountDescription  string               `codec:"amountDescription" json:"amountDescription"`
+	WorthAtRequestTime string               `codec:"worthAtRequestTime" json:"worthAtRequestTime"`
+	Status             RequestStatus        `codec:"status" json:"status"`
 }
 
 func (o RequestDetailsLocal) DeepCopy() RequestDetailsLocal {
@@ -565,101 +583,40 @@ func (o RequestDetailsLocal) DeepCopy() RequestDetailsLocal {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.Currency),
-		AmountDescription: o.AmountDescription,
-		Status:            o.Status.DeepCopy(),
+		AmountDescription:  o.AmountDescription,
+		WorthAtRequestTime: o.WorthAtRequestTime,
+		Status:             o.Status.DeepCopy(),
 	}
 }
 
-type InflationDestinationType int
+type InflationDestinationTag string
 
-const (
-	InflationDestinationType_SELF      InflationDestinationType = 1
-	InflationDestinationType_ACCOUNTID InflationDestinationType = 2
-	InflationDestinationType_LUMENAUT  InflationDestinationType = 3
-)
-
-func (o InflationDestinationType) DeepCopy() InflationDestinationType { return o }
-
-var InflationDestinationTypeMap = map[string]InflationDestinationType{
-	"SELF":      1,
-	"ACCOUNTID": 2,
-	"LUMENAUT":  3,
+func (o InflationDestinationTag) DeepCopy() InflationDestinationTag {
+	return o
 }
 
-var InflationDestinationTypeRevMap = map[InflationDestinationType]string{
-	1: "SELF",
-	2: "ACCOUNTID",
-	3: "LUMENAUT",
+type PredefinedInflationDestination struct {
+	Tag         InflationDestinationTag `codec:"tag" json:"tag"`
+	Name        string                  `codec:"name" json:"name"`
+	Recommended bool                    `codec:"recommended" json:"recommended"`
+	AccountID   AccountID               `codec:"accountID" json:"accountID"`
+	Url         string                  `codec:"url" json:"url"`
 }
 
-func (e InflationDestinationType) String() string {
-	if v, ok := InflationDestinationTypeRevMap[e]; ok {
-		return v
-	}
-	return ""
-}
-
-type InflationDestination struct {
-	Typ__       InflationDestinationType `codec:"typ" json:"typ"`
-	Accountid__ *AccountID               `codec:"accountid,omitempty" json:"accountid,omitempty"`
-}
-
-func (o *InflationDestination) Typ() (ret InflationDestinationType, err error) {
-	switch o.Typ__ {
-	case InflationDestinationType_ACCOUNTID:
-		if o.Accountid__ == nil {
-			err = errors.New("unexpected nil value for Accountid__")
-			return ret, err
-		}
-	}
-	return o.Typ__, nil
-}
-
-func (o InflationDestination) Accountid() (res AccountID) {
-	if o.Typ__ != InflationDestinationType_ACCOUNTID {
-		panic("wrong case accessed")
-	}
-	if o.Accountid__ == nil {
-		return
-	}
-	return *o.Accountid__
-}
-
-func NewInflationDestinationWithSelf() InflationDestination {
-	return InflationDestination{
-		Typ__: InflationDestinationType_SELF,
-	}
-}
-
-func NewInflationDestinationWithAccountid(v AccountID) InflationDestination {
-	return InflationDestination{
-		Typ__:       InflationDestinationType_ACCOUNTID,
-		Accountid__: &v,
-	}
-}
-
-func NewInflationDestinationWithLumenaut() InflationDestination {
-	return InflationDestination{
-		Typ__: InflationDestinationType_LUMENAUT,
-	}
-}
-
-func (o InflationDestination) DeepCopy() InflationDestination {
-	return InflationDestination{
-		Typ__: o.Typ__.DeepCopy(),
-		Accountid__: (func(x *AccountID) *AccountID {
-			if x == nil {
-				return nil
-			}
-			tmp := (*x).DeepCopy()
-			return &tmp
-		})(o.Accountid__),
+func (o PredefinedInflationDestination) DeepCopy() PredefinedInflationDestination {
+	return PredefinedInflationDestination{
+		Tag:         o.Tag.DeepCopy(),
+		Name:        o.Name,
+		Recommended: o.Recommended,
+		AccountID:   o.AccountID.DeepCopy(),
+		Url:         o.Url,
 	}
 }
 
 type InflationDestinationResultLocal struct {
-	Destination *AccountID `codec:"destination,omitempty" json:"destination,omitempty"`
-	Comment     string     `codec:"comment" json:"comment"`
+	Destination      *AccountID                      `codec:"destination,omitempty" json:"destination,omitempty"`
+	KnownDestination *PredefinedInflationDestination `codec:"knownDestination,omitempty" json:"knownDestination,omitempty"`
+	Self             bool                            `codec:"self" json:"self"`
 }
 
 func (o InflationDestinationResultLocal) DeepCopy() InflationDestinationResultLocal {
@@ -671,7 +628,56 @@ func (o InflationDestinationResultLocal) DeepCopy() InflationDestinationResultLo
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.Destination),
-		Comment: o.Comment,
+		KnownDestination: (func(x *PredefinedInflationDestination) *PredefinedInflationDestination {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.KnownDestination),
+		Self: o.Self,
+	}
+}
+
+type AirdropState string
+
+func (o AirdropState) DeepCopy() AirdropState {
+	return o
+}
+
+type AirdropQualification struct {
+	Title    string `codec:"title" json:"title"`
+	Subtitle string `codec:"subtitle" json:"subtitle"`
+	Valid    bool   `codec:"valid" json:"valid"`
+}
+
+func (o AirdropQualification) DeepCopy() AirdropQualification {
+	return AirdropQualification{
+		Title:    o.Title,
+		Subtitle: o.Subtitle,
+		Valid:    o.Valid,
+	}
+}
+
+type AirdropStatus struct {
+	State AirdropState           `codec:"state" json:"state"`
+	Rows  []AirdropQualification `codec:"rows" json:"rows"`
+}
+
+func (o AirdropStatus) DeepCopy() AirdropStatus {
+	return AirdropStatus{
+		State: o.State.DeepCopy(),
+		Rows: (func(x []AirdropQualification) []AirdropQualification {
+			if x == nil {
+				return nil
+			}
+			ret := make([]AirdropQualification, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Rows),
 	}
 }
 
@@ -793,6 +799,7 @@ type OwnAccountCLILocal struct {
 	Name         string               `codec:"name" json:"name"`
 	Balance      []Balance            `codec:"balance" json:"balance"`
 	ExchangeRate *OutsideExchangeRate `codec:"exchangeRate,omitempty" json:"exchangeRate,omitempty"`
+	AccountMode  AccountMode          `codec:"accountMode" json:"accountMode"`
 }
 
 func (o OwnAccountCLILocal) DeepCopy() OwnAccountCLILocal {
@@ -818,6 +825,7 @@ func (o OwnAccountCLILocal) DeepCopy() OwnAccountCLILocal {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.ExchangeRate),
+		AccountMode: o.AccountMode.DeepCopy(),
 	}
 }
 
@@ -836,6 +844,122 @@ func (o LookupResultCLILocal) DeepCopy() LookupResultCLILocal {
 			tmp := (*x)
 			return &tmp
 		})(o.Username),
+	}
+}
+
+type BatchPaymentError struct {
+	Message string `codec:"message" json:"message"`
+	Code    int    `codec:"code" json:"code"`
+}
+
+func (o BatchPaymentError) DeepCopy() BatchPaymentError {
+	return BatchPaymentError{
+		Message: o.Message,
+		Code:    o.Code,
+	}
+}
+
+type BatchPaymentResult struct {
+	Username          string             `codec:"username" json:"username"`
+	StartTime         TimeMs             `codec:"startTime" json:"startTime"`
+	SubmittedTime     TimeMs             `codec:"submittedTime" json:"submittedTime"`
+	EndTime           TimeMs             `codec:"endTime" json:"endTime"`
+	TxID              TransactionID      `codec:"txID" json:"txID"`
+	Status            PaymentStatus      `codec:"status" json:"status"`
+	StatusDescription string             `codec:"statusDescription" json:"statusDescription"`
+	Error             *BatchPaymentError `codec:"error,omitempty" json:"error,omitempty"`
+}
+
+func (o BatchPaymentResult) DeepCopy() BatchPaymentResult {
+	return BatchPaymentResult{
+		Username:          o.Username,
+		StartTime:         o.StartTime.DeepCopy(),
+		SubmittedTime:     o.SubmittedTime.DeepCopy(),
+		EndTime:           o.EndTime.DeepCopy(),
+		TxID:              o.TxID.DeepCopy(),
+		Status:            o.Status.DeepCopy(),
+		StatusDescription: o.StatusDescription,
+		Error: (func(x *BatchPaymentError) *BatchPaymentError {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.Error),
+	}
+}
+
+type BatchResultLocal struct {
+	StartTime              TimeMs               `codec:"startTime" json:"startTime"`
+	PreparedTime           TimeMs               `codec:"preparedTime" json:"preparedTime"`
+	AllSubmittedTime       TimeMs               `codec:"allSubmittedTime" json:"allSubmittedTime"`
+	AllCompleteTime        TimeMs               `codec:"allCompleteTime" json:"allCompleteTime"`
+	EndTime                TimeMs               `codec:"endTime" json:"endTime"`
+	Payments               []BatchPaymentResult `codec:"payments" json:"payments"`
+	OverallDurationMs      TimeMs               `codec:"overallDurationMs" json:"overallDurationMs"`
+	PrepareDurationMs      TimeMs               `codec:"prepareDurationMs" json:"prepareDurationMs"`
+	SubmitDurationMs       TimeMs               `codec:"submitDurationMs" json:"submitDurationMs"`
+	WaitPaymentsDurationMs TimeMs               `codec:"waitPaymentsDurationMs" json:"waitPaymentsDurationMs"`
+	WaitChatDurationMs     TimeMs               `codec:"waitChatDurationMs" json:"waitChatDurationMs"`
+	CountSuccess           int                  `codec:"countSuccess" json:"countSuccess"`
+	CountDirect            int                  `codec:"countDirect" json:"countDirect"`
+	CountRelay             int                  `codec:"countRelay" json:"countRelay"`
+	CountError             int                  `codec:"countError" json:"countError"`
+	CountPending           int                  `codec:"countPending" json:"countPending"`
+	AvgDurationMs          TimeMs               `codec:"avgDurationMs" json:"avgDurationMs"`
+	AvgSuccessDurationMs   TimeMs               `codec:"avgSuccessDurationMs" json:"avgSuccessDurationMs"`
+	AvgDirectDurationMs    TimeMs               `codec:"avgDirectDurationMs" json:"avgDirectDurationMs"`
+	AvgRelayDurationMs     TimeMs               `codec:"avgRelayDurationMs" json:"avgRelayDurationMs"`
+	AvgErrorDurationMs     TimeMs               `codec:"avgErrorDurationMs" json:"avgErrorDurationMs"`
+}
+
+func (o BatchResultLocal) DeepCopy() BatchResultLocal {
+	return BatchResultLocal{
+		StartTime:        o.StartTime.DeepCopy(),
+		PreparedTime:     o.PreparedTime.DeepCopy(),
+		AllSubmittedTime: o.AllSubmittedTime.DeepCopy(),
+		AllCompleteTime:  o.AllCompleteTime.DeepCopy(),
+		EndTime:          o.EndTime.DeepCopy(),
+		Payments: (func(x []BatchPaymentResult) []BatchPaymentResult {
+			if x == nil {
+				return nil
+			}
+			ret := make([]BatchPaymentResult, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Payments),
+		OverallDurationMs:      o.OverallDurationMs.DeepCopy(),
+		PrepareDurationMs:      o.PrepareDurationMs.DeepCopy(),
+		SubmitDurationMs:       o.SubmitDurationMs.DeepCopy(),
+		WaitPaymentsDurationMs: o.WaitPaymentsDurationMs.DeepCopy(),
+		WaitChatDurationMs:     o.WaitChatDurationMs.DeepCopy(),
+		CountSuccess:           o.CountSuccess,
+		CountDirect:            o.CountDirect,
+		CountRelay:             o.CountRelay,
+		CountError:             o.CountError,
+		CountPending:           o.CountPending,
+		AvgDurationMs:          o.AvgDurationMs.DeepCopy(),
+		AvgSuccessDurationMs:   o.AvgSuccessDurationMs.DeepCopy(),
+		AvgDirectDurationMs:    o.AvgDirectDurationMs.DeepCopy(),
+		AvgRelayDurationMs:     o.AvgRelayDurationMs.DeepCopy(),
+		AvgErrorDurationMs:     o.AvgErrorDurationMs.DeepCopy(),
+	}
+}
+
+type BatchPaymentArg struct {
+	Recipient string `codec:"recipient" json:"recipient"`
+	Amount    string `codec:"amount" json:"amount"`
+	Message   string `codec:"message" json:"message"`
+}
+
+func (o BatchPaymentArg) DeepCopy() BatchPaymentArg {
+	return BatchPaymentArg{
+		Recipient: o.Recipient,
+		Amount:    o.Amount,
+		Message:   o.Message,
 	}
 }
 
@@ -983,6 +1107,7 @@ type BuildPaymentLocalArg struct {
 
 type ReviewPaymentLocalArg struct {
 	SessionID int            `codec:"sessionID" json:"sessionID"`
+	ReviewID  int            `codec:"reviewID" json:"reviewID"`
 	Bid       BuildPaymentID `codec:"bid" json:"bid"`
 }
 
@@ -1051,15 +1176,32 @@ type CancelPaymentLocalArg struct {
 	PaymentID PaymentID `codec:"paymentID" json:"paymentID"`
 }
 
+type GetPredefinedInflationDestinationsLocalArg struct {
+	SessionID int `codec:"sessionID" json:"sessionID"`
+}
+
 type SetInflationDestinationLocalArg struct {
-	SessionID   int                  `codec:"sessionID" json:"sessionID"`
-	AccountID   AccountID            `codec:"accountID" json:"accountID"`
-	Destination InflationDestination `codec:"destination" json:"destination"`
+	SessionID   int       `codec:"sessionID" json:"sessionID"`
+	AccountID   AccountID `codec:"accountID" json:"accountID"`
+	Destination AccountID `codec:"destination" json:"destination"`
 }
 
 type GetInflationDestinationLocalArg struct {
 	SessionID int       `codec:"sessionID" json:"sessionID"`
 	AccountID AccountID `codec:"accountID" json:"accountID"`
+}
+
+type AirdropDetailsLocalArg struct {
+	SessionID int `codec:"sessionID" json:"sessionID"`
+}
+
+type AirdropStatusLocalArg struct {
+	SessionID int `codec:"sessionID" json:"sessionID"`
+}
+
+type AirdropRegisterLocalArg struct {
+	SessionID int  `codec:"sessionID" json:"sessionID"`
+	Register  bool `codec:"register" json:"register"`
 }
 
 type BalancesLocalArg struct {
@@ -1143,6 +1285,12 @@ type LookupCLILocalArg struct {
 	Name string `codec:"name" json:"name"`
 }
 
+type BatchLocalArg struct {
+	BatchID     string            `codec:"batchID" json:"batchID"`
+	TimeoutSecs int               `codec:"timeoutSecs" json:"timeoutSecs"`
+	Payments    []BatchPaymentArg `codec:"payments" json:"payments"`
+}
+
 type LocalInterface interface {
 	GetWalletAccountsLocal(context.Context, int) ([]WalletAccountLocal, error)
 	GetWalletAccountLocal(context.Context, GetWalletAccountLocalArg) (WalletAccountLocal, error)
@@ -1180,15 +1328,19 @@ type LocalInterface interface {
 	SetAccountAllDevicesLocal(context.Context, SetAccountAllDevicesLocalArg) error
 	IsAccountMobileOnlyLocal(context.Context, IsAccountMobileOnlyLocalArg) (bool, error)
 	CancelPaymentLocal(context.Context, CancelPaymentLocalArg) (RelayClaimResult, error)
+	GetPredefinedInflationDestinationsLocal(context.Context, int) ([]PredefinedInflationDestination, error)
 	SetInflationDestinationLocal(context.Context, SetInflationDestinationLocalArg) error
 	GetInflationDestinationLocal(context.Context, GetInflationDestinationLocalArg) (InflationDestinationResultLocal, error)
+	AirdropDetailsLocal(context.Context, int) (string, error)
+	AirdropStatusLocal(context.Context, int) (AirdropStatus, error)
+	AirdropRegisterLocal(context.Context, AirdropRegisterLocalArg) error
 	BalancesLocal(context.Context, AccountID) ([]Balance, error)
 	SendCLILocal(context.Context, SendCLILocalArg) (SendResultCLILocal, error)
 	ClaimCLILocal(context.Context, ClaimCLILocalArg) (RelayClaimResult, error)
 	RecentPaymentsCLILocal(context.Context, *AccountID) ([]PaymentOrErrorCLILocal, error)
 	PaymentDetailCLILocal(context.Context, string) (PaymentCLILocal, error)
 	WalletInitLocal(context.Context) error
-	WalletDumpLocal(context.Context) (BundleRestricted, error)
+	WalletDumpLocal(context.Context) (Bundle, error)
 	WalletGetAccountsCLILocal(context.Context) ([]OwnAccountCLILocal, error)
 	OwnAccountLocal(context.Context, AccountID) (bool, error)
 	ImportSecretKeyLocal(context.Context, ImportSecretKeyLocalArg) error
@@ -1199,6 +1351,7 @@ type LocalInterface interface {
 	FormatLocalCurrencyString(context.Context, FormatLocalCurrencyStringArg) (string, error)
 	MakeRequestCLILocal(context.Context, MakeRequestCLILocalArg) (KeybaseRequestID, error)
 	LookupCLILocal(context.Context, string) (LookupResultCLILocal, error)
+	BatchLocal(context.Context, BatchLocalArg) (BatchResultLocal, error)
 }
 
 func LocalProtocol(i LocalInterface) rpc.Protocol {
@@ -1745,6 +1898,21 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 					return
 				},
 			},
+			"getPredefinedInflationDestinationsLocal": {
+				MakeArg: func() interface{} {
+					var ret [1]GetPredefinedInflationDestinationsLocalArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]GetPredefinedInflationDestinationsLocalArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]GetPredefinedInflationDestinationsLocalArg)(nil), args)
+						return
+					}
+					ret, err = i.GetPredefinedInflationDestinationsLocal(ctx, typedArgs[0].SessionID)
+					return
+				},
+			},
 			"setInflationDestinationLocal": {
 				MakeArg: func() interface{} {
 					var ret [1]SetInflationDestinationLocalArg
@@ -1772,6 +1940,51 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 						return
 					}
 					ret, err = i.GetInflationDestinationLocal(ctx, typedArgs[0])
+					return
+				},
+			},
+			"airdropDetailsLocal": {
+				MakeArg: func() interface{} {
+					var ret [1]AirdropDetailsLocalArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]AirdropDetailsLocalArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]AirdropDetailsLocalArg)(nil), args)
+						return
+					}
+					ret, err = i.AirdropDetailsLocal(ctx, typedArgs[0].SessionID)
+					return
+				},
+			},
+			"airdropStatusLocal": {
+				MakeArg: func() interface{} {
+					var ret [1]AirdropStatusLocalArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]AirdropStatusLocalArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]AirdropStatusLocalArg)(nil), args)
+						return
+					}
+					ret, err = i.AirdropStatusLocal(ctx, typedArgs[0].SessionID)
+					return
+				},
+			},
+			"airdropRegisterLocal": {
+				MakeArg: func() interface{} {
+					var ret [1]AirdropRegisterLocalArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]AirdropRegisterLocalArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]AirdropRegisterLocalArg)(nil), args)
+						return
+					}
+					err = i.AirdropRegisterLocal(ctx, typedArgs[0])
 					return
 				},
 			},
@@ -2010,6 +2223,21 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 					return
 				},
 			},
+			"batchLocal": {
+				MakeArg: func() interface{} {
+					var ret [1]BatchLocalArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]BatchLocalArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]BatchLocalArg)(nil), args)
+						return
+					}
+					ret, err = i.BatchLocal(ctx, typedArgs[0])
+					return
+				},
+			},
 		},
 	}
 }
@@ -2203,6 +2431,12 @@ func (c LocalClient) CancelPaymentLocal(ctx context.Context, __arg CancelPayment
 	return
 }
 
+func (c LocalClient) GetPredefinedInflationDestinationsLocal(ctx context.Context, sessionID int) (res []PredefinedInflationDestination, err error) {
+	__arg := GetPredefinedInflationDestinationsLocalArg{SessionID: sessionID}
+	err = c.Cli.Call(ctx, "stellar.1.local.getPredefinedInflationDestinationsLocal", []interface{}{__arg}, &res)
+	return
+}
+
 func (c LocalClient) SetInflationDestinationLocal(ctx context.Context, __arg SetInflationDestinationLocalArg) (err error) {
 	err = c.Cli.Call(ctx, "stellar.1.local.setInflationDestinationLocal", []interface{}{__arg}, nil)
 	return
@@ -2210,6 +2444,23 @@ func (c LocalClient) SetInflationDestinationLocal(ctx context.Context, __arg Set
 
 func (c LocalClient) GetInflationDestinationLocal(ctx context.Context, __arg GetInflationDestinationLocalArg) (res InflationDestinationResultLocal, err error) {
 	err = c.Cli.Call(ctx, "stellar.1.local.getInflationDestinationLocal", []interface{}{__arg}, &res)
+	return
+}
+
+func (c LocalClient) AirdropDetailsLocal(ctx context.Context, sessionID int) (res string, err error) {
+	__arg := AirdropDetailsLocalArg{SessionID: sessionID}
+	err = c.Cli.Call(ctx, "stellar.1.local.airdropDetailsLocal", []interface{}{__arg}, &res)
+	return
+}
+
+func (c LocalClient) AirdropStatusLocal(ctx context.Context, sessionID int) (res AirdropStatus, err error) {
+	__arg := AirdropStatusLocalArg{SessionID: sessionID}
+	err = c.Cli.Call(ctx, "stellar.1.local.airdropStatusLocal", []interface{}{__arg}, &res)
+	return
+}
+
+func (c LocalClient) AirdropRegisterLocal(ctx context.Context, __arg AirdropRegisterLocalArg) (err error) {
+	err = c.Cli.Call(ctx, "stellar.1.local.airdropRegisterLocal", []interface{}{__arg}, nil)
 	return
 }
 
@@ -2246,7 +2497,7 @@ func (c LocalClient) WalletInitLocal(ctx context.Context) (err error) {
 	return
 }
 
-func (c LocalClient) WalletDumpLocal(ctx context.Context) (res BundleRestricted, err error) {
+func (c LocalClient) WalletDumpLocal(ctx context.Context) (res Bundle, err error) {
 	err = c.Cli.Call(ctx, "stellar.1.local.walletDumpLocal", []interface{}{WalletDumpLocalArg{}}, &res)
 	return
 }
@@ -2302,5 +2553,10 @@ func (c LocalClient) MakeRequestCLILocal(ctx context.Context, __arg MakeRequestC
 func (c LocalClient) LookupCLILocal(ctx context.Context, name string) (res LookupResultCLILocal, err error) {
 	__arg := LookupCLILocalArg{Name: name}
 	err = c.Cli.Call(ctx, "stellar.1.local.lookupCLILocal", []interface{}{__arg}, &res)
+	return
+}
+
+func (c LocalClient) BatchLocal(ctx context.Context, __arg BatchLocalArg) (res BatchResultLocal, err error) {
+	err = c.Cli.Call(ctx, "stellar.1.local.batchLocal", []interface{}{__arg}, &res)
 	return
 }

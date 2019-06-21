@@ -533,6 +533,11 @@ func (f failingRemote) GetThreadRemote(context.Context, chat1.GetThreadRemoteArg
 	require.Fail(f.t, "GetThreadRemote call")
 	return chat1.GetThreadRemoteRes{}, nil
 }
+func (f failingRemote) GetUnreadlineRemote(context.Context, chat1.GetUnreadlineRemoteArg) (chat1.GetUnreadlineRemoteRes, error) {
+
+	require.Fail(f.t, "GetUnreadlineRemote call")
+	return chat1.GetUnreadlineRemoteRes{}, nil
+}
 func (f failingRemote) GetPublicConversations(context.Context, chat1.GetPublicConversationsArg) (chat1.GetPublicConversationsRes, error) {
 	require.Fail(f.t, "GetPublicConversations call")
 	return chat1.GetPublicConversationsRes{}, nil
@@ -606,7 +611,7 @@ func (f failingRemote) SyncInbox(ctx context.Context, vers chat1.InboxVers) (cha
 	return chat1.SyncInboxRes{}, nil
 }
 
-func (f failingRemote) SyncChat(ctx context.Context, vers chat1.InboxVers) (chat1.SyncChatRes, error) {
+func (f failingRemote) SyncChat(ctx context.Context, arg chat1.SyncChatArg) (chat1.SyncChatRes, error) {
 	require.Fail(f.t, "SyncChat")
 	return chat1.SyncChatRes{}, nil
 }
@@ -731,11 +736,6 @@ func (f failingTlf) PublicCanonicalTLFNameAndID(context.Context, string) (keybas
 func (f failingTlf) CompleteAndCanonicalizePrivateTlfName(context.Context, string) (keybase1.CanonicalTLFNameAndIDWithBreaks, error) {
 	require.Fail(f.t, "CompleteAndCanonicalizePrivateTlfName call")
 	return keybase1.CanonicalTLFNameAndIDWithBreaks{}, nil
-}
-
-func (f failingTlf) LookupIDUntrusted(context.Context, string, bool) (res types.NameInfoUntrusted, err error) {
-	require.Fail(f.t, "LookupUnstrusted call")
-	return res, err
 }
 
 func (f failingTlf) LookupID(context.Context, string, bool) (res types.NameInfo, err error) {
@@ -1274,10 +1274,8 @@ func TestClearFromDelete(t *testing.T) {
 		require.Fail(t, "no conv loader")
 	}
 
-	require.NoError(t, tc.Context().ChatHelper.SendTextByID(ctx, conv.GetConvID(), conv.Metadata.IdTriple,
-		u.Username, "hi"))
-	require.NoError(t, tc.Context().ChatHelper.SendTextByID(ctx, conv.GetConvID(), conv.Metadata.IdTriple,
-		u.Username, "hi2"))
+	require.NoError(t, tc.Context().ChatHelper.SendTextByID(ctx, conv.GetConvID(), u.Username, "hi"))
+	require.NoError(t, tc.Context().ChatHelper.SendTextByID(ctx, conv.GetConvID(), u.Username, "hi2"))
 	_, delMsg, err := sender.Send(ctx, conv.GetConvID(), chat1.MessagePlaintext{
 		ClientHeader: chat1.MessageClientHeader{
 			Conv:        conv.Metadata.IdTriple,

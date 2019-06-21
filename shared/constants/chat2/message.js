@@ -67,6 +67,14 @@ export const getPaymentMessageInfo = (
   )
 }
 
+export const isPendingPaymentMessage = (state: TypedState, message: Types.Message) => {
+  if (message.type !== 'sendPayment') {
+    return false
+  }
+  const paymentInfo = getPaymentMessageInfo(state, message)
+  return !!(paymentInfo && paymentInfo.status === 'pending')
+}
+
 // Map service message types to our message types.
 export const serviceMessageTypeToMessageTypes = (t: RPCChatTypes.MessageType): Array<Types.MessageType> => {
   switch (t) {
@@ -87,6 +95,7 @@ export const serviceMessageTypeToMessageTypes = (t: RPCChatTypes.MessageType): A
     case RPCChatTypes.commonMessageType.system:
       return [
         'systemAddedToTeam',
+        'systemChangeRetention',
         'systemGitPush',
         'systemInviteAccepted',
         'systemSimpleToComplex',
@@ -117,6 +126,7 @@ export const allMessageTypes: I.Set<Types.MessageType> = I.Set([
   'setChannelname',
   'setDescription',
   'systemAddedToTeam',
+  'systemChangeRetention',
   'systemGitPush',
   'systemInviteAccepted',
   'systemJoined',
@@ -171,6 +181,8 @@ export const makeMessageText: I.RecordFactory<MessageTypes._MessageText> = I.Rec
   ...makeMessageCommon,
   ...makeMessageExplodable,
   decoratedText: null,
+  inlinePaymentIDs: null,
+  inlinePaymentSuccessful: false,
   mentionsAt: I.Set(),
   mentionsChannel: 'none',
   mentionsChannelName: I.Map(),
@@ -192,6 +204,7 @@ export const makeMessageAttachment: I.RecordFactory<MessageTypes._MessageAttachm
   fileURL: '',
   fileURLCached: false,
   inlineVideoPlayable: false,
+  isCollapsed: false,
   previewHeight: 0,
   previewTransferState: null,
   previewURL: '',
@@ -212,7 +225,9 @@ export const makeChatRequestInfo: I.RecordFactory<MessageTypes._ChatRequestInfo>
   asset: 'native',
   canceled: false,
   currencyCode: '',
+  done: false,
   type: 'requestInfo',
+  worthAtRequestTime: '',
 })
 
 export const makeMessageRequestPayment: I.RecordFactory<MessageTypes._MessageRequestPayment> = I.Record({
@@ -238,6 +253,7 @@ export const makeChatPaymentInfo: I.RecordFactory<MessageTypes._ChatPaymentInfo>
   toUsername: '',
   type: 'paymentInfo',
   worth: '',
+  worthAtSendTime: '',
 })
 
 export const makeMessageSendPayment: I.RecordFactory<MessageTypes._MessageSendPayment> = I.Record({
@@ -323,6 +339,21 @@ const makeMessageSetChannelname: I.RecordFactory<MessageTypes._MessageSetChannel
   type: 'setChannelname',
 })
 
+const makeMessageSystemChangeRetention: I.RecordFactory<MessageTypes._MessageSystemChangeRetention> = I.Record(
+  {
+    ...makeMessageMinimum,
+    canChange: false,
+    isInherit: false,
+    isTeam: false,
+    membersType: 0,
+    policy: RPCChatTypes.RetentionPolicy,
+    reactions: I.Map(),
+    type: 'systemChangeRetention',
+    user: '',
+    you: '',
+  }
+)
+
 export const makeReaction: I.RecordFactory<MessageTypes._Reaction> = I.Record({
   timestamp: 0,
   username: '',
@@ -357,6 +388,8 @@ export const uiRequestInfoToChatRequestInfo = (
     asset,
     canceled: r.status === RPCStellarTypes.commonRequestStatus.canceled,
     currencyCode,
+    done: r.status === RPCStellarTypes.commonRequestStatus.done,
+    worthAtRequestTime: r.worthAtRequestTime,
   })
 }
 
@@ -381,6 +414,7 @@ export const uiPaymentInfoToChatPaymentInfo = (
     statusDetail: p.statusDetail,
     toUsername: p.toUsername,
     worth: p.worth,
+    worthAtSendTime: p.worthAtSendTime,
   })
 }
 
@@ -452,7 +486,6 @@ const uiMessageToSystemMessage = (minimum, body, reactions): ?Types.Message => {
         team,
       })
     }
-
     case RPCChatTypes.localMessageSystemType.inviteaddedtoteam: {
       const inviteaddedtoteam = body.inviteaddedtoteam || {}
       const invitee = inviteaddedtoteam.invitee || 'someone'
@@ -534,6 +567,21 @@ const uiMessageToSystemMessage = (minimum, body, reactions): ?Types.Message => {
         ...minimum,
       })
     }
+    case RPCChatTypes.localMessageSystemType.changeretention: {
+      if (!body.changeretention) {
+        return null
+      }
+      return makeMessageSystemChangeRetention({
+        ...minimum,
+        isInherit: body.changeretention.isInherit,
+        isTeam: body.changeretention.isTeam,
+        membersType: body.changeretention.membersType,
+        policy: body.changeretention.policy,
+        reactions,
+        user: body.changeretention.user,
+      })
+    }
+
     default:
       Flow.ifFlowComplainsAboutThisFunctionYouHaventHandledAllCasesInASwitch(body.systemType)
       return null
@@ -582,6 +630,19 @@ export const previewSpecs = (preview: ?RPCChatTypes.AssetMetadata, full: ?RPCCha
   return res
 }
 
+const successfulInlinePaymentStatuses = ['completed', 'claimable']
+export const hasSuccessfulInlinePayments = (state: TypedState, message: Types.Message) => {
+  if (message.type !== 'text' || !message.inlinePaymentIDs) {
+    return false
+  }
+  return (
+    message.inlinePaymentSuccessful ||
+    message.inlinePaymentIDs.some(id =>
+      successfulInlinePaymentStatuses.includes(state.chat2.paymentStatusMap.get(id)?.status)
+    )
+  )
+}
+
 const validUIMessagetoMessage = (
   conversationIDKey: Types.ConversationIDKey,
   uiMessage: RPCChatTypes.UIMessage,
@@ -618,12 +679,29 @@ const validUIMessagetoMessage = (
 
   switch (m.messageBody.messageType) {
     case RPCChatTypes.commonMessageType.text:
-      const rawText: string = m.messageBody.text?.body ?? ''
+      const messageText = m.messageBody.text
+      const rawText: string = messageText?.body ?? ''
+      const payments = messageText?.payments ?? null
       return makeMessageText({
         ...common,
         ...explodable,
         decoratedText: m.decoratedTextBody ? new HiddenString(m.decoratedTextBody) : null,
         hasBeenEdited: m.superseded,
+        inlinePaymentIDs: payments
+          ? I.List(
+              payments
+                .map(p => {
+                  if (p.result.resultTyp === RPCChatTypes.localTextPaymentResultTyp.sent && p.result.sent) {
+                    return WalletTypes.rpcPaymentIDToPaymentID(p.result.sent)
+                  }
+                  return null
+                })
+                .filter(Boolean)
+            )
+          : null,
+        inlinePaymentSuccessful: m.paymentInfos
+          ? m.paymentInfos.some(pi => successfulInlinePaymentStatuses.includes(pi.statusDescription))
+          : false,
         mentionsAt: I.Set(m.atMentions || []),
         mentionsChannel: channelMentionToMentionsChannel(m.channelMention),
         mentionsChannelName: I.Map(
@@ -687,6 +765,7 @@ const validUIMessagetoMessage = (
         fileURL,
         fileURLCached,
         inlineVideoPlayable,
+        isCollapsed: m.isCollapsed,
         previewHeight: pre.height,
         previewURL,
         previewWidth: pre.width,
@@ -815,6 +894,7 @@ const outboxUIMessagetoMessage = (
       return makeMessageText({
         author: state.config.username || '',
         conversationIDKey,
+        decoratedText: o.decoratedTextBody ? new HiddenString(o.decoratedTextBody) : null,
         deviceName: state.config.deviceName || '',
         deviceType: isMobile ? 'mobile' : 'desktop',
         errorReason,
@@ -961,6 +1041,7 @@ export const makePendingAttachmentMessage = (
     errorReason: errorReason,
     fileName: fileName,
     id: Types.numberToMessageID(0),
+    isCollapsed: false,
     ordinal: ordinal,
     outboxID: outboxID,
     previewHeight: previewSpec.height,

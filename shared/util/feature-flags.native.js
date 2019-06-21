@@ -10,14 +10,14 @@ const ff: FeatureFlags = {
   admin: __DEV__,
   chatIndexProfilingEnabled: false,
   foldersInProfileTab: false,
-  kbfsChatIntegration: false,
+  identify3: true,
   moveOrCopy: false,
-  newTeamBuildingForChat: false,
+  newTeamBuildingForChat: true,
   newTeamBuildingForChatAllowMakeTeam: false,
   outOfDateBanner: false,
-  peopleAnnouncementsEnabled: false,
   plansEnabled: false,
-  walletsEnabled: false,
+  useNewRouter: false,
+  walletsEnabled: true,
 }
 
 // load overrides

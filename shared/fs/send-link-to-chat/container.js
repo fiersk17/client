@@ -8,7 +8,7 @@ import * as Constants from '../../constants/fs'
 import * as FsGen from '../../actions/fs-gen'
 import * as ChatGen from '../../actions/chat2-gen'
 import HiddenString from '../../util/hidden-string'
-import {navigateUp, putActionIfOnPath} from '../../actions/route-tree'
+import * as RouteTreeGen from '../../actions/route-tree-gen'
 import SendLinkToChat from '.'
 
 type OwnProps = {
@@ -25,7 +25,12 @@ const mapDispatchToProps = (dispatch, ownProps) => ({
     dispatch(FsGen.createSetSendLinkToChatConvID({convID})),
   _send: (conversationIDKey: ChatTypes.ConversationIDKey, text: string) => {
     dispatch(ChatGen.createMessageSend({conversationIDKey, text: new HiddenString(text)}))
-    dispatch(putActionIfOnPath(ownProps.routePath, navigateUp()))
+    dispatch(
+      RouteTreeGen.createPutActionIfOnPath({
+        expectedPath: ownProps.routePath,
+        otherAction: RouteTreeGen.createNavigateUp(),
+      })
+    )
     dispatch(
       ChatGen.createSelectConversation({
         conversationIDKey,
@@ -34,15 +39,22 @@ const mapDispatchToProps = (dispatch, ownProps) => ({
     )
     dispatch(ChatGen.createNavigateToThread())
   },
-  onCancel: () => dispatch(putActionIfOnPath(ownProps.routePath, navigateUp())),
+  onCancel: () =>
+    dispatch(
+      RouteTreeGen.createPutActionIfOnPath({
+        expectedPath: ownProps.routePath,
+        otherAction: RouteTreeGen.createNavigateUp(),
+      })
+    ),
 })
 
 const mergeProps = (stateProps, {onCancel, _send, _selectChannel}, ownProps) => {
   const pathTextToCopy = `${Constants.escapePath(stateProps._sendLinkToChat.path)} ` // append space
 
   const elems = Types.getPathElements(stateProps._sendLinkToChat.path)
-  if (elems.length < 3) {
-    // Not inside a TLF.
+  if (elems.length < 3 || elems[1] === 'public') {
+    // Not inside a TLF or a public TLF. Either way, we don't know which
+    // conversation to send to, so just let user copy path.
     return {
       conversation: {type: 'none'},
       onCancel,
@@ -103,14 +115,21 @@ const mergeProps = (stateProps, {onCancel, _send, _selectChannel}, ownProps) => 
     ],
     []
   )
+
   return {
     conversation: {
       channels,
       name: elems[2],
       selectChannel: convID => _selectChannel(convID),
-      selectedChannelname: (
-        channels.find(({convID}) => convID === stateProps._sendLinkToChat.convID) || {channelname: null}
-      ).channelname,
+      selectedChannel:
+        stateProps._sendLinkToChat.convID === ChatConstants.noConversationIDKey
+          ? null
+          : {
+              channelname: (
+                channels.find(({convID}) => convID === stateProps._sendLinkToChat.convID) || {channelname: ''}
+              ).channelname,
+              convID: stateProps._sendLinkToChat.convID,
+            },
       type: 'big-team',
     },
     onCancel,

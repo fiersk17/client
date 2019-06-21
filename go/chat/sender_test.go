@@ -10,6 +10,7 @@ import (
 
 	"encoding/hex"
 
+	"github.com/keybase/client/go/chat/commands"
 	"github.com/keybase/client/go/chat/globals"
 	"github.com/keybase/client/go/chat/search"
 	"github.com/keybase/client/go/chat/storage"
@@ -262,10 +263,9 @@ func setupTest(t *testing.T, numUsers int) (context.Context, *kbtest.ChatMockWor
 
 	g.ConnectivityMonitor = &libkb.NullConnectivityMonitor{}
 	pushHandler := NewPushHandler(g)
-	pushHandler.SetClock(world.Fc)
 	g.PushHandler = pushHandler
 	g.ChatHelper = NewHelper(g, getRI)
-	g.TeamChannelSource = NewCachingTeamChannelSource(g, getRI)
+	g.TeamChannelSource = NewTeamChannelSource(g)
 	g.ActivityNotifier = NewNotifyRouterActivityRouter(g)
 
 	searcher := search.NewRegexpSearcher(g)
@@ -281,6 +281,7 @@ func setupTest(t *testing.T, numUsers int) (context.Context, *kbtest.ChatMockWor
 	g.Unfurler = types.DummyUnfurler{}
 	g.StellarLoader = types.DummyStellarLoader{}
 	g.StellarSender = types.DummyStellarSender{}
+	g.CommandsSource = commands.NewSource(g)
 
 	return ctx, world, ri, sender, baseSender, &listener
 }
@@ -1083,7 +1084,7 @@ func TestPrevPointerAddition(t *testing.T) {
 		// simulate a chat with only long exploded ephemeral messages.
 		if ephemeralLifetime != nil {
 			t.Logf("expiry all ephemeral messages")
-			world.Fc.Advance(time.Second*time.Duration(*ephemeralLifetime) + chat1.ShowExplosionLifetime)
+			world.Fc.Advance(ephemeralLifetime.ToDuration() + chat1.ShowExplosionLifetime)
 			// Mock out pulling messages to return no messages
 			blockingSender.(*BlockingSender).G().ConvSource.(*HybridConversationSource).blackoutPullForTesting = true
 			// Prepare a regular message and make sure it gets prev pointers

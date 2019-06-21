@@ -7,12 +7,8 @@ import GoButton from './go-button'
 import ServiceTabBar from './service-tab-bar'
 import UserResult from './user-result'
 import flags from '../util/feature-flags'
+import {serviceIdToAccentColor, serviceIdToIconFont, serviceIdToLabel} from './shared'
 import type {ServiceIdWithContact, FollowingState} from '../constants/types/team-building'
-
-// TODO
-// Services Search Results count bar
-// Handle pending state
-// Handle No search results
 
 type SearchResult = {
   userId: string,
@@ -24,25 +20,27 @@ type SearchResult = {
 }
 
 export type Props = {
-  onFinishTeamBuilding: () => void,
-  onChangeText: (newText: string) => void,
-  onEnterKeyDown: () => void,
-  onDownArrowKeyDown: () => void,
-  onUpArrowKeyDown: () => void,
-  teamSoFar: Array<{userId: string, prettyName: string, service: ServiceIdWithContact, username: string}>,
-  onRemove: (userId: string) => void,
-  onBackspace: () => void,
-  selectedService: ServiceIdWithContact,
-  onChangeService: (newService: ServiceIdWithContact) => void,
-  serviceResultCount: {[key: ServiceIdWithContact]: ?number},
-  showServiceResultCount: boolean,
-  searchResults: ?Array<SearchResult>,
+  fetchUserRecs: () => void,
   highlightedIndex: ?number,
   onAdd: (userId: string) => void,
-  searchString: string,
+  onBackspace: () => void,
+  onChangeService: (newService: ServiceIdWithContact) => void,
+  onChangeText: (newText: string) => void,
+  onDownArrowKeyDown: () => void,
+  onEnterKeyDown: () => void,
+  onFinishTeamBuilding: () => void,
   onMakeItATeam: () => void,
+  onRemove: (userId: string) => void,
+  onSearchForMore: () => void,
+  onUpArrowKeyDown: () => void,
   recommendations: ?Array<SearchResult>,
-  fetchUserRecs: () => void,
+  searchResults: ?Array<SearchResult>,
+  searchString: string,
+  selectedService: ServiceIdWithContact,
+  serviceResultCount: {[key: ServiceIdWithContact]: ?number},
+  showRecs: boolean,
+  showServiceResultCount: boolean,
+  teamSoFar: Array<{userId: string, prettyName: string, service: ServiceIdWithContact, username: string}>,
 }
 
 class TeamBuilding extends React.PureComponent<Props, void> {
@@ -52,9 +50,9 @@ class TeamBuilding extends React.PureComponent<Props, void> {
 
   render = () => {
     const props = this.props
-    const showSearchPending = props.searchString && !props.searchResults
     const showRecPending = !props.searchString && !(props.recommendations && props.recommendations.length)
-    const showRecs = !props.searchString && props.recommendations
+    const showLoading = !!props.searchString && !(props.searchResults && props.searchResults.length)
+    const showRecs = props.showRecs
     return (
       <Kb.Box2 direction="vertical" style={styles.container} fullWidth={true}>
         <Kb.Box2 direction="horizontal" fullWidth={true}>
@@ -68,43 +66,66 @@ class TeamBuilding extends React.PureComponent<Props, void> {
             onBackspace={props.onBackspace}
             searchString={props.searchString}
           />
-          {!!props.teamSoFar.length && <GoButton onClick={props.onFinishTeamBuilding} />}
+          {!!props.teamSoFar.length && !Styles.isMobile && <GoButton onClick={props.onFinishTeamBuilding} />}
         </Kb.Box2>
-        {!!props.teamSoFar.length &&
-          flags.newTeamBuildingForChatAllowMakeTeam && (
-            <Kb.Text type="BodySmall">
-              Add up to 14 more people. Need more?
-              <Kb.Text type="BodySmallPrimaryLink" onClick={props.onMakeItATeam}>
-                {' '}
-                Make it a team.
-              </Kb.Text>
+        {!!props.teamSoFar.length && flags.newTeamBuildingForChatAllowMakeTeam && (
+          <Kb.Text type="BodySmall">
+            Add up to 14 more people. Need more?
+            <Kb.Text type="BodySmallPrimaryLink" onClick={props.onMakeItATeam}>
+              {' '}
+              Make it a team.
             </Kb.Text>
-          )}
+          </Kb.Text>
+        )}
         <ServiceTabBar
           selectedService={props.selectedService}
           onChangeService={props.onChangeService}
           serviceResultCount={props.serviceResultCount}
           showServiceResultCount={props.showServiceResultCount}
         />
-        {showRecs && (
-          <Kb.Text type="BodyTinySemibold" style={styles.recText}>
-            Recommendations
-          </Kb.Text>
-        )}
-        {showSearchPending ? (
-          <Kb.Text type="Body"> TODO: Add Pending state of searching</Kb.Text>
-        ) : showRecPending ? (
-          <Kb.Text type="BodyTinySemibold" style={styles.recText}>
-            ...
-          </Kb.Text>
+        {showRecPending || showLoading ? (
+          <Kb.Box2 direction="vertical" fullWidth={true} gap="xtiny" style={styles.loadingContainer}>
+            <Kb.Icon
+              style={Kb.iconCastPlatformStyles(styles.loadingIcon)}
+              type="icon-progress-grey-animated"
+            />
+            <Kb.Text type="BodySmallSemibold">Loading</Kb.Text>
+          </Kb.Box2>
+        ) : !showRecs && !props.showServiceResultCount && !!props.selectedService ? (
+          <Kb.Box2
+            alignSelf="center"
+            centerChildren={true}
+            direction="vertical"
+            fullHeight={true}
+            fullWidth={true}
+            gap="tiny"
+            style={styles.emptyContainer}
+          >
+            <Kb.Icon
+              fontSize={64}
+              type={serviceIdToIconFont(props.selectedService)}
+              style={Styles.collapseStyles([
+                !!props.selectedService && {color: serviceIdToAccentColor(props.selectedService)},
+              ])}
+            />
+            <Kb.Text center={true} type="BodyBig">
+              Enter a {serviceIdToLabel(props.selectedService)} username above.
+            </Kb.Text>
+            <Kb.Text center={true} type="BodySmall">
+              Start a Keybase chat with anyone on {serviceIdToLabel(props.selectedService)}, even if they
+              don’t have a Keybase account.
+            </Kb.Text>
+          </Kb.Box2>
         ) : (
           <Kb.List
             items={showRecs ? props.recommendations || [] : props.searchResults || []}
             selectedIndex={props.highlightedIndex || 0}
             style={styles.list}
+            keyProperty={'userId'}
+            onEndReached={props.onSearchForMore}
             renderItem={(index, result) => (
               <UserResult
-                key={result.userId}
+                resultForService={props.selectedService}
                 fixedHeight={400}
                 username={result.username}
                 prettyName={result.prettyName}
@@ -128,26 +149,51 @@ const styles = Styles.styleSheetCreate({
     common: {
       flex: 1,
       minHeight: 200,
-      paddingLeft: Styles.globalMargins.small,
-      paddingRight: Styles.globalMargins.small,
-      paddingTop: Styles.globalMargins.small,
     },
     isElectron: {
       height: 434,
+      paddingLeft: Styles.globalMargins.small,
+      paddingRight: Styles.globalMargins.small,
+      paddingTop: Styles.globalMargins.small,
       width: 470,
     },
   }),
-  list: {
-    paddingBottom: Styles.globalMargins.small,
+  emptyContainer: Styles.platformStyles({
+    common: {
+      flex: 1,
+    },
+    isElectron: {
+      maxWidth: 290,
+      paddingBottom: 40,
+    },
+    isMobile: {
+      maxWidth: '80%',
+      paddingBottom: 150,
+    },
+  }),
+  list: Styles.platformStyles({
+    common: {
+      paddingBottom: Styles.globalMargins.small,
+    },
+    isMobile: {
+      marginTop: Styles.globalMargins.xtiny,
+    },
+  }),
+  loadingContainer: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
   },
-  recText: {
-    borderBottomColor: Styles.globalColors.black_10,
-    borderBottomWidth: 1,
-    borderStyle: 'solid',
-    paddingBottom: Styles.globalMargins.xtiny,
-    paddingLeft: Styles.globalMargins.xtiny,
-    paddingTop: Styles.globalMargins.xtiny,
-  },
+  loadingIcon: Styles.platformStyles({
+    isElectron: {
+      height: 32,
+      width: 32,
+    },
+    isMobile: {
+      height: 48,
+      width: 48,
+    },
+  }),
 })
 
 export default TeamBuilding

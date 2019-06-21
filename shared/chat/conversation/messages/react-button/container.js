@@ -4,11 +4,12 @@ import {namedConnect} from '../../../../util/container'
 import * as Constants from '../../../../constants/chat2'
 import * as Types from '../../../../constants/types/chat2'
 import * as Chat2Gen from '../../../../actions/chat2-gen'
-import * as RouteTree from '../../../../actions/route-tree'
+import * as RouteTreeGen from '../../../../actions/route-tree-gen'
 import type {StylesCrossPlatform} from '../../../../styles'
 import ReactButton, {NewReactionButton} from '.'
 
 export type OwnProps = {|
+  className?: string,
   conversationIDKey: Types.ConversationIDKey,
   emoji?: string,
   onMouseLeave?: (evt: SyntheticEvent<>) => void,
@@ -35,6 +36,7 @@ const Wrapper = (props: WrapperProps) =>
   props.emoji ? (
     <ReactButton
       active={props.active}
+      className={props.className}
       conversationIDKey={props.conversationIDKey}
       count={props.count}
       getAttachmentRef={props.getAttachmentRef}
@@ -88,11 +90,16 @@ const mapDispatchToProps = (dispatch, {conversationIDKey, emoji, ordinal}: OwnPr
   onClick: () =>
     dispatch(Chat2Gen.createToggleMessageReaction({conversationIDKey, emoji: emoji || '', ordinal})),
   onOpenEmojiPicker: () =>
-    dispatch(RouteTree.navigateAppend([{props: {conversationIDKey, ordinal}, selected: 'chooseEmoji'}])),
+    dispatch(
+      RouteTreeGen.createNavigateAppend({
+        path: [{props: {conversationIDKey, ordinal}, selected: 'chooseEmoji'}],
+      })
+    ),
 })
 
 const mergeProps = (stateProps, dispatchProps, ownProps: OwnProps) => ({
   active: stateProps.active,
+  className: ownProps.className,
   conversationIDKey: ownProps.conversationIDKey,
   count: stateProps.count,
   emoji: stateProps.emoji,

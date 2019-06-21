@@ -287,8 +287,8 @@ func (s *Server) WalletInitLocal(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	flaggedForV2 := remote.AcctBundlesEnabled(mctx)
-	_, err = stellar.CreateWallet(mctx, flaggedForV2)
+
+	_, err = stellar.CreateWallet(mctx)
 	return err
 }
 
@@ -341,7 +341,7 @@ func (s *Server) WalletGetAccountsCLILocal(ctx context.Context) (ret []stellar1.
 		return ret, err
 	}
 
-	currentBundle, _, _, err := remote.FetchSecretlessBundle(mctx)
+	currentBundle, err := remote.FetchSecretlessBundle(mctx)
 	if err != nil {
 		return nil, err
 	}
@@ -351,9 +351,10 @@ func (s *Server) WalletGetAccountsCLILocal(ctx context.Context) (ret []stellar1.
 	for _, account := range currentBundle.Accounts {
 		accID := account.AccountID
 		acc := stellar1.OwnAccountCLILocal{
-			AccountID: accID,
-			IsPrimary: account.IsPrimary,
-			Name:      account.Name,
+			AccountID:   accID,
+			IsPrimary:   account.IsPrimary,
+			Name:        account.Name,
+			AccountMode: account.Mode,
 		}
 
 		balances, err := s.remoter.Balances(ctx, accID)
@@ -540,6 +541,21 @@ func (s *Server) LookupCLILocal(ctx context.Context, arg string) (res stellar1.L
 		res.Username = &u
 	}
 	return res, nil
+}
+
+func (s *Server) BatchLocal(ctx context.Context, arg stellar1.BatchLocalArg) (res stellar1.BatchResultLocal, err error) {
+	mctx, fin, err := s.Preamble(ctx, preambleArg{
+		RPCName:        "BatchLocal",
+		Err:            &err,
+		RequireWallet:  true,
+		AllowLoggedOut: false,
+	})
+	defer fin()
+	if err != nil {
+		return res, err
+	}
+
+	return stellar.Batch(mctx, s.walletState, arg)
 }
 
 func percentageAmountChange(a, b int64) float64 {

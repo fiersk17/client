@@ -63,8 +63,9 @@ type GlobalContext struct {
 	DNSNSFetcher     DNSNameServerFetcher // The mobile apps potentially pass an implementor of this interface which is used to grab currently configured DNS name servers
 	AppState         *AppState            // The state of focus for the currently running instance of the app
 	ChatHelper       ChatHelper           // conveniently send chat messages
-	RPCCanceller     *RPCCanceller        // register live RPCs so they can be cancelleed en masse
+	RPCCanceler      *RPCCanceler         // register live RPCs so they can be cancelleed en masse
 	IdentifyDispatch *IdentifyDispatch    // get notified of identify successes
+	Identify3State   *Identify3State      // keep track of Identify3 sessions
 
 	cacheMu          *sync.RWMutex   // protects all caches
 	ProofCache       *ProofCache     // where to cache proof results
@@ -117,7 +118,7 @@ type GlobalContext struct {
 	hookMu             *sync.RWMutex             // protects loginHooks, logoutHooks
 	loginHooks         []LoginHook               // call these on login
 	logoutHooks        []LogoutHook              // call these on logout
-	GregorDismisser    GregorDismisser           // for dismissing gregor items that we've handled
+	GregorState        GregorState               // for dismissing gregor items that we've handled
 	GregorListener     GregorListener            // for alerting about clients connecting and registering UI protocols
 	oodiMu             *sync.RWMutex             // For manipulating the OutOfDateInfo
 	outOfDateInfo      *keybase1.OutOfDateInfo   // Stores out of date messages we got from API server headers.
@@ -232,8 +233,10 @@ func (g *GlobalContext) Init() *GlobalContext {
 	g.ConnectivityMonitor = NullConnectivityMonitor{}
 	g.localSigchainGuard = NewLocalSigchainGuard(g)
 	g.AppState = NewAppState(g)
-	g.RPCCanceller = NewRPCCanceller()
+	g.RPCCanceler = NewRPCCanceler()
 	g.IdentifyDispatch = NewIdentifyDispatch()
+	g.Identify3State = NewIdentify3State(g)
+	g.GregorState = newNullGregorState()
 
 	g.Log.Debug("GlobalContext#Init(%p)\n", g)
 
@@ -323,7 +326,7 @@ func (g *GlobalContext) Logout(ctx context.Context) (err error) {
 
 	// remove stored secret
 	g.secretStoreMu.Lock()
-	if g.secretStore != nil {
+	if g.secretStore != nil && !username.IsNil() {
 		if err := g.secretStore.ClearSecret(mctx, username); err != nil {
 			mctx.CDebugf("clear stored secret error: %s", err)
 		}
@@ -341,6 +344,8 @@ func (g *GlobalContext) Logout(ctx context.Context) (err error) {
 	g.FeatureFlags.Clear()
 
 	g.IdentifyDispatch.OnLogout()
+
+	g.Identify3State.OnLogout()
 
 	return nil
 }
@@ -363,6 +368,7 @@ func (g *GlobalContext) ConfigureLogging() error {
 	} else {
 		g.Log.Configure(style, debug, logFile)
 	}
+
 	// If specified or explicitly requested to use default log file, redirect logs.
 	// If not called, prints logs to stdout.
 	if logFile != "" || g.Env.GetUseDefaultLogFile() {
@@ -696,6 +702,8 @@ func (g *GlobalContext) Shutdown() error {
 			epick.Push(hook())
 		}
 
+		g.Identify3State.Shutdown()
+
 		err = epick.Error()
 
 		g.Log.Debug("exiting shutdown code=%d; err=%v", g.ExitCode, err)
@@ -721,8 +729,7 @@ func (g *GlobalContext) ConfigureCommand(line CommandLine, cmd Command) error {
 
 func (g *GlobalContext) Configure(line CommandLine, usage Usage) error {
 	g.SetCommandLine(line)
-	err := g.ConfigureLogging()
-	if err != nil {
+	if err := g.ConfigureLogging(); err != nil {
 		return err
 	}
 
@@ -1320,4 +1327,14 @@ func (g *GlobalContext) GetMeUV(ctx context.Context) (res keybase1.UserVersion, 
 		return keybase1.UserVersion{}, LoginRequiredError{}
 	}
 	return res, nil
+}
+
+// TODO CORE-9923: set this to true and remove it
+// Whether to use parameterized proofs apparatus on normal clients.
+// Affects non-parameterized proof listing too.
+func (g *GlobalContext) ShouldUseParameterizedProofs() bool {
+	return g.Env.GetRunMode() == DevelRunMode ||
+		g.Env.RunningInCI() ||
+		g.Env.GetFeatureFlags().Admin() ||
+		g.Env.GetProveBypass()
 }

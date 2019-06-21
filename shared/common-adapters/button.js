@@ -16,10 +16,9 @@ import {
   styleSheetCreate,
 } from '../styles'
 
-export type Props = {
+export type Props = {|
   children?: React.Node,
   onClick?: null | ((event: SyntheticEvent<>) => void),
-  onPress?: void,
   onMouseEnter?: Function,
   onMouseLeave?: Function,
   label?: string,
@@ -42,7 +41,7 @@ export type Props = {
   fullWidth?: boolean,
   backgroundMode?: 'Normal' | 'Terminal' | 'Red' | 'Green' | 'Blue' | 'Black',
   className?: string,
-}
+|}
 
 const Progress = ({small, white}) => (
   <Box style={styles.progressContainer}>
@@ -95,7 +94,12 @@ class Button extends React.Component<Props> {
     )
 
     return (
-      <ClickableBox style={containerStyle} onClick={onClick}>
+      <ClickableBox
+        style={containerStyle}
+        onClick={onClick}
+        onMouseEnter={this.props.onMouseEnter}
+        onMouseLeave={this.props.onMouseLeave}
+      >
         <Box
           style={collapseStyles([
             globalStyles.flexBoxRow,

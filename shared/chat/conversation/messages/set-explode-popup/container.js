@@ -6,6 +6,17 @@ import * as Chat2Gen from '../../../../actions/chat2-gen'
 import * as Types from '../../../../constants/types/chat2'
 import SetExplodeTime from '.'
 
+const makeItems = (meta: Types.ConversationMeta) => {
+  const convRetention = Constants.getEffectiveRetentionPolicy(meta)
+  if (convRetention.type !== 'explode') {
+    return Constants.messageExplodeDescriptions
+  }
+  const {seconds, title} = convRetention
+  const items = Constants.messageExplodeDescriptions.filter(ed => ed.seconds < seconds)
+  items.splice(0, 1, {seconds, text: `${title} (Chat policy)`})
+  return items
+}
+
 type OwnProps = {
   attachTo: () => ?React.Component<any>,
   conversationIDKey: Types.ConversationIDKey,
@@ -15,11 +26,13 @@ type OwnProps = {
   visible: boolean,
 }
 
-const mapStateToProps = (state, ownProps: OwnProps) => ({
-  isNew: Constants.getIsExplodingNew(state),
-  items: Constants.messageExplodeDescriptions,
-  selected: Constants.getConversationExplodingMode(state, ownProps.conversationIDKey),
-})
+const mapStateToProps = (state, ownProps: OwnProps) => {
+  const meta = Constants.getMeta(state, ownProps.conversationIDKey)
+  return {
+    items: makeItems(meta),
+    selected: Constants.getConversationExplodingMode(state, ownProps.conversationIDKey),
+  }
+}
 
 const mapDispatchToProps = (dispatch, ownProps: OwnProps) => ({
   onSelect: seconds => {
@@ -30,7 +43,6 @@ const mapDispatchToProps = (dispatch, ownProps: OwnProps) => ({
 
 const mergeProps = (stateProps, dispatchProps, ownProps) => ({
   attachTo: ownProps.attachTo,
-  isNew: stateProps.isNew,
   items: stateProps.items,
   onHidden: ownProps.onHidden,
   onSelect: dispatchProps.onSelect,

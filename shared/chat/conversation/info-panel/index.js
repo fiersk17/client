@@ -3,7 +3,7 @@ import * as React from 'react'
 import * as Types from '../../../constants/types/chat2'
 import * as Flow from '../../../util/flow'
 import {Box, Divider, HeaderOnMobile, List} from '../../../common-adapters'
-import type {Props as HeaderHocProps} from '../../../common-adapters/header-hoc.types'
+import type {Props as HeaderHocProps} from '../../../common-adapters/header-hoc/types'
 import {globalColors, globalMargins, globalStyles, isMobile, platformStyles} from '../../../styles'
 import {SmallTeamHeader, BigTeamHeader} from './header'
 import Notifications from './notifications/container'
@@ -111,7 +111,6 @@ const retentionStyles = {
     common: {
       paddingLeft: 16,
       paddingRight: 16,
-      width: '100%',
     },
     isMobile: {
       marginRight: 16,
@@ -371,6 +370,7 @@ class _InfoPanel extends React.Component<InfoPanelProps> {
             key="join channel"
             label="Join channel"
             onClick={row.onJoinChannel}
+            waitOnClick={true}
           />
         )
 

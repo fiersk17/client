@@ -360,6 +360,7 @@ const (
 	GlobalAppNotificationSetting_PLAINTEXTMOBILE    GlobalAppNotificationSetting = 1
 	GlobalAppNotificationSetting_PLAINTEXTDESKTOP   GlobalAppNotificationSetting = 2
 	GlobalAppNotificationSetting_DEFAULTSOUNDMOBILE GlobalAppNotificationSetting = 3
+	GlobalAppNotificationSetting_DISABLETYPING      GlobalAppNotificationSetting = 4
 )
 
 func (o GlobalAppNotificationSetting) DeepCopy() GlobalAppNotificationSetting { return o }
@@ -369,6 +370,7 @@ var GlobalAppNotificationSettingMap = map[string]GlobalAppNotificationSetting{
 	"PLAINTEXTMOBILE":    1,
 	"PLAINTEXTDESKTOP":   2,
 	"DEFAULTSOUNDMOBILE": 3,
+	"DISABLETYPING":      4,
 }
 
 var GlobalAppNotificationSettingRevMap = map[GlobalAppNotificationSetting]string{
@@ -376,6 +378,7 @@ var GlobalAppNotificationSettingRevMap = map[GlobalAppNotificationSetting]string
 	1: "PLAINTEXTMOBILE",
 	2: "PLAINTEXTDESKTOP",
 	3: "DEFAULTSOUNDMOBILE",
+	4: "DISABLETYPING",
 }
 
 func (e GlobalAppNotificationSetting) String() string {
@@ -505,21 +508,23 @@ func (o ChannelNameMention) DeepCopy() ChannelNameMention {
 type ConversationMemberStatus int
 
 const (
-	ConversationMemberStatus_ACTIVE  ConversationMemberStatus = 0
-	ConversationMemberStatus_REMOVED ConversationMemberStatus = 1
-	ConversationMemberStatus_LEFT    ConversationMemberStatus = 2
-	ConversationMemberStatus_PREVIEW ConversationMemberStatus = 3
-	ConversationMemberStatus_RESET   ConversationMemberStatus = 4
+	ConversationMemberStatus_ACTIVE       ConversationMemberStatus = 0
+	ConversationMemberStatus_REMOVED      ConversationMemberStatus = 1
+	ConversationMemberStatus_LEFT         ConversationMemberStatus = 2
+	ConversationMemberStatus_PREVIEW      ConversationMemberStatus = 3
+	ConversationMemberStatus_RESET        ConversationMemberStatus = 4
+	ConversationMemberStatus_NEVER_JOINED ConversationMemberStatus = 5
 )
 
 func (o ConversationMemberStatus) DeepCopy() ConversationMemberStatus { return o }
 
 var ConversationMemberStatusMap = map[string]ConversationMemberStatus{
-	"ACTIVE":  0,
-	"REMOVED": 1,
-	"LEFT":    2,
-	"PREVIEW": 3,
-	"RESET":   4,
+	"ACTIVE":       0,
+	"REMOVED":      1,
+	"LEFT":         2,
+	"PREVIEW":      3,
+	"RESET":        4,
+	"NEVER_JOINED": 5,
 }
 
 var ConversationMemberStatusRevMap = map[ConversationMemberStatus]string{
@@ -528,6 +533,7 @@ var ConversationMemberStatusRevMap = map[ConversationMemberStatus]string{
 	2: "LEFT",
 	3: "PREVIEW",
 	4: "RESET",
+	5: "NEVER_JOINED",
 }
 
 func (e ConversationMemberStatus) String() string {
@@ -596,6 +602,7 @@ type GetInboxQuery struct {
 	ReadOnly          bool                       `codec:"readOnly" json:"readOnly"`
 	ComputeActiveList bool                       `codec:"computeActiveList" json:"computeActiveList"`
 	SummarizeMaxMsgs  bool                       `codec:"summarizeMaxMsgs" json:"summarizeMaxMsgs"`
+	SkipBgLoads       bool                       `codec:"skipBgLoads" json:"skipBgLoads"`
 }
 
 func (o GetInboxQuery) DeepCopy() GetInboxQuery {
@@ -708,6 +715,7 @@ func (o GetInboxQuery) DeepCopy() GetInboxQuery {
 		ReadOnly:          o.ReadOnly,
 		ComputeActiveList: o.ComputeActiveList,
 		SummarizeMaxMsgs:  o.SummarizeMaxMsgs,
+		SkipBgLoads:       o.SkipBgLoads,
 	}
 }
 

@@ -1,6 +1,6 @@
 // @flow
 // NOTE: This file is GENERATED from json files in actions/json. Run 'yarn build-actions' to regenerate
-/* eslint-disable no-unused-vars,prettier/prettier,no-use-before-define */
+/* eslint-disable no-unused-vars,prettier/prettier,no-use-before-define,import/no-duplicates */
 
 import * as I from 'immutable'
 import * as RPCTypes from '../constants/types/rpc-gen'
@@ -17,12 +17,14 @@ export const cancelPgpGen = 'profile:cancelPgpGen'
 export const checkProof = 'profile:checkProof'
 export const cleanupUsername = 'profile:cleanupUsername'
 export const dropPgp = 'profile:dropPgp'
+export const editAvatar = 'profile:editAvatar'
 export const editProfile = 'profile:editProfile'
 export const finishRevoking = 'profile:finishRevoking'
 export const finishedWithKeyGen = 'profile:finishedWithKeyGen'
 export const generatePgp = 'profile:generatePgp'
 export const onClickAvatar = 'profile:onClickAvatar'
 export const outputInstructionsActionLink = 'profile:outputInstructionsActionLink'
+export const recheckProof = 'profile:recheckProof'
 export const revokeFinish = 'profile:revokeFinish'
 export const showUserProfile = 'profile:showUserProfile'
 export const submitBTCAddress = 'profile:submitBTCAddress'
@@ -47,12 +49,14 @@ type _CancelPgpGenPayload = void
 type _CheckProofPayload = void
 type _CleanupUsernamePayload = void
 type _DropPgpPayload = $ReadOnly<{|kid: RPCTypes.KID|}>
+type _EditAvatarPayload = void
 type _EditProfilePayload = $ReadOnly<{|bio: string, fullname: string, location: string|}>
 type _FinishRevokingPayload = void
 type _FinishedWithKeyGenPayload = $ReadOnly<{|shouldStoreKeyOnServer: boolean|}>
 type _GeneratePgpPayload = void
 type _OnClickAvatarPayload = $ReadOnly<{|username: string, openWebsite?: ?boolean|}>
 type _OutputInstructionsActionLinkPayload = void
+type _RecheckProofPayload = $ReadOnly<{|sigID: string|}>
 type _RevokeFinishPayload = void
 type _RevokeFinishPayloadError = $ReadOnly<{|error: string|}>
 type _ShowUserProfilePayload = $ReadOnly<{|username: string|}>
@@ -82,12 +86,14 @@ export const createCancelPgpGen = (payload: _CancelPgpGenPayload) => ({payload, 
 export const createCheckProof = (payload: _CheckProofPayload) => ({payload, type: checkProof})
 export const createCleanupUsername = (payload: _CleanupUsernamePayload) => ({payload, type: cleanupUsername})
 export const createDropPgp = (payload: _DropPgpPayload) => ({payload, type: dropPgp})
+export const createEditAvatar = (payload: _EditAvatarPayload) => ({payload, type: editAvatar})
 export const createEditProfile = (payload: _EditProfilePayload) => ({payload, type: editProfile})
 export const createFinishRevoking = (payload: _FinishRevokingPayload) => ({payload, type: finishRevoking})
 export const createFinishedWithKeyGen = (payload: _FinishedWithKeyGenPayload) => ({payload, type: finishedWithKeyGen})
 export const createGeneratePgp = (payload: _GeneratePgpPayload) => ({payload, type: generatePgp})
 export const createOnClickAvatar = (payload: _OnClickAvatarPayload) => ({payload, type: onClickAvatar})
 export const createOutputInstructionsActionLink = (payload: _OutputInstructionsActionLinkPayload) => ({payload, type: outputInstructionsActionLink})
+export const createRecheckProof = (payload: _RecheckProofPayload) => ({payload, type: recheckProof})
 export const createRevokeFinish = (payload: _RevokeFinishPayload) => ({payload, type: revokeFinish})
 export const createRevokeFinishError = (payload: _RevokeFinishPayloadError) => ({error: true, payload, type: revokeFinish})
 export const createShowUserProfile = (payload: _ShowUserProfilePayload) => ({payload, type: showUserProfile})
@@ -112,12 +118,14 @@ export type CancelPgpGenPayload = {|+payload: _CancelPgpGenPayload, +type: 'prof
 export type CheckProofPayload = {|+payload: _CheckProofPayload, +type: 'profile:checkProof'|}
 export type CleanupUsernamePayload = {|+payload: _CleanupUsernamePayload, +type: 'profile:cleanupUsername'|}
 export type DropPgpPayload = {|+payload: _DropPgpPayload, +type: 'profile:dropPgp'|}
+export type EditAvatarPayload = {|+payload: _EditAvatarPayload, +type: 'profile:editAvatar'|}
 export type EditProfilePayload = {|+payload: _EditProfilePayload, +type: 'profile:editProfile'|}
 export type FinishRevokingPayload = {|+payload: _FinishRevokingPayload, +type: 'profile:finishRevoking'|}
 export type FinishedWithKeyGenPayload = {|+payload: _FinishedWithKeyGenPayload, +type: 'profile:finishedWithKeyGen'|}
 export type GeneratePgpPayload = {|+payload: _GeneratePgpPayload, +type: 'profile:generatePgp'|}
 export type OnClickAvatarPayload = {|+payload: _OnClickAvatarPayload, +type: 'profile:onClickAvatar'|}
 export type OutputInstructionsActionLinkPayload = {|+payload: _OutputInstructionsActionLinkPayload, +type: 'profile:outputInstructionsActionLink'|}
+export type RecheckProofPayload = {|+payload: _RecheckProofPayload, +type: 'profile:recheckProof'|}
 export type RevokeFinishPayload = {|+payload: _RevokeFinishPayload, +type: 'profile:revokeFinish'|}
 export type RevokeFinishPayloadError = {|+error: true, +payload: _RevokeFinishPayloadError, +type: 'profile:revokeFinish'|}
 export type ShowUserProfilePayload = {|+payload: _ShowUserProfilePayload, +type: 'profile:showUserProfile'|}
@@ -145,12 +153,14 @@ export type Actions =
   | CheckProofPayload
   | CleanupUsernamePayload
   | DropPgpPayload
+  | EditAvatarPayload
   | EditProfilePayload
   | FinishRevokingPayload
   | FinishedWithKeyGenPayload
   | GeneratePgpPayload
   | OnClickAvatarPayload
   | OutputInstructionsActionLinkPayload
+  | RecheckProofPayload
   | RevokeFinishPayload
   | RevokeFinishPayloadError
   | ShowUserProfilePayload

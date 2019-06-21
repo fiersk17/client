@@ -22,32 +22,27 @@ const (
 	ActionTeamType                   = "teamType"
 	ActionExpunge                    = "expunge"
 
-	PushActivity         = "chat.activity"
-	PushTyping           = "chat.typing"
-	PushMembershipUpdate = "chat.membershipUpdate"
-	PushTLFFinalize      = "chat.tlffinalize"
-	PushTLFResolve       = "chat.tlfresolve"
-	PushTeamChannels     = "chat.teamchannels"
-	PushKBFSUpgrade      = "chat.kbfsupgrade"
-	PushConvRetention    = "chat.convretention"
-	PushTeamRetention    = "chat.teamretention"
-	PushConvSettings     = "chat.convsettings"
-	PushSubteamRename    = "chat.subteamrename"
+	PushActivity            = "chat.activity"
+	PushTyping              = "chat.typing"
+	PushMembershipUpdate    = "chat.membershipUpdate"
+	PushTLFFinalize         = "chat.tlffinalize"
+	PushTLFResolve          = "chat.tlfresolve"
+	PushTeamChannels        = "chat.teamchannels"
+	PushKBFSUpgrade         = "chat.kbfsupgrade"
+	PushConvRetention       = "chat.convretention"
+	PushTeamRetention       = "chat.teamretention"
+	PushConvSettings        = "chat.convsettings"
+	PushSubteamRename       = "chat.subteamrename"
+	PushConversationsUpdate = "chat.conversationsupdate"
 )
 
 func NewAllCryptKeys() AllCryptKeys {
 	return make(AllCryptKeys)
 }
 
-type NameInfoUntrusted struct {
+type NameInfo struct {
 	ID            chat1.TLFID
 	CanonicalName string
-}
-
-type NameInfo struct {
-	ID               chat1.TLFID
-	CanonicalName    string
-	IdentifyFailures []keybase1.TLFIdentifyFailure
 }
 
 func NewNameInfo() *NameInfo {
@@ -69,6 +64,14 @@ func (m MembershipUpdateRes) AllOtherUsers() (res []gregor1.UID) {
 	}
 	return res
 }
+
+type InboxSourceDataSourceTyp int
+
+const (
+	InboxSourceDataSourceAll InboxSourceDataSourceTyp = iota
+	InboxSourceDataSourceRemoteOnly
+	InboxSourceDataSourceLocalOnly
+)
 
 type RemoteConversationMetadata struct {
 	Name              string   `codec:"n"`
@@ -95,6 +98,21 @@ func (rc RemoteConversation) GetConvID() chat1.ConversationID {
 
 func (rc RemoteConversation) GetVersion() chat1.ConversationVers {
 	return rc.Conv.Metadata.Version
+}
+
+func (rc RemoteConversation) GetMembersType() chat1.ConversationMembersType {
+	return rc.Conv.GetMembersType()
+}
+
+func (rc RemoteConversation) GetTeamType() chat1.TeamType {
+	return rc.Conv.GetTeamType()
+}
+
+func (rc RemoteConversation) GetTopicName() string {
+	if rc.LocalMetadata != nil {
+		return rc.LocalMetadata.TopicName
+	}
+	return ""
 }
 
 func (rc RemoteConversation) GetName() string {

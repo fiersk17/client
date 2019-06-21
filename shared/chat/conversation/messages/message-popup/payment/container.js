@@ -37,6 +37,7 @@ type RequestOwnProps = {
 
 const commonLoadingProps = {
   amountNominal: '',
+  approxWorth: '',
   balanceChange: '',
   balanceChangeColor: '',
   bottomLine: '',
@@ -48,6 +49,7 @@ const commonLoadingProps = {
   onSeeDetails: null,
   sender: '',
   senderDeviceName: '',
+  status: '',
   timestamp: '',
   topLine: '',
   txVerb: 'sent',
@@ -76,12 +78,11 @@ const sendMapDispatchToProps = dispatch => ({
         : RouteTreeGen.createSwitchTo({path: WalletConstants.rootWalletPath})
     ),
   onSeeDetails: (accountID: WalletTypes.AccountID, paymentID: WalletTypes.PaymentID) => {
-    dispatch(WalletGen.createSelectAccount({accountID}))
+    dispatch(WalletGen.createSelectAccount({accountID, reason: 'from-chat'}))
     dispatch(
       RouteTreeGen.createNavigateTo({
         path: [
-          ...WalletConstants.rootWalletPath,
-          'wallet',
+          ...WalletConstants.walletPath,
           {props: {accountID, paymentID}, selected: 'transactionDetails'},
         ],
       })
@@ -118,6 +119,7 @@ const sendMergeProps = (stateProps, dispatchProps, ownProps: SendOwnProps) => {
   const youAreReceiver = you === paymentInfo.toUsername
   return {
     amountNominal: paymentInfo.worth || paymentInfo.amountDescription,
+    approxWorth: paymentInfo.worthAtSendTime,
     attachTo: ownProps.attachTo,
     balanceChange: `${WalletConstants.balanceChangeSign(paymentInfo.delta, paymentInfo.amountDescription)}`,
     balanceChangeColor: WalletConstants.balanceChangeColor(paymentInfo.delta, paymentInfo.status),
@@ -145,6 +147,7 @@ const sendMergeProps = (stateProps, dispatchProps, ownProps: SendOwnProps) => {
     position: ownProps.position,
     sender: ownProps.message.author,
     senderDeviceName: ownProps.message.deviceName,
+    status: '',
     style: ownProps.style,
     timestamp: formatTimeForMessages(ownProps.message.timestamp),
     topLine: `${getTopLineUser(paymentInfo, ownProps.message.author, you)}${
@@ -208,8 +211,16 @@ const requestMergeProps = (stateProps, dispatchProps, ownProps: RequestOwnProps)
     requestInfo.asset === 'currency' ? ' Lumens worth' : ''
   }`
 
+  let status = ''
+  if (requestInfo.canceled) {
+    status = 'canceled'
+  } else if (requestInfo.done) {
+    status = 'completed'
+  }
+
   return {
     amountNominal: requestInfo.amountDescription,
+    approxWorth: '',
     attachTo: ownProps.attachTo,
     balanceChange: '',
     balanceChangeColor: '',
@@ -217,13 +228,17 @@ const requestMergeProps = (stateProps, dispatchProps, ownProps: RequestOwnProps)
     cancelButtonLabel: 'Cancel request',
     icon: 'receiving',
     loading: false,
-    onCancel: ownProps.message.author === you ? dispatchProps.onCancel : null,
+    onCancel:
+      ownProps.message.author === you && !(requestInfo.done || requestInfo.canceled)
+        ? dispatchProps.onCancel
+        : null,
     onClaimLumens: null,
     onHidden: ownProps.onHidden,
     onSeeDetails: null,
     position: ownProps.position,
     sender: ownProps.message.author,
     senderDeviceName: ownProps.message.deviceName,
+    status,
     style: ownProps.style,
     timestamp: formatTimeForMessages(ownProps.message.timestamp),
     topLine,
@@ -240,16 +255,13 @@ const RequestPaymentPopup = Container.connect<RequestOwnProps, _, _, _, _>(
 
 // Wrapper ==============================================
 const PaymentPopupChooser = (props: OwnProps) => {
-  switch (props.message.type) {
-    case 'sendPayment':
-      // $FlowIssue doesn't understand message is the right type
-      return <SendPaymentPopup {...props} />
-    case 'requestPayment':
-      // $FlowIssue doesn't understand message is the right type
-      return <RequestPaymentPopup {...props} />
-    default:
-      throw new Error(`PaymentPopup: impossible case encountered: ${props.message.type}`)
+  const {message, ...rest} = props
+  if (message.type === 'sendPayment') {
+    return <SendPaymentPopup {...rest} message={message} />
+  } else if (message.type === 'requestPayment') {
+    return <RequestPaymentPopup {...rest} message={message} />
   }
+  throw new Error(`PaymentPopup: impossible case encountered: ${message.type}`)
 }
 
 export default PaymentPopupChooser

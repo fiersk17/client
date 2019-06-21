@@ -5,14 +5,20 @@ import * as Types from '../../constants/types/fs'
 import * as Constants from '../../constants/fs'
 import * as Styles from '../../styles'
 import {Box, ClickableBox, Text, ProgressIndicator} from '../../common-adapters'
-import {navigateUp} from '../../actions/route-tree'
+import * as RouteTreeGen from '../../actions/route-tree-gen'
 import {connect} from '../../util/container'
 import {type BarePreviewProps} from './bare-preview'
 import View from './view-container'
-import PathItemAction from '../common/path-item-action-container'
+import {PathItemAction} from '../common'
 
 const mapDispatchToProps = (dispatch, {routePath}) => ({
-  onBack: () => dispatch(navigateUp()),
+  onBack: () =>
+    dispatch(
+      RouteTreeGen.createPutActionIfOnPath({
+        expectedPath: routePath,
+        otherAction: RouteTreeGen.createNavigateUp(),
+      })
+    ),
 })
 
 const mergeProps = (stateProps, {onBack}, {routeProps, routePath}) => ({
@@ -55,7 +61,12 @@ class BarePreview extends React.PureComponent<ConnectedBarePreviewProps, State> 
           />
         </Box>
         <Box style={styles.footer}>
-          <PathItemAction path={this.props.path} actionIconWhite={true} />
+          <PathItemAction
+            path={this.props.path}
+            clickable={{actionIconWhite: true, type: 'icon'}}
+            routePath={this.props.routePath}
+            initView="root"
+          />
         </Box>
         {this.state.loading && <ProgressIndicator style={styles.loading} white={true} />}
       </Box>

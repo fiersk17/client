@@ -91,6 +91,9 @@ protocol remote {
     TimeMs ctime; // ctime in keybase db
     TimeMs rtime; // time of last status update
     string cursorToken;
+    boolean fromPrimary;
+    string batchID;
+    boolean fromAirdrop;
   }
 
   record PaymentSummaryRelay {
@@ -117,6 +120,8 @@ protocol remote {
     // Summary of the most relevant claim. Either the successful one or latest pending.
     union { null, ClaimSummary } claim;
     string cursorToken;
+    string batchID;
+    boolean fromAirdrop;
   }
 
   record ClaimSummary {
@@ -220,6 +225,11 @@ protocol remote {
     string amount;
     union { null, Asset } asset;
     union { null, OutsideCurrencyCode } currency;
+
+    string fromDisplayAmount;
+    string fromDisplayCurrency;
+    string toDisplayAmount;
+    string toDisplayCurrency;
 
     // Payment ID if funded, empty if not funded.
     KeybaseTransactionID fundingKbTxID;

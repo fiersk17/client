@@ -16,6 +16,7 @@ const loadingProps = {
   _paymentID: null,
   action: '',
   amount: '',
+  approxWorth: '',
   balanceChange: '',
   balanceChangeColor: '',
   cancelButtonInfo: '',
@@ -26,6 +27,7 @@ const loadingProps = {
   loading: true,
   memo: '',
   pending: false,
+  showCoinsIcon: false,
 }
 
 // Info text for cancelable payments
@@ -69,15 +71,16 @@ const mapStateToProps = (state, ownProps: OwnProps) => {
       const cancelable = paymentInfo.status === 'claimable'
       const pending = cancelable || paymentInfo.status === 'pending'
       const canceled = paymentInfo.status === 'canceled'
+      const completed = paymentInfo.status === 'completed'
       const verb = makeSendPaymentVerb(paymentInfo.status, youAreSender)
       return {
         _paymentID: paymentInfo.paymentID,
         action: paymentInfo.worth ? `${verb} Lumens worth` : verb,
         amount: paymentInfo.worth ? paymentInfo.worth : paymentInfo.amountDescription,
-        balanceChange: `${WalletConstants.balanceChangeSign(
-          paymentInfo.delta,
-          paymentInfo.amountDescription
-        )}`,
+        approxWorth: paymentInfo.worthAtSendTime,
+        balanceChange: completed
+          ? `${WalletConstants.balanceChangeSign(paymentInfo.delta, paymentInfo.amountDescription)}`
+          : '',
         balanceChangeColor: WalletConstants.balanceChangeColor(paymentInfo.delta, paymentInfo.status),
         cancelButtonInfo: paymentInfo.showCancel ? makeCancelButtonInfo(theirUsername) : '',
         cancelButtonLabel: paymentInfo.showCancel ? 'Cancel' : '',
@@ -86,11 +89,12 @@ const mapStateToProps = (state, ownProps: OwnProps) => {
           !youAreSender && cancelable && !acceptedDisclaimer
             ? `Claim${paymentInfo.worth ? ' Lumens worth' : ''}`
             : '',
-        icon: pending ? 'iconfont-clock' : 'iconfont-stellar-send',
+        icon: pending ? 'iconfont-clock' : null,
         loading: false,
         memo: paymentInfo.note.stringValue(),
         pending: pending || canceled,
         sendButtonLabel: '',
+        showCoinsIcon: completed,
       }
     }
     case 'requestPayment': {
@@ -100,11 +104,12 @@ const mapStateToProps = (state, ownProps: OwnProps) => {
         // waiting for service to load it
         return loadingProps
       }
-      const {amountDescription, asset, canceled} = requestInfo
+      const {amountDescription, asset, canceled, done} = requestInfo
       return {
         _paymentID: null,
         action: asset === 'currency' ? 'requested Lumens worth' : 'requested',
         amount: amountDescription,
+        approxWorth: requestInfo.worthAtRequestTime,
         balanceChange: '',
         balanceChangeColor: '',
         cancelButtonInfo: '',
@@ -116,7 +121,10 @@ const mapStateToProps = (state, ownProps: OwnProps) => {
         memo: message.note.stringValue(),
         pending: false,
         sendButtonLabel:
-          youAreSender || canceled ? '' : `Send${requestInfo.asset === 'currency' ? ' Lumens worth ' : ' '}`,
+          youAreSender || canceled || done
+            ? ''
+            : `Send${requestInfo.asset === 'currency' ? ' Lumens worth ' : ' '}`,
+        showCoinsIcon: false,
       }
     }
     default:
@@ -142,6 +150,7 @@ const mapDispatchToProps = (dispatch, {message: {conversationIDKey, ordinal}}) =
 const mergeProps = (stateProps, dispatchProps, ownProps) => ({
   action: stateProps.action,
   amount: stateProps.amount,
+  approxWorth: stateProps.approxWorth,
   balanceChange: stateProps.balanceChange,
   balanceChangeColor: stateProps.balanceChangeColor,
   cancelButtonInfo: stateProps.cancelButtonInfo,
@@ -156,6 +165,7 @@ const mergeProps = (stateProps, dispatchProps, ownProps) => ({
   onSend: dispatchProps.onSend,
   pending: stateProps.pending,
   sendButtonLabel: stateProps.sendButtonLabel || '',
+  showCoinsIcon: stateProps.showCoinsIcon,
 })
 
 const ConnectedAccountPayment = Container.connect<OwnProps, _, _, _, _>(

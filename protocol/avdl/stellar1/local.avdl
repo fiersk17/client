@@ -13,6 +13,10 @@ protocol local {
     string balanceDescription;  // example: "56.0227002 XLM + more"
     string seqno;               // the stellar sequence number for this account
     CurrencyLocal currencyLocal;// user configurable, defaults to USD and related details
+    AccountMode accountMode;    // mobile only vs all devices
+    boolean accountModeEditable;// is this device able to change it
+    boolean isFunded;           // does the account have minimum amount of XLM to exist on the network
+    boolean canSubmitTx;        // does the account have enough XLM to submit a transaction (enough for the fee)
   }
   array<WalletAccountLocal> getWalletAccountsLocal(int sessionID);
   WalletAccountLocal getWalletAccountLocal(int sessionID, AccountID accountID);
@@ -74,8 +78,9 @@ protocol local {
     boolean showCancel;             // true if cancel is an option for this payment
     string amountDescription;       // "1,323.1234567 XLM"
     BalanceDelta delta;             // NONE/INCREASE/DECREASE (e.g. INCREASE for "+ 1,323.1234567 XLM" amount above)
-    string worth;                   // "$123.23 CLP" (worth at the time the payment was created)
-    string worthCurrency;           // "USD", "CAD", etc. (the symbols can be ambiguous)
+    string worth;                   // "$123.23 CLP", senders intended amount if this was made as a lumens-worth-currency payment
+    string worthAtSendTime;         // "$123.23 CLP", amount in current user's display currency. Set if frontend should show an
+                                    // (APPROXIMATELY $X.XX) message i.e. if this is a pure-XLM payment.
 
     string issuerDescription;       // For non-XLM assets: either "Unknown issuer" or domain name
                                     // ("example.com") if domain is verified by stellard.
@@ -100,6 +105,9 @@ protocol local {
     string noteErr;
 
     boolean unread;                 // true if user hasn't seen the payment yet (sourceType STELLAR only)
+
+    string batchID;       // if payment sent via batch, will contain the batch id
+    boolean fromAirdrop;            // true if payment pertains to a keybase airdrop
   }
 
   record PaymentOrErrorLocal {
@@ -132,8 +140,9 @@ protocol local {
     boolean showCancel;             // true if cancel is an option for this payment
     string amountDescription;       // "1,323.1234567 XLM" - always amount of XLM, even if converted from OutsideCurrency
     BalanceDelta delta;             // NONE/INCREASE/DECREASE (e.g. INCREASE for "+ 1,323.1234567 XLM" amount above)
-    string worth;                   // "$123.23 CLP", amount in local currency at the time of sending, or empty if no OutsideCurrency
-    string worthCurrency;           // "USD", "CAD", etc. (the symbols can be ambiguous), or empty
+    string worth;                   // "$123.23 CLP", senders intended amount if this was made as a lumens-worth-currency payment
+    string worthAtSendTime;         // "$123.23 CLP", amount in current user's display currency. Set if frontend should show an
+                                    // (APPROXIMATELY $X.XX) message i.e. if this is a pure-XLM payment.
 
     string issuerDescription;       // For non-XLM assets: either "Unknown issuer" or domain name
                                     // ("example.com") if domain is verified by stellard.
@@ -162,6 +171,9 @@ protocol local {
 
     @lint("ignore")
     string externalTxURL;           // link to external web page with tx details
+
+    string batchID;       // if payment sent via batch, will contain the batch id
+    boolean fromAirdrop;            // true if payment pertains to a keybase airdrop
   }
 
   // accountID should be the accountID that you want the details for.
@@ -312,6 +324,7 @@ protocol local {
     string displayAmountFiat;            // "$1.23 USD"
     @lint("ignore")
     boolean sendingIntentionXLM;         // true if currency is nil
+    string amountAvailable;              // "3280.435 XLM available"
 
     array<SendBannerLocal> banners;
   }
@@ -329,6 +342,7 @@ protocol local {
   // Sends uiPaymentReview notifications while it is open.
   void reviewPaymentLocal(
     int sessionID,
+    int reviewID, // ID reflected back to and used only by the frontend.
     // Should be the latest ID that went through buildPaymentLocal and returned readyToReview.
     BuildPaymentID bid
   );
@@ -436,6 +450,9 @@ protocol local {
 
     // Formatted amount of either outside currency or stellar lumens.
     string amountDescription; // "$123.23 CAD"
+    string worthAtRequestTime; // "$123.23 CLP", amount in current user's display currency.
+                            // Set if frontend should show an (APPROXIMATELY $X.XX) message.
+
 
     RequestStatus status;
   }
@@ -450,23 +467,50 @@ protocol local {
 
   RelayClaimResult cancelPaymentLocal(int sessionID, PaymentID paymentID);
 
-  enum InflationDestinationType {
-    SELF_1,
-    ACCOUNTID_2,
-    LUMENAUT_3
+  @typedef("string") record InflationDestinationTag {}
+
+  record PredefinedInflationDestination {
+    InflationDestinationTag tag; // "sdf"
+    string name; // "Stellar Development Foundation"
+    boolean recommended; // false
+    AccountID accountID; // "GDWNY2POLGK65VVKIH5KQSH7VWLKRTQ5M6ADLJAYC2UEHEBEARCZJWWI"
+    string url; // "https://www.stellar.org"
   }
-  variant InflationDestination switch (InflationDestinationType typ) {
-    case SELF: void;
-    case ACCOUNTID: AccountID;
-    case LUMENAUT: void;
-  }
-  void setInflationDestinationLocal(int sessionID, AccountID accountID, InflationDestination destination);
+
+  array<PredefinedInflationDestination> getPredefinedInflationDestinationsLocal(int sessionID);
+
+  void setInflationDestinationLocal(int sessionID, AccountID accountID, AccountID destination);
 
   record InflationDestinationResultLocal {
-    union { null, AccountID } destination;
-    string comment;
+    union { null, AccountID } destination; // null if destination is not set
+    union { null, PredefinedInflationDestination } knownDestination; // set if one of the known destinations
+    boolean self; // true if destination ID is equal to account ID
   }
   InflationDestinationResultLocal getInflationDestinationLocal(int sessionID, AccountID accountID);
+
+  // airdropDetailsLocal returns a json blob of details about the current
+  // airdrop.  If the current airdrop has expired, it will return an
+  // expired error.
+  string airdropDetailsLocal(int sessionID);
+
+  @typedef("string") record AirdropState {}
+
+  record AirdropQualification {
+    string title;
+    string subtitle;
+    boolean valid;
+  }
+
+  record AirdropStatus {
+    AirdropState state;
+    array<AirdropQualification> rows;
+  }
+
+  // airdropStatusLocal returns the user's status for the current airdrop.
+  AirdropStatus airdropStatusLocal(int sessionID);
+
+  // airdropRegisterLocal registers a user for an airdrop.
+  void airdropRegisterLocal(int sessionID, boolean register);
 
   // -------------------------------------------------------
   // CLI protocol
@@ -521,7 +565,7 @@ protocol local {
 
   void walletInitLocal();
 
-  BundleRestricted walletDumpLocal();
+  Bundle walletDumpLocal();
 
   // Account balance and its current value in selected currency.
   record OwnAccountCLILocal {
@@ -530,6 +574,7 @@ protocol local {
     string name;
     array<Balance> balance;
     union { null, OutsideExchangeRate } exchangeRate;
+    AccountMode accountMode;
   }
 
   array<OwnAccountCLILocal> walletGetAccountsCLILocal();
@@ -557,4 +602,56 @@ protocol local {
     union { null, string } username;
   }
   LookupResultCLILocal lookupCLILocal(string name);
+
+  record BatchPaymentError {
+    string message;
+    int code;
+  }
+
+  record BatchPaymentResult {
+    string username;
+    TimeMs startTime;
+    TimeMs submittedTime;
+    TimeMs endTime;
+    TransactionID txID;
+    PaymentStatus status;
+    string statusDescription;
+    union { null, BatchPaymentError } error;
+  }
+
+  record BatchResultLocal {
+    TimeMs startTime;
+    TimeMs preparedTime;
+    TimeMs allSubmittedTime;
+    TimeMs allCompleteTime;
+    TimeMs endTime;
+    array<BatchPaymentResult> payments;
+
+    TimeMs overallDurationMs;
+    TimeMs prepareDurationMs;
+    TimeMs submitDurationMs;
+    TimeMs waitPaymentsDurationMs;
+    TimeMs waitChatDurationMs;
+
+    int countSuccess;
+    int countDirect;
+    int countRelay;
+    int countError;
+    int countPending;
+
+    TimeMs avgDurationMs;
+    TimeMs avgSuccessDurationMs;
+    TimeMs avgDirectDurationMs;
+    TimeMs avgRelayDurationMs;
+    TimeMs avgErrorDurationMs;
+  }
+
+  record BatchPaymentArg {
+    string recipient;
+    string amount;
+    string message;
+  }
+
+  BatchResultLocal batchLocal(string batchID, int timeoutSecs, array<BatchPaymentArg> payments);
+
 }

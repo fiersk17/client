@@ -414,6 +414,8 @@ func (l LinkID) IsNil() bool {
 	return len(l) == 0
 }
 
+func NilTeamID() TeamID { return TeamID("") }
+
 func (s Seqno) Eq(s2 Seqno) bool {
 	return s == s2
 }
@@ -1222,7 +1224,7 @@ func (t TLFID) ToBytes() []byte {
 	return b
 }
 
-func (b TLFIdentifyBehavior) UnblockDespiteTracking() bool {
+func (b TLFIdentifyBehavior) UnblockThenForceIDTable() bool {
 	switch b {
 	case TLFIdentifyBehavior_GUI_PROFILE:
 		return true
@@ -2115,6 +2117,10 @@ func (t TeamName) RootAncestorName() TeamName {
 	return TeamName{
 		Parts: t.Parts[:1],
 	}
+}
+
+func (t TeamName) RootID() TeamID {
+	return t.RootAncestorName().ToTeamID(false)
 }
 
 func (t TeamName) Parent() (TeamName, error) {

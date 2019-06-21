@@ -65,8 +65,7 @@ func (i *IdentifyOutcome) TrackSet() *TrackSet {
 }
 
 func (i *IdentifyOutcome) ProofChecksSorted() []*LinkCheckResult {
-	// TODO Remove with CORE-8969
-	useDisplayPriority := i.G().Env.GetRunMode() == DevelRunMode || i.G().Env.RunningInCI()
+	useDisplayPriority := i.G().ShouldUseParameterizedProofs()
 	if useDisplayPriority {
 		return i.proofChecksSortedByDisplayPriority()
 	}
@@ -74,7 +73,7 @@ func (i *IdentifyOutcome) ProofChecksSorted() []*LinkCheckResult {
 
 }
 
-// TODO Remove with CORE-8969
+// TODO Remove with CORE-9923
 func (i *IdentifyOutcome) proofChecksSortedByProofType() []*LinkCheckResult {
 	// Treat DNS and Web as the same type, and sort them together
 	// in the same bucket.

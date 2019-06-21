@@ -14,7 +14,6 @@ export default function(state: Types.State = initialState, action: GitGen.Action
     case GitGen.loaded:
       return state.merge({
         idToInfo: I.Map(action.payload.repos),
-        lastLoad: Date.now(),
       })
     case GitGen.setError:
       return state.merge({error: action.payload.error})
@@ -22,7 +21,6 @@ export default function(state: Types.State = initialState, action: GitGen.Action
       return state.merge({isNew: I.Set(action.payload.ids)})
     // Clear errors
     case GitGen.loadGit:
-    case GitGen.loadGitRepo:
     case GitGen.createPersonalRepo:
     case GitGen.createTeamRepo:
     case GitGen.deletePersonalRepo:

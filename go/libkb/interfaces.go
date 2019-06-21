@@ -41,6 +41,7 @@ type configGetter interface {
 	GetChatDbFilename() string
 	GetPvlKitFilename() string
 	GetParamProofKitFilename() string
+	GetProveBypass() (bool, bool)
 	GetCodeSigningKIDs() []string
 	GetConfigFilename() string
 	GetDbFilename() string
@@ -62,11 +63,14 @@ type configGetter interface {
 	GetLocalRPCDebug() string
 	GetLocalTrackMaxAge() (time.Duration, bool)
 	GetLogFile() string
+	GetEKLogFile() string
 	GetUseDefaultLogFile() (bool, bool)
+	GetUseRootConfigFile() (bool, bool)
 	GetLogPrefix() string
 	GetLogFormat() string
 	GetMerkleKIDs() []string
 	GetMountDir() string
+	GetMountDirDefault() string
 	GetPidFile() string
 	GetPinentry() string
 	GetProofCacheSize() (int, bool)
@@ -97,6 +101,11 @@ type configGetter interface {
 	GetAttachmentHTTPStartPort() (int, bool)
 	GetAttachmentDisableMulti() (bool, bool)
 	GetChatOutboxStorageEngine() string
+	GetDisableTeamAuditor() (bool, bool)
+	GetDisableMerkleAuditor() (bool, bool)
+	GetDisableSearchIndexer() (bool, bool)
+	GetDisableBgConvLoader() (bool, bool)
+	GetEnableBotLiteMode() (bool, bool)
 }
 
 type CommandLine interface {
@@ -138,6 +147,7 @@ type LocalDbTransaction interface {
 type LocalDb interface {
 	LocalDbOps
 	Open() error
+	Stats() string
 	ForceOpen() error
 	Close() error
 	Nuke() (string, error)
@@ -303,6 +313,7 @@ type IdentifyUI interface {
 	FinishSocialProofCheck(keybase1.RemoteProof, keybase1.LinkCheckResult) error
 	Confirm(*keybase1.IdentifyOutcome) (keybase1.ConfirmResult, error)
 	DisplayCryptocurrency(keybase1.Cryptocurrency) error
+	DisplayStellarAccount(keybase1.StellarAccount) error
 	DisplayKey(keybase1.IdentifyKey) error
 	ReportLastTrack(*keybase1.TrackSummary) error
 	LaunchNetworkChecks(*keybase1.Identity, *keybase1.User) error
@@ -396,8 +407,8 @@ type ChatUI interface {
 	ChatStellarShowConfirm(context.Context) error
 	ChatStellarDataConfirm(context.Context, chat1.UIChatPaymentSummary) (bool, error)
 	ChatStellarDataError(context.Context, string) (bool, error)
-	ChatStellarDone(context.Context) error
-	ChatPostReadyToSend(context.Context) error
+	ChatStellarDone(context.Context, bool) error
+	ChatShowManageChannels(context.Context, string) error
 }
 
 type PromptDefault int
@@ -462,7 +473,9 @@ type UIRouter interface {
 	GetRekeyUI() (keybase1.RekeyUIInterface, int, error)
 	GetRekeyUINoSessionID() (keybase1.RekeyUIInterface, error)
 	GetHomeUI() (keybase1.HomeUIInterface, error)
-	GetIdentify3UIAdapter(MetaContext, keybase1.Identify3GUIID) (IdentifyUI, error)
+	GetIdentify3UIAdapter(MetaContext) (IdentifyUI, error)
+	GetIdentify3UI(MetaContext) (keybase1.Identify3UiInterface, error)
+	GetChatUI() (ChatUI, error)
 
 	Shutdown()
 }
@@ -484,7 +497,9 @@ type Clock interface {
 	Now() time.Time
 }
 
-type GregorDismisser interface {
+type GregorState interface {
+	State(ctx context.Context) (gregor.State, error)
+	InjectItem(ctx context.Context, cat string, body []byte, dtime gregor1.TimeOrOffset) (gregor1.MsgID, error)
 	DismissItem(ctx context.Context, cli gregor1.IncomingInterface, id gregor.MsgID) error
 	LocalDismissItem(ctx context.Context, id gregor.MsgID) error
 }
@@ -559,7 +574,7 @@ type ProofChecker interface {
 // ServiceType is an interface for describing an external proof service, like 'Twitter'
 // or 'GitHub', etc.
 type ServiceType interface {
-	AllStringKeys() []string
+	Key() string
 
 	// NormalizeUsername normalizes the given username, assuming
 	// that it's free of any leading strings like '@' or 'dns://'.
@@ -581,10 +596,11 @@ type ServiceType interface {
 	PreProofWarning(remotename string) *Markup
 	ToServiceJSON(remotename string) *jsonw.Wrapper
 	PostInstructions(remotename string) *Markup
-	DisplayName(remotename string) string
+	DisplayName() string
 	RecheckProofPosting(tryNumber int, status keybase1.ProofStatus, remotename string) (warning *Markup, err error)
 	GetProofType() string
 	GetTypeName() string
+	PickerSubtext() string
 	CheckProofText(text string, id keybase1.SigID, sig string) error
 	FormatProofText(mctx MetaContext, ppr *PostProofRes,
 		kbUsername string, sigID keybase1.SigID) (string, error)
@@ -593,14 +609,17 @@ type ServiceType interface {
 
 	MakeProofChecker(l RemoteProofChainLink) ProofChecker
 	SetDisplayConfig(*keybase1.ServiceDisplayConfig)
-	CanMakeNewProofs() bool
+	CanMakeNewProofs(mctx MetaContext) bool
 	DisplayPriority() int
+	DisplayGroup() string
 }
 
 type ExternalServicesCollector interface {
 	GetServiceType(n string) ServiceType
 	ListProofCheckers() []string
-	ListServicesThatAcceptNewProofs() []string
+	ListServicesThatAcceptNewProofs(MetaContext) []string
+	ListDisplayConfigs() (res []keybase1.ServiceDisplayConfig)
+	SuggestionFoldPriority() int
 }
 
 // Generic store for data that is hashed into the merkle root. Used by pvl and
@@ -703,6 +722,7 @@ type Stellar interface {
 	SpecMiniChatPayments(mctx MetaContext, payments []MiniChatPayment) (*MiniChatPaymentSummary, error)
 	SendMiniChatPayments(mctx MetaContext, convID chat1.ConversationID, payments []MiniChatPayment) ([]MiniChatPaymentResult, error)
 	HandleOobm(context.Context, gregor.OutOfBandMessage) (bool, error)
+	RemovePendingTx(mctx MetaContext, accountID stellar1.AccountID, txID stellar1.TransactionID) error
 }
 
 type DeviceEKStorage interface {
@@ -716,6 +736,8 @@ type DeviceEKStorage interface {
 	ForceDeleteAll(ctx context.Context, username NormalizedUsername) error
 	// For keybase log send
 	ListAllForUser(ctx context.Context) ([]string, error)
+	// Called on login/logout hooks to set the logged in username in the EK log
+	SetLogPrefix()
 }
 
 type UserEKBoxStorage interface {
@@ -851,13 +873,13 @@ type UIDMapper interface {
 
 type ChatHelper interface {
 	SendTextByID(ctx context.Context, convID chat1.ConversationID,
-		trip chat1.ConversationIDTriple, tlfName string, text string) error
+		tlfName string, text string) error
 	SendMsgByID(ctx context.Context, convID chat1.ConversationID,
-		trip chat1.ConversationIDTriple, tlfName string, body chat1.MessageBody, msgType chat1.MessageType) error
+		tlfName string, body chat1.MessageBody, msgType chat1.MessageType) error
 	SendTextByIDNonblock(ctx context.Context, convID chat1.ConversationID,
-		trip chat1.ConversationIDTriple, tlfName string, text string) error
+		tlfName string, text string) error
 	SendMsgByIDNonblock(ctx context.Context, convID chat1.ConversationID,
-		trip chat1.ConversationIDTriple, tlfName string, body chat1.MessageBody, msgType chat1.MessageType) error
+		tlfName string, body chat1.MessageBody, msgType chat1.MessageType) error
 	SendTextByName(ctx context.Context, name string, topicName *string,
 		membersType chat1.ConversationMembersType, ident keybase1.TLFIdentifyBehavior, text string) error
 	SendMsgByName(ctx context.Context, name string, topicName *string,
@@ -868,9 +890,14 @@ type ChatHelper interface {
 	SendMsgByNameNonblock(ctx context.Context, name string, topicName *string,
 		membersType chat1.ConversationMembersType, ident keybase1.TLFIdentifyBehavior, body chat1.MessageBody,
 		msgType chat1.MessageType) error
-	FindConversations(ctx context.Context, useLocalData bool, name string, topicName *string,
-		topicType chat1.TopicType, membersType chat1.ConversationMembersType, vis keybase1.TLFVisibility) ([]chat1.ConversationLocal, error)
+	FindConversations(ctx context.Context, name string,
+		topicName *string, topicType chat1.TopicType, membersType chat1.ConversationMembersType,
+		vis keybase1.TLFVisibility) ([]chat1.ConversationLocal, error)
 	FindConversationsByID(ctx context.Context, convIDs []chat1.ConversationID) ([]chat1.ConversationLocal, error)
+	JoinConversationByID(ctx context.Context, uid gregor1.UID, convID chat1.ConversationID) error
+	JoinConversationByName(ctx context.Context, uid gregor1.UID, tlfName, topicName string,
+		topicType chat1.TopicType, vid keybase1.TLFVisibility) error
+	LeaveConversation(ctx context.Context, uid gregor1.UID, convID chat1.ConversationID) error
 	GetChannelTopicName(context.Context, keybase1.TeamID, chat1.TopicType, chat1.ConversationID) (string, error)
 	GetMessages(ctx context.Context, uid gregor1.UID, convID chat1.ConversationID,
 		msgIDs []chat1.MessageID, resolveSupersedes bool, reason *chat1.GetThreadReason) ([]chat1.MessageUnboxed, error)

@@ -6,6 +6,7 @@ import * as Meta from './meta'
 import * as Message from './message'
 import * as Wallet from '../wallets'
 import * as TeamBuildingTypes from '../team-building'
+import HiddenString from '../../../util/hidden-string'
 
 export type PendingMode =
   | 'none' // no pending
@@ -36,11 +37,20 @@ export type PaymentConfirmInfo = {
 // Static config data we use for various things
 export type _StaticConfig = {
   deletableByDeleteHistory: I.Set<Message.MessageType>,
+  builtinCommands: {
+    [typ: RPCChatTypes.ConversationBuiltinCommandTyp]: Array<RPCChatTypes.ConversationCommand>,
+  },
 }
 export type StaticConfig = I.RecordOf<_StaticConfig>
 
 export type MetaMap = I.Map<Common.ConversationIDKey, Meta.ConversationMeta>
 export type ConversationCountMap = I.Map<Common.ConversationIDKey, number>
+
+// Where focus should be going to.
+// Null represents the default chat input.
+// This is very simple for now, but we can make
+// it fancier by using a stack and more types
+export type Focus = 'filter' | null
 
 export type _State = {
   accountsInfoMap: I.Map<
@@ -49,10 +59,10 @@ export type _State = {
   >, // temp cache for requestPayment and sendPayment message data
   badgeMap: ConversationCountMap, // id to the badge count
   editingMap: I.Map<Common.ConversationIDKey, Message.Ordinal>, // current message being edited
+  focus: Focus,
   inboxFilter: string, // filters 'jump to chat'
   inboxHasLoaded: boolean, // if we've ever loaded
   smallTeamsExpanded: boolean, // if we're showing all small teams
-  isExplodingNew: boolean, // controls the new-ness of exploding messages UI
   isWalletsNew: boolean, // controls new-ness of wallets in chat UI
   messageMap: I.Map<Common.ConversationIDKey, I.Map<Message.Ordinal, Message.Message>>, // messages in a thread
   messageOrdinals: I.Map<Common.ConversationIDKey, I.OrderedSet<Message.Ordinal>>, // ordered ordinals in a thread
@@ -73,6 +83,7 @@ export type _State = {
   attachmentFullscreenMessage: ?Message.Message,
   paymentConfirmInfo: ?PaymentConfirmInfo, // chat payment confirm screen data
   paymentStatusMap: I.Map<Wallet.PaymentID, Message.ChatPaymentInfo>,
+  unsentTextMap: I.Map<Common.ConversationIDKey, HiddenString>,
 } & TeamBuildingTypes.TeamBuildingSubState
 
 export type State = I.RecordOf<_State>
@@ -107,6 +118,7 @@ export type {
   MessageSetChannelname,
   MessageSetDescription,
   MessageSystemAddedToTeam,
+  MessageSystemChangeRetention,
   MessageSystemGitPush,
   MessageSystemInviteAccepted,
   MessageSystemJoined,

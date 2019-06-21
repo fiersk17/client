@@ -15,7 +15,7 @@ import {
   conversationIDKeyToString,
   isValidConversationIDKey,
 } from '../types/chat2/common'
-import {makeConversationMeta, getMeta} from './meta'
+import {makeConversationMeta, getEffectiveRetentionPolicy, getMeta} from './meta'
 import {formatTextForQuoting} from '../../util/chat'
 
 export const makeState: I.RecordFactory<Types._State> = I.Record({
@@ -25,9 +25,9 @@ export const makeState: I.RecordFactory<Types._State> = I.Record({
   editingMap: I.Map(),
   explodingModeLocks: I.Map(),
   explodingModes: I.Map(),
+  focus: null,
   inboxFilter: '',
   inboxHasLoaded: false,
-  isExplodingNew: true,
   isWalletsNew: true,
   messageMap: I.Map(),
   messageOrdinals: I.Map(),
@@ -48,6 +48,7 @@ export const makeState: I.RecordFactory<Types._State> = I.Record({
   typingMap: I.Map(),
   unfurlPromptMap: I.Map(),
   unreadMap: I.Map(),
+  unsentTextMap: I.Map(),
 
   // Team Building
   ...TeamBuildingConstants.makeSubState(),
@@ -65,6 +66,7 @@ export const makeQuoteInfo: I.RecordFactory<Types._QuoteInfo> = I.Record({
 })
 
 export const makeStaticConfig: I.RecordFactory<Types._StaticConfig> = I.Record({
+  builtinCommands: [],
   deletableByDeleteHistory: I.Set(),
 })
 
@@ -120,7 +122,7 @@ export const isUserActivelyLookingAtThisThread = (
   conversationIDKey: Types.ConversationIDKey
 ) => {
   const selectedConversationIDKey = getSelectedConversation(state)
-  const appFocused = state.config.appFocused
+
   const routePath = getPath(state.routeTree.routeState)
   let chatThreadSelected = false
   if (isMobile) {
@@ -131,7 +133,8 @@ export const isUserActivelyLookingAtThisThread = (
   }
 
   return (
-    appFocused && // app focused?
+    state.config.appFocused && // app focused?
+    state.config.userActive && // actually interacting w/ the app
     chatThreadSelected && // looking at the chat tab?
     conversationIDKey === selectedConversationIDKey // looking at the selected thread?
   )
@@ -165,18 +168,13 @@ export const waitingKeyUnboxing = (conversationIDKey: Types.ConversationIDKey) =
 export const anyChatWaitingKeys = (state: TypedState) =>
   state.waiting.counts.keySeq().some(k => k.startsWith('chat:'))
 
-// When we see that exploding messages are in the app, we set
-// seenExplodingGregorKey. Once newExplodingGregorOffset time
-// passes, we stop showing the 'NEW' tag.
-export const seenExplodingGregorKey = 'chat.seenExplodingMessages'
-export const newExplodingGregorOffset = 1000 * 3600 * 24 * 3 // 3 days in ms
-export const getIsExplodingNew = (state: TypedState) => state.chat2.get('isExplodingNew')
-export const explodingModeGregorKeyPrefix = 'exploding:'
 /**
  * Gregor key for exploding conversations
  * Used as the `category` when setting the exploding mode on a conversation
  * `body` is the number of seconds to exploding message etime
+ * Note: The core service also uses this value, so if it changes, please notify core
  */
+export const explodingModeGregorKeyPrefix = 'exploding:'
 export const explodingModeGregorKey = (c: Types.ConversationIDKey): string =>
   `${explodingModeGregorKeyPrefix}${c}`
 export const getConversationExplodingMode = (state: TypedState, c: Types.ConversationIDKey): number => {
@@ -184,6 +182,9 @@ export const getConversationExplodingMode = (state: TypedState, c: Types.Convers
   if (mode === null) {
     mode = state.chat2.getIn(['explodingModes', c], 0)
   }
+  const meta = getMeta(state, c)
+  const convRetention = getEffectiveRetentionPolicy(meta)
+  mode = convRetention.type === 'explode' ? Math.min(mode || Infinity, convRetention.seconds) : mode
   return mode || 0
 }
 export const isExplodingModeLocked = (state: TypedState, c: Types.ConversationIDKey) =>
@@ -233,8 +234,12 @@ const numMessagesOnInitialLoad = isMobile ? 20 : 100
 const numMessagesOnScrollback = isMobile ? 100 : 100
 
 export {
+  getChannelSuggestions,
+  getCommands,
   getConversationIDKeyMetasToLoad,
+  getEffectiveRetentionPolicy,
   getMeta,
+  getParticipantSuggestions,
   getRowParticipants,
   getRowStyles,
   inboxUIItemToConversationMeta,
@@ -255,6 +260,8 @@ export {
   getMessageID,
   getRequestMessageInfo,
   getPaymentMessageInfo,
+  hasSuccessfulInlinePayments,
+  isPendingPaymentMessage,
   isSpecialMention,
   isVideoAttachment,
   makeChatRequestInfo,

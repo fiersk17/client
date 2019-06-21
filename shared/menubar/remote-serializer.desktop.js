@@ -36,6 +36,7 @@ export const serialize: any = {
             [toSend.conversation.conversationIDKey]: conversationSerialize(toSend),
           }
     }, {}),
+  daemonHandshakeState: v => v,
   endEstimate: v => v,
   externalRemoteWindow: v => v,
   fileName: v => v,
@@ -51,7 +52,7 @@ export const serialize: any = {
   userInfo: (v, o) => {
     const toSend = v.filter(u => u.broken)
     const old = o && o.filter(u => u.broken)
-    return toSend.equals(old) ? null : toSend
+    return toSend.equals(old) ? undefined : toSend
   },
   username: v => v,
   windowComponent: v => v,

@@ -128,6 +128,12 @@ func (o UserSummary) DeepCopy() UserSummary {
 	}
 }
 
+type EmailAddress string
+
+func (o EmailAddress) DeepCopy() EmailAddress {
+	return o
+}
+
 type Email struct {
 	Email      EmailAddress       `codec:"email" json:"email"`
 	IsVerified bool               `codec:"isVerified" json:"isVerified"`
@@ -220,6 +226,82 @@ func (o InterestingPerson) DeepCopy() InterestingPerson {
 	}
 }
 
+type ProofSuggestionsRes struct {
+	Suggestions []ProofSuggestion `codec:"suggestions" json:"suggestions"`
+	ShowMore    bool              `codec:"showMore" json:"showMore"`
+}
+
+func (o ProofSuggestionsRes) DeepCopy() ProofSuggestionsRes {
+	return ProofSuggestionsRes{
+		Suggestions: (func(x []ProofSuggestion) []ProofSuggestion {
+			if x == nil {
+				return nil
+			}
+			ret := make([]ProofSuggestion, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Suggestions),
+		ShowMore: o.ShowMore,
+	}
+}
+
+type ProofSuggestion struct {
+	Key           string             `codec:"key" json:"key"`
+	BelowFold     bool               `codec:"belowFold" json:"belowFold"`
+	ProfileText   string             `codec:"profileText" json:"profileText"`
+	ProfileIcon   []SizedImage       `codec:"profileIcon" json:"profileIcon"`
+	PickerText    string             `codec:"pickerText" json:"pickerText"`
+	PickerSubtext string             `codec:"pickerSubtext" json:"pickerSubtext"`
+	PickerIcon    []SizedImage       `codec:"pickerIcon" json:"pickerIcon"`
+	Metas         []Identify3RowMeta `codec:"metas" json:"metas"`
+}
+
+func (o ProofSuggestion) DeepCopy() ProofSuggestion {
+	return ProofSuggestion{
+		Key:         o.Key,
+		BelowFold:   o.BelowFold,
+		ProfileText: o.ProfileText,
+		ProfileIcon: (func(x []SizedImage) []SizedImage {
+			if x == nil {
+				return nil
+			}
+			ret := make([]SizedImage, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.ProfileIcon),
+		PickerText:    o.PickerText,
+		PickerSubtext: o.PickerSubtext,
+		PickerIcon: (func(x []SizedImage) []SizedImage {
+			if x == nil {
+				return nil
+			}
+			ret := make([]SizedImage, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.PickerIcon),
+		Metas: (func(x []Identify3RowMeta) []Identify3RowMeta {
+			if x == nil {
+				return nil
+			}
+			ret := make([]Identify3RowMeta, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Metas),
+	}
+}
+
 type NextMerkleRootRes struct {
 	Res *MerkleRootV2 `codec:"res,omitempty" json:"res,omitempty"`
 }
@@ -236,10 +318,16 @@ func (o NextMerkleRootRes) DeepCopy() NextMerkleRootRes {
 	}
 }
 
-type EmailAddress string
+type CanLogoutRes struct {
+	CanLogout bool   `codec:"canLogout" json:"canLogout"`
+	Reason    string `codec:"reason" json:"reason"`
+}
 
-func (o EmailAddress) DeepCopy() EmailAddress {
-	return o
+func (o CanLogoutRes) DeepCopy() CanLogoutRes {
+	return CanLogoutRes{
+		CanLogout: o.CanLogout,
+		Reason:    o.Reason,
+	}
 }
 
 type ListTrackersArg struct {
@@ -349,6 +437,10 @@ type UploadUserAvatarArg struct {
 	Crop     *ImageCropRect `codec:"crop,omitempty" json:"crop,omitempty"`
 }
 
+type ProofSuggestionsArg struct {
+	SessionID int `codec:"sessionID" json:"sessionID"`
+}
+
 type FindNextMerkleRootAfterRevokeArg struct {
 	Uid  UID              `codec:"uid" json:"uid"`
 	Kid  KID              `codec:"kid" json:"kid"`
@@ -360,6 +452,15 @@ type FindNextMerkleRootAfterResetArg struct {
 	Uid        UID             `codec:"uid" json:"uid"`
 	ResetSeqno Seqno           `codec:"resetSeqno" json:"resetSeqno"`
 	Prev       ResetMerkleRoot `codec:"prev" json:"prev"`
+}
+
+type LoadHasRandomPwArg struct {
+	SessionID   int  `codec:"sessionID" json:"sessionID"`
+	ForceRepoll bool `codec:"forceRepoll" json:"forceRepoll"`
+}
+
+type CanLogoutArg struct {
+	SessionID int `codec:"sessionID" json:"sessionID"`
 }
 
 type UserInterface interface {
@@ -400,6 +501,7 @@ type UserInterface interface {
 	// getUPAKLite returns a UPKLiteV1AllIncarnations. Used mainly for debugging.
 	GetUPAKLite(context.Context, UID) (UPKLiteV1AllIncarnations, error)
 	UploadUserAvatar(context.Context, UploadUserAvatarArg) error
+	ProofSuggestions(context.Context, int) (ProofSuggestionsRes, error)
 	// FindNextMerkleRootAfterRevoke finds the first Merkle Root that contains the UID/KID
 	// revocation at the given SigChainLocataion. The MerkleRootV2 prev is a hint as to where
 	// we'll start our search. Usually it's the next one, but not always
@@ -408,6 +510,8 @@ type UserInterface interface {
 	// at resetSeqno. You should pass it prev, which was the last known Merkle root at the time of
 	// the reset. Usually, we'll just turn up the next Merkle root, but not always.
 	FindNextMerkleRootAfterReset(context.Context, FindNextMerkleRootAfterResetArg) (NextMerkleRootRes, error)
+	LoadHasRandomPw(context.Context, LoadHasRandomPwArg) (bool, error)
+	CanLogout(context.Context, int) (CanLogoutRes, error)
 }
 
 func UserProtocol(i UserInterface) rpc.Protocol {
@@ -729,6 +833,21 @@ func UserProtocol(i UserInterface) rpc.Protocol {
 					return
 				},
 			},
+			"proofSuggestions": {
+				MakeArg: func() interface{} {
+					var ret [1]ProofSuggestionsArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]ProofSuggestionsArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]ProofSuggestionsArg)(nil), args)
+						return
+					}
+					ret, err = i.ProofSuggestions(ctx, typedArgs[0].SessionID)
+					return
+				},
+			},
 			"findNextMerkleRootAfterRevoke": {
 				MakeArg: func() interface{} {
 					var ret [1]FindNextMerkleRootAfterRevokeArg
@@ -756,6 +875,36 @@ func UserProtocol(i UserInterface) rpc.Protocol {
 						return
 					}
 					ret, err = i.FindNextMerkleRootAfterReset(ctx, typedArgs[0])
+					return
+				},
+			},
+			"loadHasRandomPw": {
+				MakeArg: func() interface{} {
+					var ret [1]LoadHasRandomPwArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]LoadHasRandomPwArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]LoadHasRandomPwArg)(nil), args)
+						return
+					}
+					ret, err = i.LoadHasRandomPw(ctx, typedArgs[0])
+					return
+				},
+			},
+			"canLogout": {
+				MakeArg: func() interface{} {
+					var ret [1]CanLogoutArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]CanLogoutArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]CanLogoutArg)(nil), args)
+						return
+					}
+					ret, err = i.CanLogout(ctx, typedArgs[0].SessionID)
 					return
 				},
 			},
@@ -894,6 +1043,12 @@ func (c UserClient) UploadUserAvatar(ctx context.Context, __arg UploadUserAvatar
 	return
 }
 
+func (c UserClient) ProofSuggestions(ctx context.Context, sessionID int) (res ProofSuggestionsRes, err error) {
+	__arg := ProofSuggestionsArg{SessionID: sessionID}
+	err = c.Cli.Call(ctx, "keybase.1.user.proofSuggestions", []interface{}{__arg}, &res)
+	return
+}
+
 // FindNextMerkleRootAfterRevoke finds the first Merkle Root that contains the UID/KID
 // revocation at the given SigChainLocataion. The MerkleRootV2 prev is a hint as to where
 // we'll start our search. Usually it's the next one, but not always
@@ -907,5 +1062,16 @@ func (c UserClient) FindNextMerkleRootAfterRevoke(ctx context.Context, __arg Fin
 // the reset. Usually, we'll just turn up the next Merkle root, but not always.
 func (c UserClient) FindNextMerkleRootAfterReset(ctx context.Context, __arg FindNextMerkleRootAfterResetArg) (res NextMerkleRootRes, err error) {
 	err = c.Cli.Call(ctx, "keybase.1.user.findNextMerkleRootAfterReset", []interface{}{__arg}, &res)
+	return
+}
+
+func (c UserClient) LoadHasRandomPw(ctx context.Context, __arg LoadHasRandomPwArg) (res bool, err error) {
+	err = c.Cli.Call(ctx, "keybase.1.user.loadHasRandomPw", []interface{}{__arg}, &res)
+	return
+}
+
+func (c UserClient) CanLogout(ctx context.Context, sessionID int) (res CanLogoutRes, err error) {
+	__arg := CanLogoutArg{SessionID: sessionID}
+	err = c.Cli.Call(ctx, "keybase.1.user.canLogout", []interface{}{__arg}, &res)
 	return
 }

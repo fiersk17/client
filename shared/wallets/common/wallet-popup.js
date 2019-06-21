@@ -23,6 +23,8 @@ type WalletPopupProps = {|
   backButtonType: 'back' | 'cancel' | 'close', // 'back' -> '<' ; 'cancel' -> 'Cancel' ; 'close' -> 'Close'
   headerStyle?: Styles.StylesCrossPlatform,
   headerTitle?: string,
+  safeAreaViewBottomStyle?: Styles.StylesCrossPlatform,
+  safeAreaViewTopStyle?: Styles.StylesCrossPlatform,
 |}
 
 const backButtonTypeToFcnHandle = {
@@ -40,7 +42,7 @@ const WalletPopup = (props: WalletPopupProps) => (
     >
       <Kb.Box2
         direction="vertical"
-        fullHeight={true}
+        fullHeight={!Styles.isMobile}
         fullWidth={true}
         centerChildren={true}
         style={Styles.collapseStyles([
@@ -125,6 +127,8 @@ export default compose(
     customComponent: props.headerTitle && (
       <AccountPageHeader accountName={props.accountName} title={props.headerTitle} />
     ),
+    customSafeAreaBottomStyle: props.safeAreaViewBottomStyle,
+    customSafeAreaTopStyle: props.safeAreaViewTopStyle,
     style: (styles.popup: any), // cast to any for flow complaining about every possible style
   })),
   Kb.HeaderOrPopupWithHeader

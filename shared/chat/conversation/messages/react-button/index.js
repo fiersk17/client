@@ -11,12 +11,13 @@ import {
   EmojiIfExists,
 } from '../../../../common-adapters'
 import * as Styles from '../../../../styles'
-import {Picker} from 'emoji-mart'
+import {Picker} from './picker'
 import {backgroundImageFn} from '../../../../common-adapters/emoji'
 import DelayInterval from './delay-interval'
 
 export type Props = {|
   active: boolean,
+  className?: string,
   conversationIDKey: Types.ConversationIDKey,
   count: number,
   emoji: string,
@@ -56,6 +57,7 @@ const ButtonBox = Styles.styled(ClickableBox)(props =>
 
 const ReactButton = (props: Props) => (
   <ButtonBox
+    className={Styles.classNames(props.className, {noShadow: props.active})}
     onLongPress={props.onLongPress}
     onMouseLeave={props.onMouseLeave}
     onMouseOver={props.onMouseOver}
@@ -69,11 +71,11 @@ const ReactButton = (props: Props) => (
   >
     <Box2 centerChildren={true} fullHeight={true} direction="horizontal" gap="xtiny" style={styles.container}>
       <Box2 direction="horizontal" style={styles.emojiWrapper}>
-        <EmojiIfExists size={16} lineClamp={1} emojiName={props.emoji} />
+        <EmojiIfExists size={Styles.isMobile ? 16 : 18} lineClamp={1} emojiName={props.emoji} />
       </Box2>
       <Text
         type="BodyTinyBold"
-        style={{color: props.active ? Styles.globalColors.blue : Styles.globalColors.black_40}}
+        style={Styles.collapseStyles([styles.count, props.active && styles.countActive])}
       >
         {props.count}
       </Text>
@@ -183,7 +185,7 @@ export class NewReactionButton extends React.Component<NewReactionButtonProps, N
           {Styles.isMobile ? (
             <Icon
               type="iconfont-reacji"
-              color={Styles.globalColors.black_40}
+              color={Styles.globalColors.black_50}
               fontSize={16}
               style={iconCastPlatformStyles(styles.emojiIconWrapper)}
             />
@@ -192,8 +194,8 @@ export class NewReactionButton extends React.Component<NewReactionButtonProps, N
               <Icon
                 key={iconName}
                 type={iconName}
-                color={this.state.hovering ? Styles.globalColors.black_60 : Styles.globalColors.black_40}
-                fontSize={16}
+                color={this.state.hovering ? Styles.globalColors.black_50 : Styles.globalColors.black_50}
+                fontSize={18}
                 style={iconCastPlatformStyles(
                   Styles.collapseStyles([
                     styles.emojiIconWrapper,
@@ -216,13 +218,7 @@ export class NewReactionButton extends React.Component<NewReactionButtonProps, N
             position="top right"
             onHidden={() => this._setShowingPicker(false)}
           >
-            <Picker
-              autoFocus={true}
-              emoji="star-struck"
-              title="reacjibase"
-              onClick={this._onAddReaction}
-              backgroundImageFn={backgroundImageFn}
-            />
+            <Picker onClick={this._onAddReaction} backgroundImageFn={backgroundImageFn} />
           </FloatingBox>
         )}
       </ButtonBox>
@@ -243,7 +239,7 @@ const styles = Styles.styleSheetCreate({
     backgroundColor: Styles.globalColors.white,
     borderWidth: 1,
     height: Styles.isMobile ? 30 : 24,
-    ...Styles.transition('border-color', 'background-color'),
+    ...Styles.transition('border-color', 'background-color', 'box-shadow'),
   },
   container: Styles.platformStyles({
     common: {
@@ -255,10 +251,18 @@ const styles = Styles.styleSheetCreate({
       paddingTop: Styles.globalMargins.tiny,
     },
   }),
+  count: {
+    color: Styles.globalColors.black_50,
+    position: 'relative',
+    top: 1,
+  },
+  countActive: {
+    color: Styles.globalColors.blue,
+  },
   emojiContainer: Styles.platformStyles({
     isElectron: {
+      ...Styles.desktopStyles.boxShadow,
       borderRadius: 4,
-      boxShadow: `0 0 8px 0 ${Styles.globalColors.black_20}`,
       marginRight: Styles.globalMargins.small,
     },
   }),

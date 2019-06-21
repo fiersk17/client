@@ -4,38 +4,29 @@ import * as React from 'react'
 import * as Styles from '../styles'
 import * as Constants from '../constants/waiting'
 import {Box2} from './box'
+import HeaderHoc from './header-hoc'
 import ScrollView from './scroll-view'
 import Text from './text'
 import Button from './button'
+import Icon from './icon'
 import {namedConnect} from '../util/container'
-import {isArray} from 'lodash-es'
 
-type OwnProps = {|
-  children: React.Node,
-  reloadOnMount?: boolean,
-  onReload: () => void,
-  waitingKeys: string | Array<string>,
-|}
-
-type Props = {|
-  children: React.Node,
-  needsReload: boolean,
+type ReloadProps = {|
+  onBack?: () => void,
   onReload: () => void,
   reason: string,
-  reloadOnMount?: boolean,
+  title?: string,
 |}
 
-class Reload extends React.PureComponent<{onReload: () => void, reason: string}, {expanded: boolean}> {
+class Reload extends React.PureComponent<ReloadProps, {expanded: boolean}> {
   state = {expanded: false}
   _toggle = () => this.setState(p => ({expanded: !p.expanded}))
   render() {
     return (
-      <Box2 direction="vertical" centerChildren={true} style={styles.reload} gap="tiny">
-        <Text type="Header" style={styles.text}>
-          Oops... We're having a hard time loading this page. Try again?
-        </Text>
-        <Text type="Body" onClick={this._toggle}>
-          {this.state.expanded ? `I'm not exactly sure why I did that` : `I'm curious...`}
+      <Box2 direction="vertical" centerChildren={true} style={styles.reload} gap="small">
+        <Icon type="icon-skull-64" />
+        <Text center={true} type="Header">
+          We're having a hard time loading this page.
         </Text>
         {this.state.expanded && (
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollInside}>
@@ -44,11 +35,27 @@ class Reload extends React.PureComponent<{onReload: () => void, reason: string},
             </Text>
           </ScrollView>
         )}
-        <Button type="Primary" label="🙏 Retry" onClick={this.props.onReload} />
+        <Text type="BodySecondaryLink" onClick={this._toggle}>
+          {this.state.expanded ? 'Hide details' : 'Show details'}
+        </Text>
+
+        <Button type="Primary" label="Retry" onClick={this.props.onReload} />
       </Box2>
     )
   }
 }
+
+const ReloadWithHeader = HeaderHoc(Reload)
+
+export type Props = {|
+  children: React.Node,
+  needsReload: boolean,
+  onBack?: () => void,
+  onReload: () => void,
+  reason: string,
+  reloadOnMount?: boolean,
+  title?: string,
+|}
 
 class Reloadable extends React.PureComponent<Props> {
   componentDidMount() {
@@ -56,10 +63,18 @@ class Reloadable extends React.PureComponent<Props> {
   }
 
   render() {
-    return this.props.needsReload ? (
-      <Reload onReload={this.props.onReload} reason={this.props.reason} />
+    if (!this.props.needsReload) {
+      return this.props.children
+    }
+    return this.props.onBack ? (
+      <ReloadWithHeader
+        onBack={this.props.onBack}
+        onReload={this.props.onReload}
+        reason={this.props.reason}
+        title={this.props.title}
+      />
     ) : (
-      this.props.children
+      <Reload onReload={this.props.onReload} reason={this.props.reason} />
     )
   }
 }
@@ -99,14 +114,19 @@ const styles = Styles.styleSheetCreate({
     maxWidth: '100%',
     width: '100%',
   },
-  text: {
-    textAlign: 'center',
-  },
 })
 
+export type OwnProps = {|
+  children: React.Node,
+  onBack?: () => void,
+  onReload: () => void,
+  reloadOnMount?: boolean,
+  title?: string,
+  waitingKeys: string | Array<string>,
+|}
+
 const mapStateToProps = (state, ownProps: OwnProps) => {
-  const keys = isArray(ownProps.waitingKeys) ? ownProps.waitingKeys : [ownProps.waitingKeys]
-  const error = Constants.anyErrors(state, ...keys)
+  const error = Constants.anyErrors(state, ownProps.waitingKeys)
   return {
     needsReload: !!error,
     reason: error?.message ?? '',
@@ -116,9 +136,11 @@ const mapDispatchToProps = dispatch => ({})
 const mergeProps = (stateProps, dispatchProps, ownProps: OwnProps) => ({
   children: ownProps.children,
   needsReload: stateProps.needsReload,
+  onBack: ownProps.onBack,
   onReload: ownProps.onReload,
   reason: stateProps.reason,
   reloadOnMount: ownProps.reloadOnMount,
+  title: ownProps.title,
 })
 
 export default namedConnect<OwnProps, _, _, _, _>(

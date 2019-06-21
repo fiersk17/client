@@ -38,19 +38,24 @@ const testCurrencies = I.List([
     name: 'British Pount',
     symbol: '£',
   },
-]).map(c => Constants.currenciesResultToCurrencies(c))
+]).map(c => Constants.currencyResultToCurrency(c))
 
 const sharedSettingsProps = {
   accountID: Types.noAccountID,
+  canSubmitTx: true,
   currencies: testCurrencies,
   currencyWaiting: false,
+  inflationDestination: '',
+  mobileOnlyEditable: false,
   mobileOnlyMode: false,
+  mobileOnlyWaiting: false,
   onBack: Sb.action('onBack'),
   onCurrencyChange: Sb.action('onCurrencyChange'),
   onDelete: Sb.action('onDelete'),
   onEditName: Sb.action('onEditName'),
   onMobileOnlyModeChange: Sb.action('onMobileOnlyModeChange'),
   onSetDefault: Sb.action('setDefault'),
+  onSetupInflation: Sb.action('onSetupInflation'),
   refresh: () => {},
   saveCurrencyWaiting: false,
   user: 'testuser',
@@ -74,7 +79,14 @@ const secondarySettingsProps = {
 const load = () => {
   Sb.storiesOf('Wallets/Wallet/Settings', module)
     .add('Default', () => <Settings {...defaultSettingsProps} />)
+    .add('Default with inflation dest', () => (
+      <Settings {...defaultSettingsProps} inflationDestination="Stellar Development Foundation" />
+    ))
+    .add("Not funded account (can't make tx)", () => (
+      <Settings {...defaultSettingsProps} canSubmitTx={false} />
+    ))
     .add('Secondary', () => <Settings {...secondarySettingsProps} />)
+    .add('MobileOnlyEditable', () => <Settings {...secondarySettingsProps} mobileOnlyEditable={true} />)
   popups()
 }
 

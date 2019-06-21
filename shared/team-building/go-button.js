@@ -3,15 +3,12 @@ import React from 'react'
 import * as Kb from '../common-adapters/index'
 import * as Styles from '../styles'
 
-// TODO
-// * style
-
 export type Props = {
   onClick: () => void,
 }
 
 const Go = () => (
-  <Kb.Text type="BodySmallSemibold" style={styles.go}>
+  <Kb.Text type="BodyBig" style={styles.go}>
     Go!
   </Kb.Text>
 )
@@ -19,7 +16,7 @@ const Go = () => (
 const GoIcon = () => (
   <Kb.Icon
     type="iconfont-return"
-    fontSize={22}
+    fontSize={16}
     color={Styles.globalColors.white}
     style={Kb.iconCastPlatformStyles(styles.goIcon)}
   />

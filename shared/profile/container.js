@@ -18,13 +18,12 @@ import Profile from './index'
 import * as React from 'react'
 import {createSearchSuggestions} from '../actions/search-gen'
 import {isTesting} from '../local-debug'
-import {navigateAppend, navigateUp} from '../actions/route-tree'
+import * as RouteTreeGen from '../actions/route-tree-gen'
 import {peopleTab} from '../constants/tabs'
 import {connect} from '../util/container'
-import flags from '../util/feature-flags'
 
 import type {Response} from 'react-native-image-picker'
-import type {MissingProof} from '../common-adapters/user-proofs'
+import type {MissingProof} from './user-proofs'
 import type {RouteProps} from '../route-tree/render-route'
 import type {Props} from '.'
 
@@ -66,8 +65,6 @@ const mapStateToProps = (state, {routeProps, routeState, routePath}: OwnProps) =
     currentFriendshipsTab: routeState.get('currentFriendshipsTab'),
     myUsername,
     profileIsRoot: routePath.size === 1 && routePath.first() === peopleTab,
-    // TODO: use real federated stellar address
-    stellarAddress: flags.walletsEnabled ? username + '*keybase.io' : '',
     trackerState: state.tracker.userTrackers[username] || state.tracker.nonUserTrackers[username],
     username,
     youAreInTeams,
@@ -76,7 +73,8 @@ const mapStateToProps = (state, {routeProps, routeState, routePath}: OwnProps) =
 
 const mapDispatchToProps = (dispatch, {setRouteState}: OwnProps) => ({
   _copyStellarAddress: (text: string) => dispatch(ConfigGen.createCopyToClipboard({text})),
-  _onAddToTeam: (username: string) => dispatch(navigateAppend([{props: {username}, selected: 'addToTeam'}])),
+  _onAddToTeam: (username: string) =>
+    dispatch(RouteTreeGen.createNavigateAppend({path: [{props: {username}, selected: 'addToTeam'}]})),
   _onBrowsePublicFolder: (username: string) =>
     dispatch(FsGen.createOpenPathInFilesTab({path: FsTypes.stringToPath(`/keybase/public/${username}`)})),
   _onChat: (username: string) =>
@@ -101,12 +99,13 @@ const mapDispatchToProps = (dispatch, {setRouteState}: OwnProps) => ({
   },
   _onUnfollow: (username: string) => dispatch(TrackerGen.createUnfollow({username})),
   getProfile: (username: string) => dispatch(TrackerGen.createGetProfile({username})),
-  onBack: () => dispatch(navigateUp()),
+  onBack: () => dispatch(RouteTreeGen.createNavigateUp()),
   onChangeFriendshipsTab: currentFriendshipsTab => setRouteState({currentFriendshipsTab}),
   onClearAddUserToTeamsResults: () => dispatch(TeamsGen.createSetAddUserToTeamsResults({results: ''})),
-  onClickShowcaseOffer: () => dispatch(navigateAppend(['showcaseTeamOffer'])),
-  onEditAvatar: (image?: Response) => dispatch(navigateAppend([{props: {image}, selected: 'editAvatar'}])),
-  onEditProfile: () => dispatch(navigateAppend(['editProfile'])),
+  onClickShowcaseOffer: () => dispatch(RouteTreeGen.createNavigateAppend({path: ['showcaseTeamOffer']})),
+  onEditAvatar: (image?: Response) =>
+    dispatch(RouteTreeGen.createNavigateAppend({path: [{props: {image}, selected: 'editAvatar'}]})),
+  onEditProfile: () => dispatch(RouteTreeGen.createNavigateAppend({path: ['editProfile']})),
   onFilePickerError: (error: Error) => dispatch(ConfigGen.createFilePickerError({error})),
   onFolderClick: folder =>
     dispatch(FsGen.createOpenPathInFilesTab({path: FsTypes.stringToPath(folder.path)})),
@@ -115,19 +114,19 @@ const mapDispatchToProps = (dispatch, {setRouteState}: OwnProps) => ({
   onRecheckProof: (proof: TrackerTypes.Proof) => dispatch(ProfileGen.createCheckProof()),
   onRevokeProof: (proof: TrackerTypes.Proof) =>
     dispatch(
-      navigateAppend(
-        [
+      RouteTreeGen.createNavigateAppend({
+        parentPath: [peopleTab],
+        path: [
           {
             props: {platform: proof.type, platformHandle: proof.name, proofId: proof.id},
             selected: 'revoke',
           },
         ],
-        [peopleTab]
-      )
+      })
     ),
   onSearch: () => {
     dispatch(createSearchSuggestions({searchKey: 'profileSearch'}))
-    dispatch(navigateAppend([{props: {}, selected: 'search'}]))
+    dispatch(RouteTreeGen.createNavigateAppend({path: [{props: {}, selected: 'search'}]}))
   },
   onUserClick: (username: string) => dispatch(ProfileGen.createShowUserProfile({username})),
   onViewProof: (proof: TrackerTypes.Proof) => dispatch(TrackerGen.createOpenProofUrl({proof})),
@@ -181,7 +180,10 @@ const mergeProps = (stateProps, dispatchProps) => {
     onClearAddUserToTeamsResults: () => dispatchProps.onClearAddUserToTeamsResults(),
     onClickAvatar: () => dispatchProps._onClickAvatar(username),
     onClickShowcaseOffer: () => dispatchProps.onClickShowcaseOffer(),
-    onCopyStellarAddress: () => dispatchProps._copyStellarAddress(stateProps.stellarAddress),
+    onCopyStellarAddress: () => {
+      const maybeAddr = stateProps.trackerState.stellarFederationAddress
+      maybeAddr && dispatchProps._copyStellarAddress(maybeAddr)
+    },
     onFollow: () => dispatchProps._onFollow(username),
     onOpenPrivateFolder: () => {
       stateProps.myUsername && dispatchProps._onOpenPrivateFolder(stateProps.myUsername || '', username || '')
@@ -189,12 +191,10 @@ const mergeProps = (stateProps, dispatchProps) => {
     onRequestLumens: () => dispatchProps._onSendOrRequestLumens(username, true, 'keybaseUser'),
     onSearch: () => dispatchProps.onSearch(),
     onSendLumens: () => dispatchProps._onSendOrRequestLumens(username, false, 'keybaseUser'),
-    // TODO: shouldn't there be 'stellarFederatedAddress'?
     onSendOrRequestStellarAddress: (isRequest: boolean) =>
-      dispatchProps._onSendOrRequestLumens(stateProps.stellarAddress, isRequest, 'stellarPublicKey'),
+      dispatchProps._onSendOrRequestLumens(username, isRequest, 'keybaseUser'),
     onUnfollow: () => dispatchProps._onUnfollow(username),
     refresh,
-    stellarAddress: stateProps.stellarAddress ? stateProps.stellarAddress : '',
     username,
     youAreInTeams: stateProps.youAreInTeams,
   }

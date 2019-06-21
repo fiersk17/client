@@ -300,6 +300,9 @@ type PaymentSummaryDirect struct {
 	Ctime               TimeMs                `codec:"ctime" json:"ctime"`
 	Rtime               TimeMs                `codec:"rtime" json:"rtime"`
 	CursorToken         string                `codec:"cursorToken" json:"cursorToken"`
+	FromPrimary         bool                  `codec:"fromPrimary" json:"fromPrimary"`
+	BatchID             string                `codec:"batchID" json:"batchID"`
+	FromAirdrop         bool                  `codec:"fromAirdrop" json:"fromAirdrop"`
 }
 
 func (o PaymentSummaryDirect) DeepCopy() PaymentSummaryDirect {
@@ -343,6 +346,9 @@ func (o PaymentSummaryDirect) DeepCopy() PaymentSummaryDirect {
 		Ctime:               o.Ctime.DeepCopy(),
 		Rtime:               o.Rtime.DeepCopy(),
 		CursorToken:         o.CursorToken,
+		FromPrimary:         o.FromPrimary,
+		BatchID:             o.BatchID,
+		FromAirdrop:         o.FromAirdrop,
 	}
 }
 
@@ -366,6 +372,8 @@ type PaymentSummaryRelay struct {
 	TeamID          keybase1.TeamID       `codec:"teamID" json:"teamID"`
 	Claim           *ClaimSummary         `codec:"claim,omitempty" json:"claim,omitempty"`
 	CursorToken     string                `codec:"cursorToken" json:"cursorToken"`
+	BatchID         string                `codec:"batchID" json:"batchID"`
+	FromAirdrop     bool                  `codec:"fromAirdrop" json:"fromAirdrop"`
 }
 
 func (o PaymentSummaryRelay) DeepCopy() PaymentSummaryRelay {
@@ -413,6 +421,8 @@ func (o PaymentSummaryRelay) DeepCopy() PaymentSummaryRelay {
 			return &tmp
 		})(o.Claim),
 		CursorToken: o.CursorToken,
+		BatchID:     o.BatchID,
+		FromAirdrop: o.FromAirdrop,
 	}
 }
 
@@ -595,15 +605,19 @@ func (o RequestPost) DeepCopy() RequestPost {
 }
 
 type RequestDetails struct {
-	Id            KeybaseRequestID      `codec:"id" json:"id"`
-	FromUser      keybase1.UserVersion  `codec:"fromUser" json:"fromUser"`
-	ToUser        *keybase1.UserVersion `codec:"toUser,omitempty" json:"toUser,omitempty"`
-	ToAssertion   string                `codec:"toAssertion" json:"toAssertion"`
-	Amount        string                `codec:"amount" json:"amount"`
-	Asset         *Asset                `codec:"asset,omitempty" json:"asset,omitempty"`
-	Currency      *OutsideCurrencyCode  `codec:"currency,omitempty" json:"currency,omitempty"`
-	FundingKbTxID KeybaseTransactionID  `codec:"fundingKbTxID" json:"fundingKbTxID"`
-	Status        RequestStatus         `codec:"status" json:"status"`
+	Id                  KeybaseRequestID      `codec:"id" json:"id"`
+	FromUser            keybase1.UserVersion  `codec:"fromUser" json:"fromUser"`
+	ToUser              *keybase1.UserVersion `codec:"toUser,omitempty" json:"toUser,omitempty"`
+	ToAssertion         string                `codec:"toAssertion" json:"toAssertion"`
+	Amount              string                `codec:"amount" json:"amount"`
+	Asset               *Asset                `codec:"asset,omitempty" json:"asset,omitempty"`
+	Currency            *OutsideCurrencyCode  `codec:"currency,omitempty" json:"currency,omitempty"`
+	FromDisplayAmount   string                `codec:"fromDisplayAmount" json:"fromDisplayAmount"`
+	FromDisplayCurrency string                `codec:"fromDisplayCurrency" json:"fromDisplayCurrency"`
+	ToDisplayAmount     string                `codec:"toDisplayAmount" json:"toDisplayAmount"`
+	ToDisplayCurrency   string                `codec:"toDisplayCurrency" json:"toDisplayCurrency"`
+	FundingKbTxID       KeybaseTransactionID  `codec:"fundingKbTxID" json:"fundingKbTxID"`
+	Status              RequestStatus         `codec:"status" json:"status"`
 }
 
 func (o RequestDetails) DeepCopy() RequestDetails {
@@ -633,8 +647,12 @@ func (o RequestDetails) DeepCopy() RequestDetails {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.Currency),
-		FundingKbTxID: o.FundingKbTxID.DeepCopy(),
-		Status:        o.Status.DeepCopy(),
+		FromDisplayAmount:   o.FromDisplayAmount,
+		FromDisplayCurrency: o.FromDisplayCurrency,
+		ToDisplayAmount:     o.ToDisplayAmount,
+		ToDisplayCurrency:   o.ToDisplayCurrency,
+		FundingKbTxID:       o.FundingKbTxID.DeepCopy(),
+		Status:              o.Status.DeepCopy(),
 	}
 }
 

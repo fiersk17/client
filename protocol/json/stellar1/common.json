@@ -130,7 +130,8 @@
       "name": "RequestStatus",
       "symbols": [
         "OK_0",
-        "CANCELED_1"
+        "CANCELED_1",
+        "DONE_2"
       ]
     },
     {
@@ -366,6 +367,15 @@
           "type": "string",
           "name": "relayCursor"
         }
+      ]
+    },
+    {
+      "type": "enum",
+      "name": "AccountMode",
+      "symbols": [
+        "NONE_0",
+        "USER_1",
+        "MOBILE_2"
       ]
     }
   ],

@@ -2,6 +2,7 @@
 import * as I from 'immutable'
 import * as Kb from '../common-adapters/mobile.native'
 import * as Styles from '../styles'
+import * as RouteTreeGen from '../actions/route-tree-gen'
 import CardStackTransitioner from 'react-navigation/src/views/CardStack/CardStackTransitioner'
 import GlobalError from './global-errors/container'
 import Offline from '../offline/container'
@@ -11,13 +12,13 @@ import TabBar from './tab-bar/container'
 import type {Props, OwnProps} from './nav.types'
 import {NavigationActions, type NavigationAction} from 'react-navigation'
 import {addSizeListener} from '../styles/status-bar'
-import {chatTab, loginTab, peopleTab} from '../constants/tabs'
+import * as Tabs from '../constants/tabs'
 import {connect} from '../util/container'
 import {isIOS, isIPhoneX} from '../constants/platform'
 import {makeLeafTags} from '../route-tree'
-import {navigateUp} from '../actions/route-tree'
 import {tabBarHeight} from './tab-bar/index.native'
 import {type RouteRenderStack, type RenderRouteResult} from '../route-tree/render-route'
+import {GatewayDest} from 'react-gateway'
 
 type CardStackShimProps = {
   mode: 'modal' | 'card',
@@ -194,8 +195,16 @@ class MainNavStack extends Component<any, {verticalOffset: number}> {
     const content = (
       <Kb.NativeView style={styles.content}>
         {stacks}
-        {![chatTab, peopleTab].includes(props.routeSelected) ? <Offline key="offline" /> : null}
-        <GlobalError key="globalError" />
+        {![
+          Tabs.chatTab,
+          Tabs.peopleTab,
+          Tabs.settingsTab,
+          Tabs.gitTab,
+          Tabs.devicesTab,
+          Tabs.teamsTab,
+        ].includes(props.routeSelected) ? (
+          <Offline key="offline" />
+        ) : null}
         {!props.hideNav && (
           <Kb.NativeSafeAreaView style={props.keyboardShowing ? styles.noTabSafeArea : styles.tabSafeArea}>
             <AnimatedTabBar show={!props.keyboardShowing}>
@@ -218,11 +227,18 @@ class MainNavStack extends Component<any, {verticalOffset: number}> {
           keyboardVerticalOffset={keyboardVerticalOffset}
         >
           {content}
+          <GatewayDest
+            name="keyboard-avoiding-root"
+            component={ViewForGatewayDest}
+            pointerEvents="box-none"
+            style={styles.gatewayDest}
+          />
         </Kb.NativeKeyboardAvoidingView>
       </Kb.NativeView>
     )
   }
 }
+const ViewForGatewayDest = <T>(props: T) => <Kb.NativeView {...props} />
 
 type AnimatedTabBarProps = {
   show: boolean,
@@ -361,6 +377,7 @@ class Nav extends Component<Props, {keyboardShowing: boolean}> {
       <>
         {shim}
         {layers}
+        <GlobalError key="globalError" />
         <RpcStats />
       </>
     )
@@ -369,11 +386,11 @@ class Nav extends Component<Props, {keyboardShowing: boolean}> {
 
 const mapStateToProps = (state, ownProps: OwnProps) => ({
   _me: state.config.username,
-  hideNav: ownProps.routeSelected === loginTab,
+  hideNav: ownProps.routeSelected === Tabs.loginTab,
 })
 
 const mapDispatchToProps = dispatch => ({
-  navigateUp: () => dispatch(navigateUp()),
+  navigateUp: () => dispatch(RouteTreeGen.createNavigateUp()),
 })
 
 const mergeProps = (stateProps, dispatchProps, ownProps) => ({
@@ -387,6 +404,7 @@ const styles = Styles.styleSheetCreate({
   card: {backgroundColor: Styles.globalColors.fastBlank},
   container: {flexGrow: 1, position: 'relative'},
   content: {...Styles.globalStyles.flexGrow},
+  gatewayDest: {height: '100%', position: 'absolute', top: 0, width: '100%'},
   hiddenTransitioner: {
     height: '100%',
     left: -9999,

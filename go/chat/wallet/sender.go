@@ -29,7 +29,8 @@ func NewSender(g *globals.Context) *Sender {
 
 func (s *Sender) getConv(ctx context.Context, uid gregor1.UID, convID chat1.ConversationID) (res chat1.ConversationLocal, err error) {
 	// slow path just in case (still should be fast)
-	inbox, _, err := s.G().InboxSource.Read(ctx, uid, types.ConversationLocalizerBlocking, true, nil,
+	inbox, _, err := s.G().InboxSource.Read(ctx, uid, types.ConversationLocalizerBlocking,
+		types.InboxSourceDataSourceAll, nil,
 		&chat1.GetInboxLocalQuery{
 			ConvIDs: []chat1.ConversationID{convID},
 		}, nil)
@@ -113,6 +114,7 @@ func (s *Sender) ParsePayments(ctx context.Context, uid gregor1.UID, convID chat
 	if len(parsed) == 0 {
 		return nil
 	}
+	// FIXME error is ignored.
 	parts, membersType, err := s.getConvParseInfo(ctx, uid, convID)
 	for _, p := range parsed {
 		var username string

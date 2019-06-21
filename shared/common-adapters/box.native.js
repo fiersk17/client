@@ -48,6 +48,13 @@ const box2 = (props: Box2Props) => {
     props.fullWidth && styles.fullWidth,
     !props.fullHeight && !props.fullWidth && styles.centered,
     props.centerChildren && styles.centeredChildren,
+    props.alignSelf === 'center' && styles.alignSelfCenter,
+    props.alignSelf === 'flex-start' && styles.alignSelfStart,
+    props.alignSelf === 'flex-end' && styles.alignSelfEnd,
+    props.alignItems === 'center' && styles.alignItemsCenter,
+    props.alignItems === 'flex-end' && styles.alignItemsEnd,
+    props.alignItems === 'flex-start' && styles.alignItemsStart,
+    props.noShrink && styles.noShrink,
     // uncomment this to get debugging colors
     // {backgroundColor: `rgb(${Math.random() * 255},${Math.random() * 255},${Math.random() * 255})`},
     props.style,
@@ -64,10 +71,20 @@ class Box2 extends React.Component<Box2Props> {
     return box2(this.props)
   }
 }
-const VBoxGap = ({gap}) => <View style={{height: globalMargins[gap]}} />
-const HBoxGap = ({gap}) => <View style={{width: globalMargins[gap]}} />
+const VBoxGap = ({gap}) => <View style={{flexShrink: 0, height: globalMargins[gap]}} />
+const HBoxGap = ({gap}) => <View style={{flexShrink: 0, width: globalMargins[gap]}} />
 
+const common = {
+  alignItems: 'stretch',
+  justifyContent: 'flex-start',
+}
 const styles = {
+  alignItemsCenter: {alignItems: 'center'},
+  alignItemsEnd: {alignItems: 'flex-end'},
+  alignItemsStart: {alignItems: 'flex-start'},
+  alignSelfCenter: {alignSelf: 'center'},
+  alignSelfEnd: {alignSelf: 'flex-end'},
+  alignSelfStart: {alignSelf: 'flex-start'},
   centered: {alignSelf: 'center'},
   centeredChildren: {
     alignItems: 'center',
@@ -77,23 +94,22 @@ const styles = {
   fullWidth: {maxWidth: '100%', width: '100%'},
   hbox: {
     ...globalStyles.flexBoxRow,
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
+    ...common,
   },
   hrbox: {
     ...globalStyles.flexBoxRowReverse,
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
+    ...common,
+  },
+  noShrink: {
+    flexShrink: 0,
   },
   vbox: {
     ...globalStyles.flexBoxColumn,
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
+    ...common,
   },
   vrbox: {
     ...globalStyles.flexBoxColumnReverse,
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
+    ...common,
   },
 }
 

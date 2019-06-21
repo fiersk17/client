@@ -3,15 +3,15 @@ export type FeatureFlags = {|
   admin: boolean,
   chatIndexProfilingEnabled: boolean,
   foldersInProfileTab: boolean,
-  kbfsChatIntegration: boolean,
+  identify3: boolean,
   moveOrCopy: boolean,
   newTeamBuildingForChat: boolean,
   // Enables the "Add up to 14 more people. Need more? Make it a team." feature
   newTeamBuildingForChatAllowMakeTeam: boolean,
   outOfDateBanner: boolean,
   plansEnabled: boolean,
+  useNewRouter: boolean,
   walletsEnabled: boolean,
-  peopleAnnouncementsEnabled: boolean,
 |}
 
 declare var ff: FeatureFlags

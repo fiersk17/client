@@ -14,22 +14,20 @@ const ff: FeatureFlags = {
   admin: false,
   chatIndexProfilingEnabled: false,
   foldersInProfileTab: false,
-  kbfsChatIntegration: false,
+  identify3: false,
   moveOrCopy: false,
-  newTeamBuildingForChat: false,
+  newTeamBuildingForChat: true,
   newTeamBuildingForChatAllowMakeTeam: false,
   outOfDateBanner: false,
-  peopleAnnouncementsEnabled: false,
   plansEnabled: false,
-  walletsEnabled: false,
+  useNewRouter: false,
+  walletsEnabled: true,
 }
 
 const inAdmin: {[key: $Keys<FeatureFlags>]: boolean} = {
   chatIndexProfilingEnabled: true,
-  foldersInProfileTab: true,
-  kbfsChatIntegration: true,
+  identify3: true,
   moveOrCopy: true,
-  walletsEnabled: true,
 }
 
 // load overrides

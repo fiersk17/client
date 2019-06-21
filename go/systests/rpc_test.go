@@ -322,7 +322,7 @@ func buildGregorItem(category, deviceID, msgID string) gregor.Item {
 
 func TestDismissDeviceChangeNotifications(t *testing.T) {
 	c := context.TODO()
-	dismisser := &libkb.FakeGregorDismisser{}
+	dismisser := &libkb.FakeGregorState{}
 	exceptedDeviceID := "active-device-id"
 	state := &FakeGregorState{
 		items: []gregor.Item{
@@ -941,6 +941,9 @@ func (p *simpleIdentifyUI) FinishSocialProofCheck(_ context.Context, arg keybase
 }
 func (p *simpleIdentifyUI) DisplayCryptocurrency(context.Context, keybase1.DisplayCryptocurrencyArg) error {
 	return simpleIdentifyUIError("DisplayCryptocurrency")
+}
+func (p *simpleIdentifyUI) DisplayStellarAccount(context.Context, keybase1.DisplayStellarAccountArg) error {
+	return simpleIdentifyUIError("DisplayStellarAccount")
 }
 func (p *simpleIdentifyUI) DisplayUserCard(context.Context, keybase1.DisplayUserCardArg) error {
 	return nil

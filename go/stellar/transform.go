@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/keybase/client/go/libkb"
 	"github.com/keybase/client/go/protocol/keybase1"
 	"github.com/keybase/client/go/protocol/stellar1"
 	"github.com/keybase/client/go/stellar/relays"
 	"github.com/keybase/client/go/stellar/remote"
+	"github.com/keybase/stellarnet"
 )
 
 // TransformPaymentSummaryGeneric converts a stellar1.PaymentSummary (p) into a
@@ -80,11 +82,16 @@ func TransformRequestDetails(mctx libkb.MetaContext, details stellar1.RequestDet
 		var code string
 		if details.Asset.IsNativeXLM() {
 			code = "XLM"
+			if loc.FromCurrentUser {
+				loc.WorthAtRequestTime, _, _ = formatWorth(mctx, &details.FromDisplayAmount, &details.FromDisplayCurrency)
+			} else {
+				loc.WorthAtRequestTime, _, _ = formatWorth(mctx, &details.ToDisplayAmount, &details.ToDisplayCurrency)
+			}
 		} else {
 			code = details.Asset.Code
 		}
 
-		amountDesc, err := FormatAmountWithSuffix(details.Amount, false /* precisionTwo */, true /* simplify */, code)
+		amountDesc, err := FormatAmountWithSuffix(mctx, details.Amount, false /* precisionTwo */, true /* simplify */, code)
 		if err != nil {
 			amountDesc = fmt.Sprintf("%s %s", details.Amount, code)
 			mctx.CDebugf("error formatting amount for asset: %s", err)
@@ -128,6 +135,17 @@ func transformPaymentStellar(mctx libkb.MetaContext, acctID stellar1.AccountID, 
 	return loc, nil
 }
 
+func formatWorthAtSendTime(mctx libkb.MetaContext, p stellar1.PaymentSummaryDirect, isSender bool) (worthAtSendTime, worthCurrencyAtSendTime string, err error) {
+	if p.DisplayCurrency == nil || len(*p.DisplayCurrency) == 0 {
+		if isSender {
+			return formatWorth(mctx, &p.FromDisplayAmount, &p.FromDisplayCurrency)
+		}
+		return formatWorth(mctx, &p.ToDisplayAmount, &p.ToDisplayCurrency)
+	}
+	// payment has a display currency, don't need this field
+	return "", "", nil
+}
+
 // transformPaymentDirect converts a stellar1.PaymentSummaryDirect into a stellar1.PaymentLocal.
 func transformPaymentDirect(mctx libkb.MetaContext, acctID stellar1.AccountID, p stellar1.PaymentSummaryDirect, oc OwnAccountLookupCache) (*stellar1.PaymentLocal, error) {
 	loc, err := newPaymentLocal(mctx, p.TxID, p.Ctime, p.Amount, p.Asset)
@@ -146,7 +164,7 @@ func transformPaymentDirect(mctx libkb.MetaContext, acctID stellar1.AccountID, p
 		loc.Delta = stellar1.BalanceDelta_INCREASE
 	}
 
-	loc.Worth, loc.WorthCurrency, err = formatWorth(mctx, p.DisplayAmount, p.DisplayCurrency)
+	loc.Worth, _, err = formatWorth(mctx, p.DisplayAmount, p.DisplayCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +186,17 @@ func transformPaymentDirect(mctx libkb.MetaContext, acctID stellar1.AccountID, p
 	}
 
 	fillOwnAccounts(mctx, loc, oc)
+	switch {
+	case loc.FromAccountName != "":
+		// we are sender
+		loc.WorthAtSendTime, _, err = formatWorthAtSendTime(mctx, p, true)
+	case loc.ToAccountName != "":
+		// we are recipient
+		loc.WorthAtSendTime, _, err = formatWorthAtSendTime(mctx, p, false)
+	}
+	if err != nil {
+		return nil, err
+	}
 
 	loc.StatusSimplified = p.TxStatus.ToPaymentStatus()
 	loc.StatusDescription = strings.ToLower(loc.StatusSimplified.String())
@@ -192,7 +221,7 @@ func transformPaymentRelay(mctx libkb.MetaContext, acctID stellar1.AccountID, p 
 		loc.Delta = stellar1.BalanceDelta_DECREASE
 	}
 
-	loc.Worth, loc.WorthCurrency, err = formatWorth(mctx, p.DisplayAmount, p.DisplayCurrency)
+	loc.Worth, _, err = formatWorth(mctx, p.DisplayAmount, p.DisplayCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -305,14 +334,6 @@ func formatWorth(mctx libkb.MetaContext, amount, currency *string) (worth, worth
 	return worth, *currency, nil
 }
 
-func lookupUsernameFallback(mctx libkb.MetaContext, uid keybase1.UID, acctID stellar1.AccountID) (name string, kind stellar1.ParticipantType) {
-	name, err := lookupUsername(mctx, uid)
-	if err == nil {
-		return name, stellar1.ParticipantType_KEYBASE
-	}
-	return acctID.String(), stellar1.ParticipantType_STELLAR
-}
-
 func lookupUsername(mctx libkb.MetaContext, uid keybase1.UID) (string, error) {
 	uname, err := mctx.G().GetUPAKLoader().LookupUsername(mctx.Ctx(), uid)
 	if err != nil {
@@ -363,7 +384,7 @@ func decryptNote(mctx libkb.MetaContext, txid stellar1.TransactionID, note strin
 func newPaymentLocal(mctx libkb.MetaContext, txID stellar1.TransactionID, ctime stellar1.TimeMs, amount string, asset stellar1.Asset) (*stellar1.PaymentLocal, error) {
 	loc := stellar1.NewPaymentLocal(txID, ctime)
 
-	formatted, err := FormatAmountDescriptionAsset(amount, asset)
+	formatted, err := FormatAmountDescriptionAsset(mctx, amount, asset)
 	if err != nil {
 		return nil, err
 	}
@@ -421,25 +442,57 @@ func RemotePendingToLocal(mctx libkb.MetaContext, remoter remote.Remoter, accoun
 	return payments, nil
 }
 
-func AccountDetailsToWalletAccountLocal(mctx libkb.MetaContext, details stellar1.AccountDetails, isPrimary bool, accountName string) (stellar1.WalletAccountLocal, error) {
+func AccountDetailsToWalletAccountLocal(mctx libkb.MetaContext, accountID stellar1.AccountID, details stellar1.AccountDetails,
+	isPrimary bool, accountName string, accountMode stellar1.AccountMode) (stellar1.WalletAccountLocal, error) {
 
 	var empty stellar1.WalletAccountLocal
-	balance, err := balanceList(details.Balances).balanceDescription()
+	balance, err := balanceList(details.Balances).balanceDescription(mctx)
 	if err != nil {
 		return empty, err
 	}
-	currencyLocal, err := GetCurrencySetting(mctx, details.AccountID)
+
+	activeDeviceType, err := mctx.G().ActiveDevice.DeviceType(mctx)
+	if err != nil {
+		return empty, err
+	}
+	isMobile := activeDeviceType == libkb.DeviceTypeMobile
+	ctime, err := mctx.G().ActiveDevice.Ctime(mctx)
+	if err != nil {
+		return empty, err
+	}
+	deviceProvisionedAt := time.Unix(int64(ctime)/1000, 0)
+	deviceAge := mctx.G().Clock().Since(deviceProvisionedAt)
+
+	// Is there enough to make any transaction?
+	availableInt, err := stellarnet.ParseStellarAmount(details.Available)
+	if err != nil {
+		return empty, err
+	}
+	canSubmitTx := availableInt > 100 // base fee is 100
+	// TODO: this is something that stellard can just tell us.
+	isFunded, err := hasPositiveLumenBalance(details.Balances)
 	if err != nil {
 		return empty, err
 	}
 
 	acct := stellar1.WalletAccountLocal{
-		AccountID:          details.AccountID,
-		IsDefault:          isPrimary,
-		Name:               accountName,
-		BalanceDescription: balance,
-		Seqno:              details.Seqno,
-		CurrencyLocal:      currencyLocal,
+		AccountID:           accountID,
+		IsDefault:           isPrimary,
+		Name:                accountName,
+		BalanceDescription:  balance,
+		Seqno:               details.Seqno,
+		AccountMode:         accountMode,
+		AccountModeEditable: isMobile && deviceAge > 7*24*time.Hour,
+		IsFunded:            isFunded,
+		CanSubmitTx:         canSubmitTx,
+	}
+
+	conf, err := mctx.G().GetStellar().GetServerDefinitions(mctx.Ctx())
+	if err == nil {
+		currency, ok := conf.GetCurrencyLocal(stellar1.OutsideCurrencyCode(details.DisplayCurrency))
+		if ok {
+			acct.CurrencyLocal = currency
+		}
 	}
 
 	return acct, nil
@@ -448,11 +501,11 @@ func AccountDetailsToWalletAccountLocal(mctx libkb.MetaContext, details stellar1
 type balanceList []stellar1.Balance
 
 // Example: "56.0227002 XLM + more"
-func (a balanceList) balanceDescription() (res string, err error) {
+func (a balanceList) balanceDescription(mctx libkb.MetaContext) (res string, err error) {
 	var more bool
 	for _, b := range a {
 		if b.Asset.IsNativeXLM() {
-			res, err = FormatAmountDescriptionXLM(b.Amount)
+			res, err = FormatAmountDescriptionXLM(mctx, b.Amount)
 			if err != nil {
 				return "", err
 			}
@@ -467,4 +520,55 @@ func (a balanceList) balanceDescription() (res string, err error) {
 		res += " + more"
 	}
 	return res, nil
+}
+
+// TransformToAirdropStatus takes the result from api server status_check
+// and transforms it into stellar1.AirdropStatus.
+func TransformToAirdropStatus(status remote.AirdropStatusAPI) stellar1.AirdropStatus {
+	var out stellar1.AirdropStatus
+	switch {
+	case status.AlreadyRegistered:
+		out.State = stellar1.AirdropAccepted
+	case status.Qualifications.QualifiesOverall:
+		out.State = stellar1.AirdropQualified
+	default:
+		out.State = stellar1.AirdropUnqualified
+	}
+
+	dq := stellar1.AirdropQualification{
+		Title: status.AirdropConfig.MinActiveDevicesTitle,
+		Valid: status.Qualifications.HasEnoughDevices,
+	}
+	out.Rows = append(out.Rows, dq)
+
+	aq := stellar1.AirdropQualification{
+		Title: status.AirdropConfig.AccountCreationTitle,
+	}
+
+	var used []string
+	for k, q := range status.Qualifications.ServiceChecks {
+		if q.Qualifies {
+			aq.Valid = true
+			break
+		}
+		if q.Username == "" {
+			continue
+		}
+		if !q.IsOldEnough {
+			continue
+		}
+		if q.IsUsedAlready {
+			used = append(used, fmt.Sprintf("%s@%s", q.Username, k))
+		}
+	}
+	if !aq.Valid {
+		aq.Subtitle = status.AirdropConfig.AccountCreationSubtitle
+		if len(used) > 0 {
+			usedDisplay := strings.Join(used, ", ")
+			aq.Subtitle += " " + fmt.Sprintf(status.AirdropConfig.AccountUsed, usedDisplay)
+		}
+	}
+	out.Rows = append(out.Rows, aq)
+
+	return out
 }

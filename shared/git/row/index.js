@@ -18,6 +18,7 @@ type Props = {
   teamname: ?string,
   url: string,
   isNew: boolean,
+  onBrowseGitRepo: () => void,
   onCopy: () => void,
   onClickDevice: () => void,
   onShowDelete: () => void,
@@ -100,14 +101,6 @@ class Row extends React.Component<Props> {
                 <Kb.Box2 direction="horizontal" style={styles.copyTextContainer}>
                   <Kb.CopyText text={this.props.url} containerStyle={{width: '100%'}} />
                 </Kb.Box2>
-                {!Styles.isMobile && this.props.canDelete && (
-                  <Kb.Button
-                    type="Danger"
-                    small={true}
-                    label="Delete repo"
-                    onClick={this.props.onShowDelete}
-                  />
-                )}
               </Kb.Box>
               <Kb.Box
                 style={{
@@ -188,15 +181,28 @@ class Row extends React.Component<Props> {
                   )}
                 </Kb.Box>
               )}
-              {Styles.isMobile && this.props.canDelete && (
+              <Kb.Box2 direction="horizontal" fullWidth={true} style={{marginTop: Styles.globalMargins.tiny}} gap="tiny">
                 <Kb.Button
-                  type="Danger"
-                  small={false}
-                  label="Delete repo"
-                  onClick={this.props.onShowDelete}
-                  style={{alignSelf: 'flex-start', marginTop: Styles.globalMargins.tiny}}
-                />
-              )}
+                  type="Secondary"
+                  small={true}
+                  label="View files"
+                  onClick={this.props.onBrowseGitRepo}
+                >
+                  <Kb.Icon
+                    type="iconfont-nav-files"
+                    fontSize={16}
+                    style={{marginRight: Styles.globalMargins.xtiny}}
+                  />
+                </Kb.Button>
+                {this.props.canDelete && (
+                  <Kb.Button
+                    type="Danger"
+                    small={true}
+                    label="Delete repo"
+                    onClick={this.props.onShowDelete}
+                  />
+                )}
+              </Kb.Box2>
             </Kb.Box>
           )}
         </Kb.Box>
@@ -228,7 +234,7 @@ const styles = Styles.styleSheetCreate({
 const _deviceStyle = {
   ...Styles.globalStyles.fontSemibold,
   ...Styles.globalStyles.italic,
-  color: Styles.globalColors.black_60,
+  color: Styles.globalColors.black_50,
 }
 
 const _rowBottomStyle = {

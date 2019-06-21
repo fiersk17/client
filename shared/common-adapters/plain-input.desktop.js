@@ -1,7 +1,7 @@
 // @flow
 import * as React from 'react'
 import {getStyle as getTextStyle} from './text.desktop'
-import {collapseStyles, globalColors, styleSheetCreate, platformStyles} from '../styles'
+import {collapseStyles, globalColors, styled, styleSheetCreate, platformStyles} from '../styles'
 import {pick} from 'lodash-es'
 import logger from '../logger'
 
@@ -52,28 +52,8 @@ class PlainInput extends React.PureComponent<InternalProps> {
     if (!n) {
       return
     }
-
-    // Smart auto resize algorithm from `Input`, use it by default here
-    const rect = n.getBoundingClientRect()
-    const value = n.value
-    // width changed so throw out our data
-    if (rect.width !== this._smartAutoresize.width) {
-      this._smartAutoresize.width = rect.width
-      this._smartAutoresize.pivotLength = -1
-    }
-
-    // See if we've gone up in size, if so keep track of the input at that point
-    if (n.scrollHeight > rect.height) {
-      this._smartAutoresize.pivotLength = value.length
-      n.style.height = `${n.scrollHeight}px`
-    } else {
-      // see if we went back down in height
-      if (this._smartAutoresize.pivotLength !== -1 && value.length <= this._smartAutoresize.pivotLength) {
-        this._smartAutoresize.pivotLength = value.length
-        n.style.height = '1px'
-        n.style.height = `${n.scrollHeight}px`
-      }
-    }
+    n.style.height = '1px'
+    n.style.height = `${n.scrollHeight}px`
   }
 
   focus = () => {
@@ -83,6 +63,8 @@ class PlainInput extends React.PureComponent<InternalProps> {
   blur = () => {
     this._input && this._input.blur()
   }
+
+  isFocused = () => !!this._input && document.activeElement === this._input
 
   transformText = (fn: TextInfo => TextInfo, reflectChange?: boolean) => {
     if (this._controlled()) {
@@ -181,6 +163,7 @@ class PlainInput extends React.PureComponent<InternalProps> {
       onKeyDown: this._onKeyDown,
       onKeyUp: this._onKeyUp,
       placeholder: this.props.placeholder,
+      placeholderColor: this.props.placeholderColor,
       ref: this._setInputRef,
     }
     if (this.props.disabled) {
@@ -282,17 +265,25 @@ class PlainInput extends React.PureComponent<InternalProps> {
 
   render = () => {
     const inputProps = this._getInputProps()
-    const css = `::-webkit-input-placeholder { color: ${this.props.placeholderColor ||
-      globalColors.black_40}; }
-                 ::-webkit-outer-spin-button, ::-webkit-inner-spin-button {-webkit-appearance: none; margin: 0;}`
     return (
       <React.Fragment>
-        <style>{css}</style>
-        {this.props.multiline ? <textarea {...inputProps} /> : <input {...inputProps} />}
+        {this.props.multiline ? <StyledTextArea {...inputProps} /> : <StyledInput {...inputProps} />}
       </React.Fragment>
     )
   }
 }
+
+const StyledTextArea = styled.textarea(props => ({
+  '&::-webkit-inner-spin-button': {'-webkit-appearance': 'none', margin: 0},
+  '&::-webkit-input-placeholder': {color: props.placeholderColor || globalColors.black_50},
+  '&::-webkit-outer-spin-button': {'-webkit-appearance': 'none', margin: 0},
+}))
+
+const StyledInput = styled.input(props => ({
+  '&::-webkit-inner-spin-button': {'-webkit-appearance': 'none', margin: 0},
+  '&::-webkit-input-placeholder': {color: props.placeholderColor || globalColors.black_50},
+  '&::-webkit-outer-spin-button': {'-webkit-appearance': 'none', margin: 0},
+}))
 
 const styles = styleSheetCreate({
   flexable: {

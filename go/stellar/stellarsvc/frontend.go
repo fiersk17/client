@@ -19,6 +19,8 @@ import (
 
 const WorthCurrencyErrorCode = "ERR"
 
+var ErrAccountIDMissing = errors.New("account id parameter missing")
+
 func (s *Server) GetWalletAccountsLocal(ctx context.Context, sessionID int) (accts []stellar1.WalletAccountLocal, err error) {
 	mctx, fin, err := s.Preamble(ctx, preambleArg{
 		RPCName:       "GetWalletAccountsLocal",
@@ -30,35 +32,7 @@ func (s *Server) GetWalletAccountsLocal(ctx context.Context, sessionID int) (acc
 		return nil, err
 	}
 
-	bundle, _, _, err := remote.FetchSecretlessBundle(mctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, entry := range bundle.Accounts {
-		acct, err := s.accountLocal(mctx, entry)
-		if err != nil {
-			return nil, err
-		}
-
-		accts = append(accts, acct)
-	}
-
-	// Put the primary account first, then sort by name, then by account ID
-	sort.SliceStable(accts, func(i, j int) bool {
-		if accts[i].IsDefault {
-			return true
-		}
-		if accts[j].IsDefault {
-			return false
-		}
-		if accts[i].Name == accts[j].Name {
-			return accts[i].AccountID < accts[j].AccountID
-		}
-		return accts[i].Name < accts[j].Name
-	})
-
-	return accts, nil
+	return stellar.AllWalletAccounts(mctx, s.remoter)
 }
 
 func (s *Server) GetWalletAccountLocal(ctx context.Context, arg stellar1.GetWalletAccountLocalArg) (acct stellar1.WalletAccountLocal, err error) {
@@ -72,28 +46,12 @@ func (s *Server) GetWalletAccountLocal(ctx context.Context, arg stellar1.GetWall
 		return acct, err
 	}
 
-	bundle, _, _, err := remote.FetchSecretlessBundle(mctx)
-	if err != nil {
-		return acct, err
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("GetWalletAccountLocal called with an empty account id")
+		return acct, ErrAccountIDMissing
 	}
 
-	entry, err := bundle.Lookup(arg.AccountID)
-	if err != nil {
-		return acct, err
-	}
-
-	return s.accountLocal(mctx, entry)
-}
-
-func (s *Server) accountLocal(mctx libkb.MetaContext, entry stellar1.BundleEntryRestricted) (stellar1.WalletAccountLocal, error) {
-	var empty stellar1.WalletAccountLocal
-	details, err := s.accountDetails(mctx.Ctx(), entry.AccountID)
-	if err != nil {
-		mctx.CDebugf("remote.Details failed for %q: %s", entry.AccountID, err)
-		return empty, err
-	}
-
-	return stellar.AccountDetailsToWalletAccountLocal(mctx, details, entry.IsPrimary, entry.Name)
+	return stellar.WalletAccount(mctx, s.remoter, arg.AccountID)
 }
 
 func (s *Server) GetAccountAssetsLocal(ctx context.Context, arg stellar1.GetAccountAssetsLocalArg) (assets []stellar1.AccountAssetLocal, err error) {
@@ -106,7 +64,12 @@ func (s *Server) GetAccountAssetsLocal(ctx context.Context, arg stellar1.GetAcco
 		return nil, err
 	}
 
-	details, err := s.accountDetails(ctx, arg.AccountID)
+	if arg.AccountID.IsNil() {
+		s.G().Log.CDebugf(ctx, "GetAccountAssetsLocal called with an empty account id")
+		return nil, ErrAccountIDMissing
+	}
+
+	details, err := stellar.AccountDetails(mctx, s.remoter, arg.AccountID)
 	if err != nil {
 		s.G().Log.CDebugf(ctx, "remote.Details failed for %q: %s", arg.AccountID, err)
 		return nil, err
@@ -115,12 +78,21 @@ func (s *Server) GetAccountAssetsLocal(ctx context.Context, arg stellar1.GetAcco
 	if len(details.Balances) == 0 {
 		// add an empty xlm balance
 		s.G().Log.CDebugf(ctx, "Account has no balances - adding default 0 XLM balance")
+		stellar.EmptyAmountStack(mctx)
+		details.Available = "0"
 		details.Balances = []stellar1.Balance{
 			{
 				Amount: "0",
 				Asset:  stellar1.Asset{Type: "native"},
 			},
 		}
+	}
+
+	if details.Available == "" {
+		s.G().Log.CDebugf(ctx, "details.Available is empty: %+v", details)
+		stellar.EmptyAmountStack(mctx)
+		details.Available = "0"
+		s.G().Log.CDebugf(ctx, `set details.Available from empty to "0"`)
 	}
 
 	displayCurrency, err := stellar.GetAccountDisplayCurrency(mctx, arg.AccountID)
@@ -134,7 +106,7 @@ func (s *Server) GetAccountAssetsLocal(ctx context.Context, arg stellar1.GetAcco
 	}
 
 	for _, d := range details.Balances {
-		fmtAmount, err := stellar.FormatAmount(d.Amount, false, stellar.FmtRound)
+		fmtAmount, err := stellar.FormatAmount(mctx, d.Amount, false, stellar.FmtRound)
 		if err != nil {
 			s.G().Log.CDebugf(ctx, "FormatAmount error: %s", err)
 			return nil, err
@@ -142,7 +114,12 @@ func (s *Server) GetAccountAssetsLocal(ctx context.Context, arg stellar1.GetAcco
 
 		if d.Asset.IsNativeXLM() {
 			availableAmount := stellar.SubtractFeeSoft(mctx, details.Available)
-			fmtAvailable, err := stellar.FormatAmount(availableAmount, false, stellar.FmtRound)
+			if availableAmount == "" {
+				s.G().Log.CDebugf(ctx, "stellar.SubtractFeeSoft returned empty available amount, setting it to 0")
+				stellar.EmptyAmountStack(mctx)
+				availableAmount = "0"
+			}
+			fmtAvailable, err := stellar.FormatAmount(mctx, availableAmount, false, stellar.FmtRound)
 			if err != nil {
 				return nil, err
 			}
@@ -270,11 +247,11 @@ func (s *Server) AcceptDisclaimerLocal(ctx context.Context, sessionID int) (err 
 		return err
 	}
 	stellar.InformAcceptedDisclaimer(mctx.Ctx(), s.G())
-	crg, err := stellar.CreateWalletGated(mctx)
+	cwg, err := stellar.CreateWalletGated(mctx)
 	if err != nil {
 		return err
 	}
-	if !crg.HasWallet {
+	if !cwg.HasWallet {
 		return fmt.Errorf("user wallet not created")
 	}
 
@@ -320,6 +297,11 @@ func (s *Server) GetPaymentsLocal(ctx context.Context, arg stellar1.GetPaymentsL
 		return page, err
 	}
 
+	if arg.AccountID.IsNil() {
+		s.G().Log.CDebugf(ctx, "GetPaymentsLocal called with an empty account id")
+		return page, ErrAccountIDMissing
+	}
+
 	srvPayments, err := s.remoter.RecentPayments(ctx, arg.AccountID, arg.Cursor, 0, true)
 	if err != nil {
 		return page, err
@@ -337,6 +319,11 @@ func (s *Server) GetPendingPaymentsLocal(ctx context.Context, arg stellar1.GetPe
 	defer fin()
 	if err != nil {
 		return nil, err
+	}
+
+	if arg.AccountID.IsNil() {
+		s.G().Log.CDebugf(ctx, "GetPendingPaymentsLocal called with an empty account id")
+		return payments, ErrAccountIDMissing
 	}
 
 	pending, err := s.remoter.PendingPayments(ctx, arg.AccountID, 0)
@@ -385,7 +372,7 @@ func (s *Server) GetPaymentDetailsLocal(ctx context.Context, arg stellar1.GetPay
 		AmountDescription:   summary.AmountDescription,
 		Delta:               summary.Delta,
 		Worth:               summary.Worth,
-		WorthCurrency:       summary.WorthCurrency,
+		WorthAtSendTime:     summary.WorthAtSendTime,
 		FromType:            summary.FromType,
 		ToType:              summary.ToType,
 		FromAccountID:       summary.FromAccountID,
@@ -479,7 +466,7 @@ func (s *Server) ValidateAccountNameLocal(ctx context.Context, arg stellar1.Vali
 		return fmt.Errorf("account name can be %v characters at the longest but was %v", stellar.AccountNameMaxRunes, runes)
 	}
 	// If this becomes a bottleneck, cache non-critical wallet info on G.Stellar.
-	currentBundle, _, _, err := remote.FetchSecretlessBundle(mctx)
+	currentBundle, err := remote.FetchSecretlessBundle(mctx)
 	if err != nil {
 		s.G().Log.CErrorf(ctx, "error fetching bundle: %v", err)
 		// Return nil since the name is probably fine.
@@ -503,6 +490,12 @@ func (s *Server) ChangeWalletAccountNameLocal(ctx context.Context, arg stellar1.
 	if err != nil {
 		return err
 	}
+
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("ChangeWalletAccountNameLocal called with an empty account id")
+		return ErrAccountIDMissing
+	}
+
 	return stellar.ChangeAccountName(mctx, arg.AccountID, arg.NewName)
 }
 
@@ -515,6 +508,11 @@ func (s *Server) SetWalletAccountAsDefaultLocal(ctx context.Context, arg stellar
 	defer fin()
 	if err != nil {
 		return err
+	}
+
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("SetWalletAccountAsDefaultLocal called with an empty account id")
+		return ErrAccountIDMissing
 	}
 
 	return stellar.SetAccountAsPrimary(mctx, arg.AccountID)
@@ -535,6 +533,11 @@ func (s *Server) DeleteWalletAccountLocal(ctx context.Context, arg stellar1.Dele
 		return errors.New("User did not acknowledge")
 	}
 
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("DeleteWalletAccountLocal called with an empty account id")
+		return ErrAccountIDMissing
+	}
+
 	return stellar.DeleteAccount(mctx, arg.AccountID)
 }
 
@@ -550,7 +553,7 @@ func (s *Server) ChangeDisplayCurrencyLocal(ctx context.Context, arg stellar1.Ch
 	}
 
 	if arg.AccountID.IsNil() {
-		return errors.New("passed empty AccountID")
+		return ErrAccountIDMissing
 	}
 	return remote.SetAccountDefaultCurrency(mctx.Ctx(), s.G(), arg.AccountID, string(arg.Currency))
 }
@@ -584,7 +587,7 @@ func (s *Server) GetWalletAccountPublicKeyLocal(ctx context.Context, arg stellar
 	}
 
 	if arg.AccountID.IsNil() {
-		return res, errors.New("passed empty AccountID")
+		return res, ErrAccountIDMissing
 	}
 	return arg.AccountID.String(), nil
 }
@@ -601,7 +604,7 @@ func (s *Server) GetWalletAccountSecretKeyLocal(ctx context.Context, arg stellar
 	}
 
 	if arg.AccountID.IsNil() {
-		return res, errors.New("passed empty AccountID")
+		return res, ErrAccountIDMissing
 	}
 	return stellar.ExportSecretKey(mctx, arg.AccountID)
 }
@@ -847,6 +850,11 @@ func (s *Server) MarkAsReadLocal(ctx context.Context, arg stellar1.MarkAsReadLoc
 		return err
 	}
 
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("IsAccountMobileOnlyLocal called with an empty account id")
+		return ErrAccountIDMissing
+	}
+
 	err = s.remoter.MarkAsRead(mctx.Ctx(), arg.AccountID, stellar1.TransactionIDFromPaymentID(arg.MostRecentID))
 	if err != nil {
 		return err
@@ -867,6 +875,11 @@ func (s *Server) IsAccountMobileOnlyLocal(ctx context.Context, arg stellar1.IsAc
 		return false, err
 	}
 
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("IsAccountMobileOnlyLocal called with an empty account id")
+		return false, ErrAccountIDMissing
+	}
+
 	return s.remoter.IsAccountMobileOnly(mctx.Ctx(), arg.AccountID)
 }
 
@@ -878,6 +891,11 @@ func (s *Server) SetAccountMobileOnlyLocal(ctx context.Context, arg stellar1.Set
 	defer fin()
 	if err != nil {
 		return err
+	}
+
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("SetAccountMobileOnlyLocal called with an empty account id")
+		return ErrAccountIDMissing
 	}
 
 	return s.remoter.SetAccountMobileOnly(mctx.Ctx(), arg.AccountID)
@@ -893,7 +911,25 @@ func (s *Server) SetAccountAllDevicesLocal(ctx context.Context, arg stellar1.Set
 		return err
 	}
 
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("SetAccountAllDevicesLocal called with an empty account id")
+		return ErrAccountIDMissing
+	}
+
 	return s.remoter.MakeAccountAllDevices(mctx.Ctx(), arg.AccountID)
+}
+
+func (s *Server) GetPredefinedInflationDestinationsLocal(ctx context.Context, sessionID int) (ret []stellar1.PredefinedInflationDestination, err error) {
+	mctx, fin, err := s.Preamble(ctx, preambleArg{
+		RPCName:       "GetPredefinedInflationDestinations",
+		Err:           &err,
+		RequireWallet: true,
+	})
+	defer fin()
+	if err != nil {
+		return ret, err
+	}
+	return stellar.GetPredefinedInflationDestinations(mctx)
 }
 
 func (s *Server) SetInflationDestinationLocal(ctx context.Context, arg stellar1.SetInflationDestinationLocalArg) (err error) {
@@ -919,5 +955,53 @@ func (s *Server) GetInflationDestinationLocal(ctx context.Context, arg stellar1.
 	if err != nil {
 		return res, err
 	}
+
+	if arg.AccountID.IsNil() {
+		mctx.CDebugf("GetInflationDestinationLocal called with an empty account id")
+		return res, ErrAccountIDMissing
+	}
+
 	return stellar.GetInflationDestination(mctx, arg.AccountID)
+}
+
+func (s *Server) AirdropDetailsLocal(ctx context.Context, sessionID int) (details string, err error) {
+	mctx, fin, err := s.Preamble(ctx, preambleArg{
+		RPCName:       "AirdropDetailsLocal",
+		Err:           &err,
+		RequireWallet: false,
+	})
+	defer fin()
+	if err != nil {
+		return "", err
+	}
+
+	return remote.AirdropDetails(mctx)
+}
+
+func (s *Server) AirdropRegisterLocal(ctx context.Context, arg stellar1.AirdropRegisterLocalArg) (err error) {
+	mctx, fin, err := s.Preamble(ctx, preambleArg{
+		RPCName:       "AirdropRegisterLocal",
+		Err:           &err,
+		RequireWallet: true,
+	})
+	defer fin()
+	if err != nil {
+		return err
+	}
+
+	return remote.AirdropRegister(mctx, arg.Register)
+}
+
+func (s *Server) AirdropStatusLocal(ctx context.Context, sessionID int) (status stellar1.AirdropStatus, err error) {
+	mctx, fin, err := s.Preamble(ctx, preambleArg{
+		RPCName:       "AirdropStatusLocal",
+		Err:           &err,
+		RequireWallet: true,
+	})
+	defer fin()
+	if err != nil {
+		return stellar1.AirdropStatus{}, err
+	}
+
+	return stellar.AirdropStatus(mctx)
 }

@@ -5,12 +5,14 @@ import UnfurlGeneric from '.'
 
 type Props = {|
   unfurl: RPCChatTypes.UnfurlGenericDisplay,
+  isCollapsed: boolean,
   onClose?: () => void,
+  onCollapse: () => void,
 |}
 
 class Wrapper extends React.PureComponent<Props> {
   render() {
-    const {unfurl, onClose} = this.props
+    const {unfurl, isCollapsed, onClose, onCollapse} = this.props
     const props = {
       description: unfurl.description || undefined,
       faviconURL: unfurl.favicon ? unfurl.favicon.url : undefined,
@@ -18,10 +20,14 @@ class Wrapper extends React.PureComponent<Props> {
       imageIsVideo: unfurl.media ? unfurl.media.isVideo : undefined,
       imageURL: unfurl.media ? unfurl.media.url : undefined,
       imageWidth: unfurl.media ? unfurl.media.width : undefined,
+      isCollapsed,
       onClose,
+      onCollapse,
       publishTime: unfurl.publishTime ? unfurl.publishTime * 1000 : undefined,
       showImageOnSide: unfurl.media
-        ? unfurl.media.height >= unfurl.media.width && !unfurl.media.isVideo
+        ? unfurl.media.height >= unfurl.media.width &&
+          !unfurl.media.isVideo &&
+          (unfurl.title.length > 0 || !!unfurl.description)
         : false,
       siteName: unfurl.siteName,
       title: unfurl.title,

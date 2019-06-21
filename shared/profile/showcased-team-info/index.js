@@ -1,4 +1,5 @@
 // @flow
+// TODO deprecate
 import * as React from 'react'
 import {Avatar, Box, Button, Meta, Text, Usernames, FloatingMenu} from '../../common-adapters'
 import {globalColors, globalMargins, globalStyles, isMobile, platformStyles} from '../../styles'
@@ -57,12 +58,12 @@ const TeamInfo = (props: Props) => (
 
     <Text type="BodySmall">{props.memberCount + ' member' + (props.memberCount !== 1 ? 's' : '')}</Text>
 
-    <Text type={'Body'} style={styleDescription}>
+    <Text center={true} type="Body" style={styleDescription}>
       {props.description}
     </Text>
 
     {!!props.teamJoinError && (
-      <Text type="BodySmall" style={styleDescription}>
+      <Text center={true} type="BodySmall" style={styleDescription}>
         Error: {props.teamJoinError}
       </Text>
     )}
@@ -97,7 +98,7 @@ const TeamInfo = (props: Props) => (
     )}
 
     {!props.youAreInTeam && props.youHaveRequestedAccess && props.openTeam && (
-      <Box style={styleDescription}>
+      <Box center={true} style={styleDescription}>
         <Text type="BodySmall">As soon as an admin comes online, this team will unlock for you.</Text>
       </Box>
     )}
@@ -136,7 +137,6 @@ const styleDescription = {
   marginLeft: globalMargins.small,
   marginRight: globalMargins.small,
   marginTop: globalMargins.tiny,
-  textAlign: 'center',
 }
 
 const styleDivider = {

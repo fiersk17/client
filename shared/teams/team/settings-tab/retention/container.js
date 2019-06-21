@@ -11,8 +11,8 @@ import {
 } from '../../../../constants/teams'
 import {getConversationRetentionPolicy} from '../../../../constants/chat2/meta'
 import type {RetentionPolicy} from '../../../../constants/types/retention-policy'
-import {navigateTo, pathSelector} from '../../../../actions/route-tree'
-import {type Path} from '../../../../route-tree'
+import * as RouteTreeGen from '../../../../actions/route-tree-gen'
+import {getPath, type Path} from '../../../../route-tree'
 import type {ConversationIDKey} from '../../../../constants/types/chat2'
 import type {StylesCrossPlatform} from '../../../../styles'
 import RetentionPicker, {type RetentionEntityType} from './'
@@ -106,7 +106,9 @@ const mapStateToProps = (state, ownProps: OwnProps) => {
     throw new Error(`RetentionPicker: impossible entityType encountered: ${entityType}`)
   }
 
-  const _path = pathSelector(state)
+  const policyIsExploding =
+    policy.type === 'explode' || (policy.type === 'inherit' && teamPolicy && teamPolicy.type === 'explode')
+  const _path = getPath(state.routeTree.routeState)
   return {
     _path,
     _permissionsLoaded,
@@ -114,6 +116,7 @@ const mapStateToProps = (state, ownProps: OwnProps) => {
     entityType, // used only to display policy to non-admins
     loading,
     policy,
+    policyIsExploding,
     showInheritOption,
     showOverrideNotice,
     teamPolicy,
@@ -126,17 +129,22 @@ const mapDispatchToProps = (
 ) => ({
   _loadTeamOperations: () => teamname && dispatch(TeamsGen.createGetTeamOperations({teamname})),
   _loadTeamPolicy: () => teamname && dispatch(TeamsGen.createGetTeamRetentionPolicy({teamname})),
-  _onShowWarning: (days: number, onConfirm: () => void, onCancel: () => void, parentPath: Path) => {
+  _onShowWarning: (
+    policy: RetentionPolicy,
+    onConfirm: () => void,
+    onCancel: () => void,
+    parentPath: Path
+  ) => {
     dispatch(
-      navigateTo(
-        [
+      RouteTreeGen.createNavigateTo({
+        parentPath,
+        path: [
           {
-            props: {days, entityType, onCancel, onConfirm},
+            props: {entityType, onCancel, onConfirm, policy},
             selected: 'retentionWarning',
           },
         ],
-        parentPath
-      )
+      })
     )
   },
   saveRetentionPolicy: (policy: RetentionPolicy) => {
@@ -168,7 +176,7 @@ export default compose(
     },
   }),
   withHandlers({
-    onShowWarning: ({_parentPath, _onShowWarning}) => (days, onConfirm, onCancel) =>
-      _onShowWarning(days, onConfirm, onCancel, _parentPath),
+    onShowWarning: ({_parentPath, _onShowWarning}) => (policy, onConfirm, onCancel) =>
+      _onShowWarning(policy, onConfirm, onCancel, _parentPath),
   })
 )(RetentionPicker)

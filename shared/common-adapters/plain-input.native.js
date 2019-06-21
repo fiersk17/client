@@ -59,7 +59,7 @@ class PlainInput extends Component<InternalProps, State> {
     this._input && this._input.setNativeProps(nativeProps)
   }
 
-  transformText = (fn: TextInfo => TextInfo) => {
+  transformText = (fn: TextInfo => TextInfo, reflectChange: boolean) => {
     if (this._controlled()) {
       const errMsg =
         'Attempted to use transformText on controlled input component. Use props.value and setSelection instead.'
@@ -75,6 +75,9 @@ class PlainInput extends Component<InternalProps, State> {
     this.setNativeProps({text: newTextInfo.text})
     this._lastNativeText = newTextInfo.text
     this._setSelection(newTextInfo.selection)
+    if (reflectChange) {
+      this._onChangeText(newTextInfo.text)
+    }
   }
 
   getSelection = () => this._lastNativeSelection || {end: 0, start: 0}
@@ -120,6 +123,7 @@ class PlainInput extends Component<InternalProps, State> {
     const start = Math.min(_start, _end)
     const end = Math.max(_start, _end)
     this._lastNativeSelection = {end, start}
+    this.props.onSelectionChange && this.props.onSelectionChange(this._lastNativeSelection)
   }
 
   _onContentSizeChange = (event: ContentSizeChangeEvent) => {
@@ -156,6 +160,8 @@ class PlainInput extends Component<InternalProps, State> {
   blur = () => {
     this._input && this._input.blur()
   }
+
+  isFocused = () => !!this._input && this._input.isFocused()
 
   _onFocus = () => {
     this.setState({focused: true})
@@ -211,10 +217,11 @@ class PlainInput extends Component<InternalProps, State> {
       onChangeText: this._onChangeText,
       onEndEditing: this.props.onEndEditing,
       onFocus: this._onFocus,
+      onKeyPress: this.props.onKeyPress,
       onSelectionChange: this._onSelectionChange,
       onSubmitEditing: this.props.onEnterKeyDown,
       placeholder: this.props.placeholder,
-      placeholderTextColor: this.props.placeholderColor || globalColors.black_40,
+      placeholderTextColor: this.props.placeholderColor || globalColors.black_50,
       ref: this._setInputRef,
       returnKeyType: this.props.returnKeyType,
       secureTextEntry: this.props.type === 'password',

@@ -389,7 +389,7 @@ func (s *stellarRetryClient) WalletInitLocal(ctx context.Context) (err error) {
 	return err
 }
 
-func (s *stellarRetryClient) WalletDumpLocal(ctx context.Context) (res stellar1.BundleRestricted, err error) {
+func (s *stellarRetryClient) WalletDumpLocal(ctx context.Context) (res stellar1.Bundle, err error) {
 	for i := 0; i < retryCount; i++ {
 		res, err = s.cli.WalletDumpLocal(ctx)
 		if err == nil {
@@ -567,6 +567,56 @@ func (s *stellarRetryClient) SetInflationDestinationLocal(ctx context.Context, a
 func (s *stellarRetryClient) GetInflationDestinationLocal(ctx context.Context, arg stellar1.GetInflationDestinationLocalArg) (res stellar1.InflationDestinationResultLocal, err error) {
 	for i := 0; i < retryCount; i++ {
 		res, err = s.cli.GetInflationDestinationLocal(ctx, arg)
+		if err == nil {
+			break
+		}
+	}
+	return res, err
+}
+
+func (s *stellarRetryClient) GetPredefinedInflationDestinationsLocal(ctx context.Context, sessionID int) (res []stellar1.PredefinedInflationDestination, err error) {
+	for i := 0; i < retryCount; i++ {
+		res, err = s.cli.GetPredefinedInflationDestinationsLocal(ctx, sessionID)
+		if err == nil {
+			break
+		}
+	}
+	return res, err
+}
+
+func (s *stellarRetryClient) BatchLocal(ctx context.Context, arg stellar1.BatchLocalArg) (res stellar1.BatchResultLocal, err error) {
+	for i := 0; i < retryCount; i++ {
+		res, err = s.cli.BatchLocal(ctx, arg)
+		if err == nil {
+			break
+		}
+	}
+	return res, err
+}
+
+func (s *stellarRetryClient) AirdropDetailsLocal(ctx context.Context, sessionID int) (res string, err error) {
+	for i := 0; i < retryCount; i++ {
+		res, err = s.cli.AirdropDetailsLocal(ctx, sessionID)
+		if err == nil {
+			break
+		}
+	}
+	return res, err
+}
+
+func (s *stellarRetryClient) AirdropRegisterLocal(ctx context.Context, arg stellar1.AirdropRegisterLocalArg) (err error) {
+	for i := 0; i < retryCount; i++ {
+		err = s.cli.AirdropRegisterLocal(ctx, arg)
+		if err == nil {
+			break
+		}
+	}
+	return err
+}
+
+func (s *stellarRetryClient) AirdropStatusLocal(ctx context.Context, sessionID int) (res stellar1.AirdropStatus, err error) {
+	for i := 0; i < retryCount; i++ {
+		res, err = s.cli.AirdropStatusLocal(ctx, sessionID)
 		if err == nil {
 			break
 		}
