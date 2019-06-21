@@ -3,6 +3,8 @@
 package phonenumbers
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/keybase/client/go/kbtest"
@@ -15,10 +17,19 @@ func TestSetPhoneNumber(t *testing.T) {
 	tc := libkb.SetupTest(t, "TestPhoneNumbers", 1)
 	defer tc.Cleanup()
 
-	me, err := kbtest.CreateAndSignupFakeUser("phon", tc.G)
+	_, err := kbtest.CreateAndSignupFakeUser("phon", tc.G)
 	require.NoError(t, err)
 
-	phoneNumber := keybase1.PhoneNumber("+14155552671")
+	// Generate a random phone number e.g. "14155552671".
+	randomNumber := kbtest.GenerateTestPhoneNumber()
+	// In strict format: "+14155552671".
+	phoneNumber := keybase1.PhoneNumber("+" + randomNumber)
+	// Create a representation likely to come from phone contact book: "+1-415-555-2671".
+	phoneFormatted := keybase1.RawPhoneNumber(fmt.Sprintf("+%s-%s-%s-%s", randomNumber[0:1], randomNumber[1:4], randomNumber[4:7], randomNumber[7:11]))
+	// Sanity check.
+	require.EqualValues(t, phoneNumber, strings.Replace(string(phoneFormatted), "-", "", -1))
+
+	t.Logf("Generated phone number: %q formatted as %q", phoneNumber, phoneFormatted)
 
 	mctx := libkb.NewMetaContextForTest(tc)
 
@@ -39,28 +50,6 @@ func TestSetPhoneNumber(t *testing.T) {
 	require.Len(t, resp, 1)
 	require.Equal(t, phoneNumber, resp[0].PhoneNumber)
 	require.True(t, resp[0].Verified)
-
-	contactList := []keybase1.RawPhoneNumber{
-		"+1-415-555-2671",
-	}
-	regionCodes := []keybase1.RegionCode{
-		"us",
-	}
-	userRegionCode := keybase1.RegionCode("us")
-	resolutions, err := BulkLookupPhoneNumbers(mctx, contactList, regionCodes, &userRegionCode)
-	require.NoError(t, err)
-
-	myUID := me.GetUID()
-	expectedResolutions := []keybase1.PhoneNumberLookupResult{
-		keybase1.PhoneNumberLookupResult{
-			PhoneNumber:        "+1-415-555-2671",
-			CoercedPhoneNumber: "+14155552671",
-			Err:                nil,
-			Uid:                &myUID,
-		},
-	}
-
-	require.Equal(t, expectedResolutions, resolutions)
 
 	err = DeletePhoneNumber(mctx, phoneNumber)
 	require.NoError(t, err)

@@ -72,10 +72,10 @@ func TransformRequestDetails(mctx libkb.MetaContext, details stellar1.RequestDet
 	}
 
 	if details.Currency != nil {
-		amountDesc, err := FormatCurrency(mctx, details.Amount, *details.Currency, FmtRound)
+		amountDesc, err := FormatCurrency(mctx, details.Amount, *details.Currency, stellarnet.Round)
 		if err != nil {
 			amountDesc = details.Amount
-			mctx.CDebugf("error formatting external currency: %s", err)
+			mctx.Debug("error formatting external currency: %s", err)
 		}
 		loc.AmountDescription = fmt.Sprintf("%s %s", amountDesc, *details.Currency)
 	} else if details.Asset != nil {
@@ -94,7 +94,7 @@ func TransformRequestDetails(mctx libkb.MetaContext, details stellar1.RequestDet
 		amountDesc, err := FormatAmountWithSuffix(mctx, details.Amount, false /* precisionTwo */, true /* simplify */, code)
 		if err != nil {
 			amountDesc = fmt.Sprintf("%s %s", details.Amount, code)
-			mctx.CDebugf("error formatting amount for asset: %s", err)
+			mctx.Debug("error formatting amount for asset: %s", err)
 		}
 		loc.AmountDescription = amountDesc
 	} else {
@@ -105,10 +105,30 @@ func TransformRequestDetails(mctx libkb.MetaContext, details stellar1.RequestDet
 }
 
 // transformPaymentStellar converts a stellar1.PaymentSummaryStellar into a stellar1.PaymentLocal.
-func transformPaymentStellar(mctx libkb.MetaContext, acctID stellar1.AccountID, p stellar1.PaymentSummaryStellar, oc OwnAccountLookupCache) (*stellar1.PaymentLocal, error) {
-	loc, err := newPaymentLocal(mctx, p.TxID, p.Ctime, p.Amount, p.Asset)
-	if err != nil {
-		return nil, err
+func transformPaymentStellar(mctx libkb.MetaContext, acctID stellar1.AccountID, p stellar1.PaymentSummaryStellar, oc OwnAccountLookupCache) (res *stellar1.PaymentLocal, err error) {
+	loc := stellar1.NewPaymentLocal(p.TxID, p.Ctime)
+	if p.IsAdvanced {
+		if len(p.Amount) > 0 {
+			// It is expected that there is no amount.
+			// But might as well future proof it so that if an amount shows up it gets formatted.
+			loc.AmountDescription, err = FormatAmountDescriptionAsset(mctx, p.Amount, p.Asset)
+			if err != nil {
+				loc.AmountDescription = ""
+			}
+		}
+
+		if p.Asset.IsEmpty() && !p.Asset.IsNativeXLM() {
+			// Asset is also expected to be missing.
+			loc.IssuerDescription = FormatAssetIssuerString(p.Asset)
+			issuerAcc := stellar1.AccountID(p.Asset.Issuer)
+			loc.IssuerAccountID = &issuerAcc
+		}
+
+	} else {
+		loc, err = newPaymentLocal(mctx, p.TxID, p.Ctime, p.Amount, p.Asset)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	isSender := p.From.Eq(acctID)
@@ -131,6 +151,15 @@ func transformPaymentStellar(mctx libkb.MetaContext, acctID stellar1.AccountID, 
 	loc.StatusSimplified = stellar1.PaymentStatus_COMPLETED
 	loc.StatusDescription = strings.ToLower(loc.StatusSimplified.String())
 	loc.Unread = p.Unread
+	loc.IsInflation = p.IsInflation
+	loc.InflationSource = p.InflationSource
+	loc.SourceAsset = p.SourceAsset
+	loc.SourceAmountMax = p.SourceAmountMax
+	loc.SourceAmountActual = p.SourceAmountActual
+
+	loc.IsAdvanced = p.IsAdvanced
+	loc.SummaryAdvanced = p.SummaryAdvanced
+	loc.Operations = p.Operations
 
 	return loc, nil
 }
@@ -204,6 +233,10 @@ func transformPaymentDirect(mctx libkb.MetaContext, acctID stellar1.AccountID, p
 
 	loc.Note, loc.NoteErr = decryptNote(mctx, p.TxID, p.NoteB64)
 
+	loc.SourceAmountMax = p.SourceAmountMax
+	loc.SourceAmountActual = p.SourceAmountActual
+	loc.SourceAsset = p.SourceAsset
+
 	return loc, nil
 }
 
@@ -229,7 +262,7 @@ func transformPaymentRelay(mctx libkb.MetaContext, acctID stellar1.AccountID, p 
 	loc.FromAccountID = p.FromStellar
 	loc.FromUsername, err = lookupUsername(mctx, p.From.Uid)
 	if err != nil {
-		mctx.CDebugf("sender lookup failed: %s", err)
+		mctx.Debug("sender lookup failed: %s", err)
 		return nil, errors.New("sender lookup failed")
 	}
 	loc.FromType = stellar1.ParticipantType_KEYBASE
@@ -240,7 +273,7 @@ func transformPaymentRelay(mctx libkb.MetaContext, acctID stellar1.AccountID, p 
 	if p.To != nil {
 		username, err := lookupUsername(mctx, p.To.Uid)
 		if err != nil {
-			mctx.CDebugf("recipient lookup failed: %s", err)
+			mctx.Debug("recipient lookup failed: %s", err)
 			return nil, errors.New("recipient lookup failed")
 		}
 		loc.ToUsername = username
@@ -326,7 +359,7 @@ func formatWorth(mctx libkb.MetaContext, amount, currency *string) (worth, worth
 		return "", "", nil
 	}
 
-	worth, err = FormatCurrencyWithCodeSuffix(mctx, *amount, stellar1.OutsideCurrencyCode(*currency), FmtRound)
+	worth, err = FormatCurrencyWithCodeSuffix(mctx, *amount, stellar1.OutsideCurrencyCode(*currency), stellarnet.Round)
 	if err != nil {
 		return "", "", err
 	}
@@ -405,7 +438,7 @@ func RemoteRecentPaymentsToPage(mctx libkb.MetaContext, remoter remote.Remoter, 
 	for i, p := range remotePage.Payments {
 		page.Payments[i].Payment, err = TransformPaymentSummaryAccount(mctx, p, oc, accountID)
 		if err != nil {
-			mctx.CDebugf("RemoteRecentPaymentsToPage error transforming payment %v: %v", i, err)
+			mctx.Debug("RemoteRecentPaymentsToPage error transforming payment %v: %v", i, err)
 			s := err.Error()
 			page.Payments[i].Err = &s
 			page.Payments[i].Payment = nil // just to make sure
@@ -456,19 +489,48 @@ func AccountDetailsToWalletAccountLocal(mctx libkb.MetaContext, accountID stella
 		return empty, err
 	}
 	isMobile := activeDeviceType == libkb.DeviceTypeMobile
-	ctime, err := mctx.G().ActiveDevice.Ctime(mctx)
-	if err != nil {
-		return empty, err
+
+	// AccountModeEditable - can user change "account mode" to mobile only or
+	// back? This setting can only be changed from a mobile device that's over
+	// 7 days old (since provisioning).
+	editable := false
+	if isMobile {
+		ctime, err := mctx.G().ActiveDevice.Ctime(mctx)
+		if err != nil {
+			return empty, err
+		}
+		deviceProvisionedAt := time.Unix(int64(ctime)/1000, 0)
+		deviceAge := mctx.G().Clock().Since(deviceProvisionedAt)
+		if deviceAge > 7*24*time.Hour {
+			editable = true
+		}
 	}
-	deviceProvisionedAt := time.Unix(int64(ctime)/1000, 0)
-	deviceAge := mctx.G().Clock().Since(deviceProvisionedAt)
+
+	// AccountDeviceReadOnly - if account is mobileOnly and current device is
+	// either desktop, or mobile but not only enough (7 days since
+	// provisioning).
+	readOnly := false
+	if accountMode == stellar1.AccountMode_MOBILE {
+		if isMobile {
+			// Mobile devices eligible to edit are also eligible to do
+			// transactions.
+			readOnly = !editable
+		} else {
+			// All desktop devices are read only.
+			readOnly = true
+		}
+	}
 
 	// Is there enough to make any transaction?
-	availableInt, err := stellarnet.ParseStellarAmount(details.Available)
-	if err != nil {
-		return empty, err
+	var availableInt int64
+	if details.Available != "" {
+		availableInt, err = stellarnet.ParseStellarAmount(details.Available)
+		if err != nil {
+			return empty, err
+		}
 	}
-	canSubmitTx := availableInt > 100 // base fee is 100
+	baseFee := getGlobal(mctx.G()).BaseFee(mctx)
+	canSubmitTx := availableInt > int64(baseFee)
 	// TODO: this is something that stellard can just tell us.
 	isFunded, err := hasPositiveLumenBalance(details.Balances)
 	if err != nil {
@@ -482,17 +544,24 @@ func AccountDetailsToWalletAccountLocal(mctx libkb.MetaContext, accountID stella
 		BalanceDescription:  balance,
 		Seqno:               details.Seqno,
 		AccountMode:         accountMode,
-		AccountModeEditable: isMobile && deviceAge > 7*24*time.Hour,
+		AccountModeEditable: editable,
+		DeviceReadOnly:      readOnly,
 		IsFunded:            isFunded,
 		CanSubmitTx:         canSubmitTx,
 	}
 
 	conf, err := mctx.G().GetStellar().GetServerDefinitions(mctx.Ctx())
 	if err == nil {
-		currency, ok := conf.GetCurrencyLocal(stellar1.OutsideCurrencyCode(details.DisplayCurrency))
-		if ok {
-			acct.CurrencyLocal = currency
+		for _, currency := range []string{details.DisplayCurrency, DefaultCurrencySetting} {
+			currency, ok := conf.GetCurrencyLocal(stellar1.OutsideCurrencyCode(currency))
+			if ok {
+				acct.CurrencyLocal = currency
+				break
+			}
 		}
+	}
+	if acct.CurrencyLocal.Code == "" {
+		mctx.Debug("warning: AccountDetails for %v has empty currency code", details.AccountID)
 	}
 
 	return acct, nil

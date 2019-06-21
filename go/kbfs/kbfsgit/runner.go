@@ -18,11 +18,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/keybase/client/go/kbfs/data"
+	"github.com/keybase/client/go/kbfs/idutil"
 	"github.com/keybase/client/go/kbfs/kbfsmd"
 	"github.com/keybase/client/go/kbfs/libfs"
 	"github.com/keybase/client/go/kbfs/libgit"
 	"github.com/keybase/client/go/kbfs/libkbfs"
 	"github.com/keybase/client/go/kbfs/tlf"
+	"github.com/keybase/client/go/kbfs/tlfhandle"
 	"github.com/keybase/client/go/libkb"
 	"github.com/keybase/client/go/logger"
 	"github.com/keybase/client/go/protocol/keybase1"
@@ -105,7 +108,7 @@ const (
 type runner struct {
 	config libkbfs.Config
 	log    logger.Logger
-	h      *libkbfs.TlfHandle
+	h      *tlfhandle.Handle
 	remote string
 	repo   string
 	gitDir string
@@ -158,14 +161,14 @@ func newRunner(ctx context.Context, config libkbfs.Config,
 	}
 
 	h, err := libkbfs.GetHandleFromFolderNameAndType(
-		ctx, config.KBPKI(), config.MDOps(), parts[1], t)
+		ctx, config.KBPKI(), config.MDOps(), config, parts[1], t)
 	if err != nil {
 		return nil, err
 	}
 
 	// Use the device ID and PID to make a unique ID (for generating
 	// temp files in KBFS).
-	session, err := libkbfs.GetCurrentSessionIfPossible(
+	session, err := idutil.GetCurrentSessionIfPossible(
 		ctx, config.KBPKI(), h.Type() == tlf.Public)
 	if err != nil {
 		return nil, err
@@ -534,7 +537,7 @@ func (r *runner) waitForJournal(ctx context.Context) error {
 	}
 
 	rootNode, _, err := r.config.KBFSOps().GetOrCreateRootNode(
-		ctx, r.h, libkbfs.MasterBranch)
+		ctx, r.h, data.MasterBranch)
 	if err != nil {
 		return err
 	}
@@ -712,7 +715,7 @@ func humanizeObjects(n int, d int) string {
 func (r *runner) printJournalStatusUntilFlushed(
 	ctx context.Context, doneCh <-chan struct{}) {
 	rootNode, _, err := r.config.KBFSOps().GetOrCreateRootNode(
-		ctx, r.h, libkbfs.MasterBranch)
+		ctx, r.h, data.MasterBranch)
 	if err != nil {
 		r.log.CDebugf(ctx, "GetOrCreateRootNode error: %+v", err)
 		return
@@ -1123,7 +1126,8 @@ func (r *runner) checkGC(ctx context.Context) (err error) {
 	command := fmt.Sprintf("keybase git gc %s", r.repo)
 	if r.h.Type() == tlf.SingleTeam {
 		tid := r.h.FirstResolvedWriter()
-		teamName, err := r.config.KBPKI().GetNormalizedUsername(ctx, tid)
+		teamName, err := r.config.KBPKI().GetNormalizedUsername(
+			ctx, tid, r.config.OfflineAvailabilityForID(r.h.TlfID()))
 		if err != nil {
 			return err
 		}

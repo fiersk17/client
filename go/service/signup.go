@@ -4,8 +4,6 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/keybase/client/go/engine"
 	"github.com/keybase/client/go/libkb"
 	keybase1 "github.com/keybase/client/go/protocol/keybase1"
@@ -25,8 +23,9 @@ func NewSignupHandler(xp rpc.Transporter, g *libkb.GlobalContext) *SignupHandler
 	}
 }
 
-func (h *SignupHandler) CheckUsernameAvailable(_ context.Context, arg keybase1.CheckUsernameAvailableArg) error {
-	_, err := h.G().API.Get(libkb.APIArg{
+func (h *SignupHandler) CheckUsernameAvailable(ctx context.Context, arg keybase1.CheckUsernameAvailableArg) error {
+	mctx := libkb.NewMetaContext(ctx, h.G())
+	_, err := mctx.G().API.Get(mctx, libkb.APIArg{
 		Endpoint:    "user/lookup",
 		SessionType: libkb.APISessionTypeNONE,
 		Args: libkb.HTTPArgs{
@@ -40,7 +39,7 @@ func (h *SignupHandler) CheckUsernameAvailable(_ context.Context, arg keybase1.C
 		return libkb.AppStatusError{
 			Code: libkb.SCBadSignupUsernameTaken,
 			Name: "BAD_SIGNUP_USERNAME_TAKEN",
-			Desc: fmt.Sprintf("Username '%s' is taken", arg.Username),
+			Desc: "This username is already taken! Please pick another one.",
 		}
 	case libkb.AppStatusError:
 		switch err.Name {
@@ -51,7 +50,7 @@ func (h *SignupHandler) CheckUsernameAvailable(_ context.Context, arg keybase1.C
 			return libkb.AppStatusError{
 				Code: libkb.SCBadSignupUsernameDeleted,
 				Name: "BAD_SIGNUP_USERNAME_DELETED",
-				Desc: fmt.Sprintf("Username '%s' has been deleted", arg.Username),
+				Desc: "This username has been deleted! Please pick another one.",
 			}
 		}
 		return err

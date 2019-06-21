@@ -50,6 +50,14 @@ func (p *ProveRooterUI) OkToCheck(_ context.Context, _ keybase1.OkToCheckArg) (b
 	return true, nil
 }
 
+func (p *ProveRooterUI) Checking(_ context.Context, _ keybase1.CheckingArg) error {
+	return nil
+}
+
+func (p *ProveRooterUI) ContinueChecking(_ context.Context, _ int) (bool, error) {
+	return true, nil
+}
+
 func proveRooter(t *testing.T, g *libkb.GlobalContext, fu *kbtest.FakeUser) {
 	arg := keybase1.StartProofArg{
 		Service:  "rooter",
@@ -120,16 +128,18 @@ func runChatSBSScenario(t *testing.T, testCase sbsTestCase) {
 			// If we are sending ephemeral messages make sure both users have
 			// user/device EKs
 			if ephemeralLifetime != nil {
-				ctc.as(t, users[0]).h.G().GetEKLib().KeygenIfNeeded(context.Background())
-				ctc.as(t, users[1]).h.G().GetEKLib().KeygenIfNeeded(context.Background())
+				u1 := ctc.as(t, users[0])
+				u1.h.G().GetEKLib().KeygenIfNeeded(u1.h.G().MetaContext(context.Background()))
+				u2 := ctc.as(t, users[1])
+				u2.h.G().GetEKLib().KeygenIfNeeded(u2.h.G().MetaContext(context.Background()))
 			}
 
 			tc1 := ctc.world.Tcs[users[1].Username]
 			ctx := ctc.as(t, users[0]).startCtx
 			listener0 := newServerChatListener()
-			ctc.as(t, users[0]).h.G().NotifyRouter.SetListener(listener0)
+			ctc.as(t, users[0]).h.G().NotifyRouter.AddListener(listener0)
 			listener1 := newServerChatListener()
-			ctc.as(t, users[1]).h.G().NotifyRouter.SetListener(listener1)
+			ctc.as(t, users[1]).h.G().NotifyRouter.AddListener(listener1)
 
 			convoAssertions := []string{
 				users[0].Username,

@@ -1,11 +1,12 @@
 package teams
 
 import (
+	"testing"
+
 	"github.com/keybase/client/go/kbtest"
 	"github.com/keybase/client/go/libkb"
 	"github.com/keybase/client/go/protocol/keybase1"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestFastLoaderBasic(t *testing.T) {
@@ -86,6 +87,7 @@ func TestFastLoaderKeyGen(t *testing.T) {
 	arg.NeedLatestKey = false
 	arg.KeyGenerationsNeeded = []keybase1.PerTeamKeyGeneration{keybase1.PerTeamKeyGeneration(4)}
 	team, err = tcs[1].G.GetFastTeamLoader().Load(m[1], arg)
+	require.NoError(t, err)
 	require.Equal(t, len(team.ApplicationKeys), 1)
 	require.Equal(t, team.ApplicationKeys[0].KeyGeneration, keybase1.PerTeamKeyGeneration(4))
 	require.True(t, teamName.Eq(team.Name))
@@ -94,12 +96,15 @@ func TestFastLoaderKeyGen(t *testing.T) {
 	arg.NeedLatestKey = true
 	arg.KeyGenerationsNeeded = []keybase1.PerTeamKeyGeneration{}
 	team, err = tcs[1].G.GetFastTeamLoader().Load(m[1], arg)
+	require.NoError(t, err)
 	require.Equal(t, len(team.ApplicationKeys), 1)
 	require.Equal(t, team.ApplicationKeys[0].KeyGeneration, keybase1.PerTeamKeyGeneration(4))
 	require.True(t, teamName.Eq(team.Name))
 
 	t.Logf("clear A's FTL state")
-	tcs[0].G.GetFastTeamLoader().OnLogout()
+	ftl, ok := tcs[0].G.GetFastTeamLoader().(*FastTeamChainLoader)
+	require.True(t, ok)
+	require.NoError(t, ftl.OnLogout(m[0]))
 
 	t.Logf("more tests as A; let's first load at generation=1")
 	arg = keybase1.FastTeamLoadArg{
@@ -225,7 +230,9 @@ func TestFastLoaderUpPointerUnstub(t *testing.T) {
 
 	// Also check that it works on a fresh load on a clean cache (thought this
 	// duplicates what we did in TestFastLoaderMultilevel)
-	tcs[0].G.GetFastTeamLoader().OnLogout()
+	ftl, ok := tcs[0].G.GetFastTeamLoader().(*FastTeamChainLoader)
+	require.True(t, ok)
+	require.NoError(t, ftl.OnLogout(m[0]))
 	loadSubteam()
 }
 

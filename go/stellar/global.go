@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,7 +27,10 @@ func ServiceInit(g *libkb.GlobalContext, walletState *WalletState, badger *badge
 	if g.Env.GetRunMode() != libkb.ProductionRunMode {
 		stellarnet.SetClientAndNetwork(horizon.DefaultTestNetClient, build.TestNetwork)
 	}
-	g.SetStellar(NewStellar(g, walletState, badger))
+	s := NewStellar(g, walletState, badger)
+	g.SetStellar(s)
+	g.AddLogoutHook(s, "stellar")
+	g.AddDbNukeHook(s, "stellar")
 }
 
 type Stellar struct {
@@ -84,7 +88,17 @@ func (s *Stellar) Upkeep(ctx context.Context) error {
 	return Upkeep(libkb.NewMetaContext(ctx, s.G()))
 }
 
-func (s *Stellar) OnLogout() {
+func (s *Stellar) OnLogout(mctx libkb.MetaContext) error {
+	s.Clear(mctx)
+	return nil
+}
+
+func (s *Stellar) OnDbNuke(mctx libkb.MetaContext) error {
+	s.Clear(mctx)
+	return nil
+}
+
+func (s *Stellar) Clear(mctx libkb.MetaContext) {
 	s.shutdownAutoClaimRunner()
 	s.deleteBpc()
 	s.deleteDisclaimer()
@@ -128,27 +142,39 @@ func (s *Stellar) GetMigrationLock() *sync.Mutex {
 }
 
 func (s *Stellar) GetServerDefinitions(ctx context.Context) (ret stellar1.StellarServerDefinitions, err error) {
+	s.serverConfLock.Lock()
+	defer s.serverConfLock.Unlock()
 	if s.cachedServerConf.Revision == 0 {
-		s.serverConfLock.Lock()
-		defer s.serverConfLock.Unlock()
-		if s.cachedServerConf.Revision == 0 {
-			// check if still 0, we might have waited for other thread
-			// to finish fetching.
-			if ret, err = remote.FetchServerConfig(ctx, s.G()); err != nil {
-				return ret, err
-			}
-
-			s.cachedServerConf = ret
+		// check if still 0, we might have waited for other thread
+		// to finish fetching.
+		if ret, err = remote.FetchServerConfig(ctx, s.G()); err != nil {
+			return ret, err
 		}
+
+		s.cachedServerConf = ret
 	}
 
 	return s.cachedServerConf, nil
 }
 
+func (s *Stellar) KnownCurrencyCodeInstant(ctx context.Context, code string) (known, ok bool) {
+	code = strings.ToUpper(code)
+	if code == "XLM" {
+		return true, true
+	}
+	s.serverConfLock.Lock()
+	defer s.serverConfLock.Unlock()
+	if s.cachedServerConf.Revision == 0 {
+		return false, false
+	}
+	_, known = s.cachedServerConf.Currencies[stellar1.OutsideCurrencyCode(code)]
+	return known, true
+}
+
 // `trigger` is optional, and is of the gregor message that caused the kick.
 func (s *Stellar) KickAutoClaimRunner(mctx libkb.MetaContext, trigger gregor.MsgID) {
 	// Create the ACR if one does not exist.
-	mctx.CDebugf("KickAutoClaimRunner(trigger:%v)", trigger)
+	mctx.Debug("KickAutoClaimRunner(trigger:%v)", trigger)
 	s.autoClaimRunnerLock.Lock()
 	defer s.autoClaimRunnerLock.Unlock()
 	if s.autoClaimRunner == nil {
@@ -251,31 +277,32 @@ func (s *Stellar) HandleOobm(ctx context.Context, obm gregor.OutOfBandMessage) (
 }
 
 func (s *Stellar) handleReconnect(mctx libkb.MetaContext) {
-	defer mctx.CTraceTimed("Stellar.handleReconnect", func() error { return nil })()
-	if s.walletState.Primed() {
-		mctx.CDebugf("stellar received reconnect msg, doing delayed wallet refresh")
+	defer mctx.TraceTimed("Stellar.handleReconnect", func() error { return nil })()
+	mctx.Debug("stellar received reconnect msg, doing delayed wallet refresh")
+	time.Sleep(4 * time.Second)
+	if libkb.IsMobilePlatform() {
+		// sleep some more on mobile
 		time.Sleep(4 * time.Second)
-		mctx.CDebugf("stellar reconnect msg delay complete, refreshing wallet state")
-	} else {
-		mctx.CDebugf("stellar received reconnect msg, doing wallet refresh on unprimed wallet")
 	}
+	mctx.Debug("stellar reconnect msg delay complete, refreshing wallet state")
+
 	if err := s.walletState.RefreshAll(mctx, "reconnect"); err != nil {
-		mctx.CDebugf("Stellar.handleReconnect RefreshAll error: %s", err)
+		mctx.Debug("Stellar.handleReconnect RefreshAll error: %s", err)
 	}
 }
 
 func (s *Stellar) handlePaymentStatus(mctx libkb.MetaContext, obm gregor.OutOfBandMessage) {
 	var err error
-	defer mctx.CTraceTimed("Stellar.handlePaymentStatus", func() error { return err })()
+	defer mctx.TraceTimed("Stellar.handlePaymentStatus", func() error { return err })()
 	var msg stellar1.PaymentStatusMsg
 	if err = json.Unmarshal(obm.Body().Bytes(), &msg); err != nil {
-		mctx.CDebugf("error unmarshaling obm PaymentStatusMsg: %s", err)
+		mctx.Debug("error unmarshaling obm PaymentStatusMsg: %s", err)
 		return
 	}
 
 	paymentID := stellar1.NewPaymentID(msg.TxID)
 	if err = s.refreshPaymentFromNotification(mctx, msg.AccountID, paymentID); err != nil {
-		mctx.CDebugf("refreshPaymentFromNotification error: %s", err)
+		mctx.Debug("refreshPaymentFromNotification error: %s", err)
 		return
 	}
 
@@ -284,33 +311,36 @@ func (s *Stellar) handlePaymentStatus(mctx libkb.MetaContext, obm gregor.OutOfBa
 
 func (s *Stellar) handlePaymentNotification(mctx libkb.MetaContext, obm gregor.OutOfBandMessage) {
 	var err error
-	defer mctx.CTraceTimed("Stellar.handlePaymentNotification", func() error { return err })()
+	defer mctx.TraceTimed("Stellar.handlePaymentNotification", func() error { return err })()
 	var msg stellar1.PaymentNotificationMsg
 	if err = json.Unmarshal(obm.Body().Bytes(), &msg); err != nil {
-		mctx.CDebugf("error unmarshaling obm PaymentNotificationMsg: %s", err)
+		mctx.Debug("error unmarshaling obm PaymentNotificationMsg: %s", err)
 		return
 	}
 
 	if err = s.refreshPaymentFromNotification(mctx, msg.AccountID, msg.PaymentID); err != nil {
-		mctx.CDebugf("refreshPaymentFromNotification error: %s", err)
+		mctx.Debug("refreshPaymentFromNotification error: %s", err)
 		return
 	}
 	s.G().NotifyRouter.HandleWalletPaymentNotification(mctx.Ctx(), msg.AccountID, msg.PaymentID)
 }
 
 func (s *Stellar) refreshPaymentFromNotification(mctx libkb.MetaContext, accountID stellar1.AccountID, paymentID stellar1.PaymentID) error {
-	s.walletState.Refresh(mctx, accountID, "notification received")
-	DefaultLoader(s.G()).UpdatePayment(mctx.Ctx(), paymentID)
+	// load the payment and then refresh the wallet state for the account.
+	DefaultLoader(s.G()).LoadPaymentSync(mctx.Ctx(), paymentID)
+	if err := s.walletState.Refresh(mctx, accountID, "notification received"); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func (s *Stellar) handleRequestStatus(mctx libkb.MetaContext, obm gregor.OutOfBandMessage) {
 	var err error
-	defer mctx.CTraceTimed("Stellar.handleRequestStatus", func() error { return err })()
+	defer mctx.TraceTimed("Stellar.handleRequestStatus", func() error { return err })()
 	var msg stellar1.RequestStatusMsg
 	if err = json.Unmarshal(obm.Body().Bytes(), &msg); err != nil {
-		mctx.CDebugf("error unmarshaling obm RequestStatusMsg: %s", err)
+		mctx.Debug("error unmarshaling obm RequestStatusMsg: %s", err)
 		return
 	}
 
@@ -401,7 +431,7 @@ func (s *Stellar) startBuildPayment(mctx libkb.MetaContext) (bid stellar1.BuildP
 		if err != nil {
 			x = fmt.Sprintf("ERR(%v)", err.Error())
 		}
-		mctx.CDebugf("Stellar.startBuildPayment -> %v", x)
+		mctx.Debug("Stellar.startBuildPayment -> %v", x)
 	}()
 	bid, err = RandomBuildPaymentID()
 	if err != nil {
@@ -412,8 +442,9 @@ func (s *Stellar) startBuildPayment(mctx libkb.MetaContext) (bid stellar1.BuildP
 	s.bids = append(s.bids, newBuildPaymentEntry(bid))
 	const maxConcurrentBuilds = 20
 	if len(s.bids) > maxConcurrentBuilds {
-		// Too many open payment builds. Drop the oldest ones.
-		for i := maxConcurrentBuilds; i < len(s.bids); i++ {
+		// Too many open payment builds. Drop the oldest ones at the beginning of the list.
+		// Leave the newest ones at the end of the list.
+		for i := 0; i < len(s.bids)-maxConcurrentBuilds; i++ {
 			entry := s.bids[i]
 			entry.Slot.Shutdown()
 		}
@@ -424,7 +455,7 @@ func (s *Stellar) startBuildPayment(mctx libkb.MetaContext) (bid stellar1.BuildP
 
 // stopBuildPayment stops a bid forever.
 func (s *Stellar) stopBuildPayment(mctx libkb.MetaContext, bid stellar1.BuildPaymentID) {
-	mctx.CDebugf("Stellar.stopBuildPayment(%v)", bid)
+	mctx.Debug("Stellar.stopBuildPayment(%v)", bid)
 	if bid.IsNil() {
 		s.buildPaymentSlot.Stop()
 		return
@@ -434,16 +465,16 @@ func (s *Stellar) stopBuildPayment(mctx libkb.MetaContext, bid stellar1.BuildPay
 	for _, entry := range s.bids {
 		if entry.Bid.Eq(bid) {
 			if entry.Stopped {
-				mctx.CDebugf("payment already stopped")
+				mctx.Debug("payment already stopped")
 				return
 			}
 			entry.Slot.Shutdown()
 			entry.Stopped = true
-			mctx.CDebugf("payment shutdown")
+			mctx.Debug("payment shutdown")
 			return
 		}
 	}
-	mctx.CDebugf("payment not found to stop")
+	mctx.Debug("payment not found to stop")
 }
 
 // acquireBuildPayment takes ownership of a payment build.
@@ -456,7 +487,7 @@ func (s *Stellar) stopBuildPayment(mctx libkb.MetaContext, bid stellar1.BuildPay
 func (s *Stellar) acquireBuildPayment(mctx1 libkb.MetaContext, bid stellar1.BuildPaymentID, sessionID int) (
 	mctx libkb.MetaContext, data *buildPaymentData, release func(), err error) {
 	mctx = mctx1
-	mctx.CDebugf("Stellar.acquireBuildPayment(%v)", bid)
+	mctx.Debug("Stellar.acquireBuildPayment(%v)", bid)
 	release = func() {}
 	s.bidLock.Lock()
 	defer s.bidLock.Unlock()
@@ -474,7 +505,7 @@ func (s *Stellar) acquireBuildPayment(mctx1 libkb.MetaContext, bid stellar1.Buil
 		}
 		err = libkb.AcquireWithContextAndTimeout(mctx.Ctx(), &entry.DataLock, 5*time.Second)
 		if err != nil {
-			mctx.CDebugf("error while attempting to acquire data lock: %v", err)
+			mctx.Debug("error while attempting to acquire data lock: %v", err)
 			return mctx, nil, release, err
 		}
 		release = libkb.Once(func() {
@@ -487,7 +518,7 @@ func (s *Stellar) acquireBuildPayment(mctx1 libkb.MetaContext, bid stellar1.Buil
 
 // finalizeBuildPayment stops a bid forever and returns its data.
 func (s *Stellar) finalizeBuildPayment(mctx libkb.MetaContext, bid stellar1.BuildPaymentID) (res *buildPaymentData, err error) {
-	mctx.CDebugf("Stellar.finalizeBuildPayment(%v)", bid)
+	mctx.Debug("Stellar.finalizeBuildPayment(%v)", bid)
 	s.bidLock.Lock()
 	defer s.bidLock.Unlock()
 	for _, entry := range s.bids {
@@ -503,7 +534,7 @@ func (s *Stellar) finalizeBuildPayment(mctx libkb.MetaContext, bid stellar1.Buil
 		err = libkb.AcquireWithContextAndTimeout(mctx.Ctx(), &entry.DataLock, 5*time.Second)
 		if err != nil {
 			// This likely means something in the Slot is not yielding to its context or forgot to release the lock.
-			mctx.CDebugf("error while attempting to acquire data lock: %v", err)
+			mctx.Debug("error while attempting to acquire data lock: %v", err)
 			return nil, err
 		}
 		res = &entry.Data
@@ -513,8 +544,17 @@ func (s *Stellar) finalizeBuildPayment(mctx libkb.MetaContext, bid stellar1.Buil
 	return nil, fmt.Errorf("payment build not found")
 }
 
+func (s *Stellar) WalletStateForTest() *WalletState {
+	return s.walletState
+}
+
 func (s *Stellar) RemovePendingTx(mctx libkb.MetaContext, accountID stellar1.AccountID, txID stellar1.TransactionID) error {
 	return s.walletState.RemovePendingTx(mctx.Ctx(), accountID, txID)
+}
+
+// BaseFee returns the server-suggested base fee per operation.
+func (s *Stellar) BaseFee(mctx libkb.MetaContext) uint64 {
+	return s.walletState.BaseFee(mctx)
 }
 
 // getFederationClient is a helper function used during

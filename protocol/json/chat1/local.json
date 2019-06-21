@@ -92,6 +92,66 @@
     },
     {
       "type": "record",
+      "name": "KnownUserMention",
+      "fields": [
+        {
+          "type": "string",
+          "name": "text"
+        },
+        {
+          "type": "gregor1.UID",
+          "name": "uid"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "KnownTeamMention",
+      "fields": [
+        {
+          "type": "string",
+          "name": "name"
+        },
+        {
+          "type": "string",
+          "name": "channel"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "MaybeMention",
+      "fields": [
+        {
+          "type": "string",
+          "name": "name"
+        },
+        {
+          "type": "string",
+          "name": "channel"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "Coordinate",
+      "fields": [
+        {
+          "type": "double",
+          "name": "lat"
+        },
+        {
+          "type": "double",
+          "name": "lon"
+        },
+        {
+          "type": "double",
+          "name": "accuracy"
+        }
+      ]
+    },
+    {
+      "type": "record",
       "name": "MessageText",
       "fields": [
         {
@@ -104,6 +164,34 @@
             "items": "TextPayment"
           },
           "name": "payments"
+        },
+        {
+          "type": [
+            null,
+            "MessageID"
+          ],
+          "name": "replyTo"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "KnownUserMention"
+          },
+          "name": "userMentions"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "KnownTeamMention"
+          },
+          "name": "teamMentions"
+        },
+        {
+          "type": [
+            null,
+            "Coordinate"
+          ],
+          "name": "coord"
         }
       ]
     },
@@ -128,6 +216,20 @@
         {
           "type": "string",
           "name": "body"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "KnownUserMention"
+          },
+          "name": "userMentions"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "KnownTeamMention"
+          },
+          "name": "teamMentions"
         }
       ]
     },
@@ -155,6 +257,38 @@
       ]
     },
     {
+      "type": "record",
+      "name": "MessageFlip",
+      "fields": [
+        {
+          "type": "string",
+          "name": "text"
+        },
+        {
+          "type": "FlipGameID",
+          "name": "gameID"
+        },
+        {
+          "type": "ConversationID",
+          "name": "flipConvID"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "KnownUserMention"
+          },
+          "name": "userMentions"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "KnownTeamMention"
+          },
+          "name": "teamMentions"
+        }
+      ]
+    },
+    {
       "type": "enum",
       "name": "MessageSystemType",
       "symbols": [
@@ -164,7 +298,8 @@
         "CREATETEAM_3",
         "GITPUSH_4",
         "CHANGEAVATAR_5",
-        "CHANGERETENTION_6"
+        "CHANGERETENTION_6",
+        "BULKADDTOCONV_7"
       ]
     },
     {
@@ -341,6 +476,19 @@
       ]
     },
     {
+      "type": "record",
+      "name": "MessageSystemBulkAddToConv",
+      "fields": [
+        {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "name": "usernames"
+        }
+      ]
+    },
+    {
       "type": "variant",
       "name": "MessageSystem",
       "switch": {
@@ -396,6 +544,13 @@
             "def": false
           },
           "body": "MessageSystemChangeRetention"
+        },
+        {
+          "label": {
+            "name": "BULKADDTOCONV",
+            "def": false
+          },
+          "body": "MessageSystemBulkAddToConv"
         }
       ]
     },
@@ -644,6 +799,43 @@
             "def": false
           },
           "body": "MessageUnfurl"
+        },
+        {
+          "label": {
+            "name": "FLIP",
+            "def": false
+          },
+          "body": "MessageFlip"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "SenderPrepareOptions",
+      "fields": [
+        {
+          "type": "boolean",
+          "name": "skipTopicNameState"
+        },
+        {
+          "type": [
+            null,
+            "MessageID"
+          ],
+          "name": "replyTo"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "SenderSendOptions",
+      "fields": [
+        {
+          "type": [
+            null,
+            "ConversationMemberStatus"
+          ],
+          "name": "joinMentionsAs"
         }
       ]
     },
@@ -738,6 +930,20 @@
           "name": "identifyBehavior"
         },
         {
+          "type": [
+            null,
+            "SenderPrepareOptions"
+          ],
+          "name": "prepareOpts"
+        },
+        {
+          "type": [
+            null,
+            "SenderSendOptions"
+          ],
+          "name": "sendOpts"
+        },
+        {
           "type": "int",
           "name": "ordinal"
         },
@@ -747,6 +953,13 @@
             "MakePreviewRes"
           ],
           "name": "preview"
+        },
+        {
+          "type": [
+            null,
+            "MessageUnboxed"
+          ],
+          "name": "replyTo"
         }
       ]
     },
@@ -1176,6 +1389,13 @@
         {
           "type": {
             "type": "array",
+            "items": "MaybeMention"
+          },
+          "name": "maybeMentions"
+        },
+        {
+          "type": {
+            "type": "array",
             "items": "ChannelNameMention"
           },
           "name": "channelNameMentions"
@@ -1191,6 +1411,13 @@
             "keys": "MessageID"
           },
           "name": "unfurls"
+        },
+        {
+          "type": [
+            null,
+            "MessageUnboxed"
+          ],
+          "name": "replyTo"
         }
       ]
     },
@@ -1422,6 +1649,10 @@
           "name": "version"
         },
         {
+          "type": "LocalConversationVers",
+          "name": "localVersion"
+        },
+        {
           "type": {
             "type": "array",
             "items": "ConversationLocalParticipant"
@@ -1527,7 +1758,11 @@
       "fields": [
         {
           "type": "string",
-          "name": "username"
+          "name": "changedBy"
+        },
+        {
+          "type": "boolean",
+          "name": "cannotWrite"
         },
         {
           "type": "keybase1.TeamRole",
@@ -1689,6 +1924,16 @@
       ]
     },
     {
+      "type": "enum",
+      "name": "MessageIDControlMode",
+      "symbols": [
+        "OLDERMESSAGES_0",
+        "NEWERMESSAGES_1",
+        "CENTERED_2",
+        "UNREADLINE_3"
+      ]
+    },
+    {
       "type": "record",
       "name": "MessageIDControl",
       "fields": [
@@ -1700,8 +1945,8 @@
           "name": "pivot"
         },
         {
-          "type": "boolean",
-          "name": "recent"
+          "type": "MessageIDControlMode",
+          "name": "mode"
         },
         {
           "type": "int",
@@ -1831,44 +2076,6 @@
             "MessageID"
           ],
           "name": "unreadlineID"
-        }
-      ]
-    },
-    {
-      "type": "record",
-      "name": "GetInboxUILocalRes",
-      "fields": [
-        {
-          "type": {
-            "type": "array",
-            "items": "UnverifiedInboxUIItem"
-          },
-          "name": "conversationsRemote"
-        },
-        {
-          "type": [
-            null,
-            "Pagination"
-          ],
-          "name": "pagination"
-        },
-        {
-          "type": "boolean",
-          "name": "offline"
-        },
-        {
-          "type": {
-            "type": "array",
-            "items": "RateLimit"
-          },
-          "name": "rateLimits"
-        },
-        {
-          "type": {
-            "type": "array",
-            "items": "keybase1.TLFIdentifyFailure"
-          },
-          "name": "identifyFailures"
         }
       ]
     },
@@ -2154,6 +2361,10 @@
           "name": "conv"
         },
         {
+          "type": "InboxUIItem",
+          "name": "uiConv"
+        },
+        {
           "type": {
             "type": "array",
             "items": "RateLimit"
@@ -2419,10 +2630,6 @@
       "name": "DownloadAttachmentLocalRes",
       "fields": [
         {
-          "type": "boolean",
-          "name": "offline"
-        },
-        {
           "type": {
             "type": "array",
             "items": "RateLimit"
@@ -2445,10 +2652,6 @@
         {
           "type": "string",
           "name": "filename"
-        },
-        {
-          "type": "boolean",
-          "name": "offline"
         },
         {
           "type": {
@@ -2573,6 +2776,13 @@
           "name": "conversations"
         },
         {
+          "type": {
+            "type": "array",
+            "items": "InboxUIItem"
+          },
+          "name": "uiConversations"
+        },
+        {
           "type": "boolean",
           "name": "offline"
         },
@@ -2690,6 +2900,10 @@
       "name": "SearchRegexpRes",
       "fields": [
         {
+          "type": "boolean",
+          "name": "offline"
+        },
+        {
           "type": {
             "type": "array",
             "items": "ChatSearchHit"
@@ -2716,6 +2930,10 @@
       "type": "record",
       "name": "SearchInboxRes",
       "fields": [
+        {
+          "type": "boolean",
+          "name": "offline"
+        },
         {
           "type": [
             null,
@@ -2744,12 +2962,36 @@
       "name": "ProfileSearchConvStats",
       "fields": [
         {
+          "type": "string",
+          "name": "err"
+        },
+        {
+          "type": "string",
+          "name": "convName"
+        },
+        {
+          "type": "MessageID",
+          "name": "minConvID"
+        },
+        {
+          "type": "MessageID",
+          "name": "maxConvID"
+        },
+        {
+          "type": "int",
+          "name": "numMissing"
+        },
+        {
           "type": "int",
           "name": "numMessages"
         },
         {
           "type": "int",
-          "name": "indexSize"
+          "name": "indexSizeDisk"
+        },
+        {
+          "type": "int64",
+          "name": "indexSizeMem"
         },
         {
           "type": "gregor1.DurationMsec",
@@ -2851,6 +3093,70 @@
             "def": false
           },
           "body": "string"
+        }
+      ]
+    },
+    {
+      "type": "enum",
+      "name": "GalleryItemTyp",
+      "symbols": [
+        "MEDIA_0",
+        "LINK_1",
+        "DOC_2"
+      ]
+    },
+    {
+      "type": "record",
+      "name": "LoadGalleryRes",
+      "fields": [
+        {
+          "type": {
+            "type": "array",
+            "items": "UIMessage"
+          },
+          "name": "messages"
+        },
+        {
+          "type": "boolean",
+          "name": "last"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "RateLimit"
+          },
+          "name": "rateLimits"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "keybase1.TLFIdentifyFailure"
+          },
+          "name": "identifyFailures"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "LoadFlipRes",
+      "fields": [
+        {
+          "type": "UICoinFlipStatus",
+          "name": "status"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "RateLimit"
+          },
+          "name": "rateLimits"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "keybase1.TLFIdentifyFailure"
+          },
+          "name": "identifyFailures"
         }
       ]
     }
@@ -2978,29 +3284,6 @@
       ],
       "response": "UnreadlineRes"
     },
-    "getInboxUILocal": {
-      "request": [
-        {
-          "name": "query",
-          "type": [
-            null,
-            "GetInboxLocalQuery"
-          ]
-        },
-        {
-          "name": "pagination",
-          "type": [
-            null,
-            "Pagination"
-          ]
-        },
-        {
-          "name": "identifyBehavior",
-          "type": "keybase1.TLFIdentifyBehavior"
-        }
-      ],
-      "response": "GetInboxUILocalRes"
-    },
     "getInboxAndUnboxLocal": {
       "request": [
         {
@@ -3096,6 +3379,13 @@
           "type": "MessagePlaintext"
         },
         {
+          "name": "replyTo",
+          "type": [
+            null,
+            "MessageID"
+          ]
+        },
+        {
           "name": "identifyBehavior",
           "type": "keybase1.TLFIdentifyBehavior"
         }
@@ -3132,6 +3422,13 @@
           ]
         },
         {
+          "name": "replyTo",
+          "type": [
+            null,
+            "MessageID"
+          ]
+        },
+        {
           "name": "identifyBehavior",
           "type": "keybase1.TLFIdentifyBehavior"
         }
@@ -3163,6 +3460,13 @@
         {
           "name": "clientPrev",
           "type": "MessageID"
+        },
+        {
+          "name": "replyTo",
+          "type": [
+            null,
+            "MessageID"
+          ]
         },
         {
           "name": "outboxID",
@@ -3843,6 +4147,23 @@
           "type": "ConversationID"
         },
         {
+          "name": "typing",
+          "type": "boolean"
+        }
+      ],
+      "response": null
+    },
+    "updateUnsentText": {
+      "request": [
+        {
+          "name": "conversationID",
+          "type": "ConversationID"
+        },
+        {
+          "name": "tlfName",
+          "type": "string"
+        },
+        {
           "name": "text",
           "type": "string"
         }
@@ -4088,10 +4409,6 @@
           "type": "string"
         },
         {
-          "name": "isRegex",
-          "type": "boolean"
-        },
-        {
           "name": "opts",
           "type": "SearchOpts"
         },
@@ -4101,6 +4418,10 @@
         }
       ],
       "response": "SearchRegexpRes"
+    },
+    "cancelActiveInboxSearch": {
+      "request": [],
+      "response": null
     },
     "searchInbox": {
       "request": [
@@ -4117,11 +4438,19 @@
           "type": "SearchOpts"
         },
         {
+          "name": "namesOnly",
+          "type": "boolean"
+        },
+        {
           "name": "identifyBehavior",
           "type": "keybase1.TLFIdentifyBehavior"
         }
       ],
       "response": "SearchInboxRes"
+    },
+    "cancelActiveSearch": {
+      "request": [],
+      "response": null
     },
     "profileChatSearch": {
       "request": [
@@ -4197,6 +4526,89 @@
         }
       ],
       "response": null
+    },
+    "bulkAddToConv": {
+      "request": [
+        {
+          "name": "convID",
+          "type": "ConversationID"
+        },
+        {
+          "name": "usernames",
+          "type": {
+            "type": "array",
+            "items": "string"
+          }
+        }
+      ],
+      "response": null
+    },
+    "putReacjiSkinTone": {
+      "request": [
+        {
+          "name": "skinTone",
+          "type": "keybase1.ReacjiSkinTone"
+        }
+      ],
+      "response": "keybase1.UserReacjis"
+    },
+    "resolveMaybeMention": {
+      "request": [
+        {
+          "name": "mention",
+          "type": "MaybeMention"
+        }
+      ],
+      "response": null
+    },
+    "loadGallery": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        },
+        {
+          "name": "convID",
+          "type": "ConversationID"
+        },
+        {
+          "name": "typ",
+          "type": "GalleryItemTyp"
+        },
+        {
+          "name": "num",
+          "type": "int"
+        },
+        {
+          "name": "fromMsgID",
+          "type": [
+            null,
+            "MessageID"
+          ]
+        }
+      ],
+      "response": "LoadGalleryRes"
+    },
+    "loadFlip": {
+      "request": [
+        {
+          "name": "hostConvID",
+          "type": "ConversationID"
+        },
+        {
+          "name": "hostMsgID",
+          "type": "MessageID"
+        },
+        {
+          "name": "flipConvID",
+          "type": "ConversationID"
+        },
+        {
+          "name": "gameID",
+          "type": "FlipGameID"
+        }
+      ],
+      "response": "LoadFlipRes"
     }
   },
   "namespace": "chat.1"

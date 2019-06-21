@@ -4,14 +4,17 @@
     "import * as More from '../constants/types/more'"
   ],
   "actions": {
-    "addProof": {"platform": "More.PlatformsExpandedType"},
+    "addProof": {"platform": "string"},
+    "proofParamsReceived": {"params": "Types.ProveGenericParams"},
+    "updatePlatformGenericURL": {"url": "string"},
+    "updatePlatformGenericChecking": {"checking": "boolean"},
+    "clearPlatformGeneric": {},
     "backToProfile": {},
     "cancelAddProof": {},
     "cancelPgpGen": {},
     "checkProof": {},
     "recheckProof": {"sigID": "string"},
     "cleanupUsername": {},
-    "dropPgp": {"kid": "RPCTypes.KID"},
     "uploadAvatar": {
       "filename": "string",
       "crop?": "RPCTypes.ImageCropRect"
@@ -32,17 +35,24 @@
     "generatePgp": {},
     "onClickAvatar": {
       "username": "string",
-      "openWebsite?": "?boolean"
+      "openWebsite?": "boolean | null"
     },
-    "outputInstructionsActionLink": {},
     "showUserProfile": {"username": "string"},
     "submitZcashAddress": {},
     "submitBTCAddress": {},
     "submitRevokeProof": {"proofId": "string"},
     "submitUsername": {},
+    "submitBlockUser": {"username": "string"},
+    "submitUnblockUser": {
+      "username": "string",
+      "guiID": "string"
+    },
+    "finishBlockUser": {
+      "canError": {"error": "string"}
+    },
     "updateErrorText": {
       "errorText": "string",
-      "errorCode": "?number"
+      "errorCode": "number | null"
     },
     "updatePgpInfo": {
       "_description": "Update any fields",
@@ -54,12 +64,13 @@
     },
     "updatePgpPublicKey": {"publicKey": "string"},
     "updatePlatform": {"platform": "More.PlatformsExpandedType"},
+    "updatePromptShouldStoreKeyOnServer": {"promptShouldStoreKeyOnServer": "boolean"},
     "updateProofStatus": {
       "found": "boolean",
       "status": "RPCTypes.ProofStatus"
     },
     "updateProofText": {"proof": "string"},
-    "updateSigID": {"sigID": "?RPCTypes.SigID"},
+    "updateSigID": {"sigID": "RPCTypes.SigID | null"},
     "updateUsername": {"username": "string"}
   }
 }

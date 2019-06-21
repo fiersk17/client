@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/keybase/client/go/kbfs/data"
 	"github.com/keybase/client/go/kbfs/libfs"
 	"github.com/keybase/client/go/kbfs/libkbfs"
 	"github.com/keybase/client/go/protocol/keybase1"
@@ -55,6 +56,9 @@ const (
 	// AutogitBranchPrefix is a prefix of a subdirectory name
 	// containing one element of a git reference name.
 	AutogitBranchPrefix = ".kbfs_autogit_branch_"
+	// AutogitCommitPrefix is a prefix of a file name
+	// containing the full commit hash.
+	AutogitCommitPrefix = ".kbfs_autogit_commit_"
 	// branchSlash can substitute for slashes in branch names,
 	// following `AutogitBranchPrefix`.
 	branchSlash = "^"
@@ -90,6 +94,33 @@ func (rfn repoFileNode) GetFile(ctx context.Context) billy.File {
 	return f
 }
 
+type repoCommitNode struct {
+	libkbfs.Node
+	am        *AutogitManager
+	gitRootFS *libfs.FS
+	repo      string
+	hash      plumbing.Hash
+}
+
+var _ libkbfs.Node = (*repoCommitNode)(nil)
+
+func (rcn repoCommitNode) GetFile(ctx context.Context) billy.File {
+	ctx = libkbfs.CtxWithRandomIDReplayable(
+		ctx, ctxAutogitIDKey, ctxAutogitOpID, rcn.am.log)
+	_, b, err := rcn.am.GetBrowserForRepo(ctx, rcn.gitRootFS, rcn.repo, "", "")
+	if err != nil {
+		rcn.am.log.CDebugf(nil, "Error getting browser: %+v", err)
+		return nil
+	}
+
+	f, err := b.getCommitFile(ctx, rcn.hash)
+	if err != nil {
+		rcn.am.log.CDebugf(ctx, "Error opening file: %+v", err)
+		return nil
+	}
+	return f
+}
+
 type repoDirNode struct {
 	libkbfs.Node
 	am        *AutogitManager
@@ -106,20 +137,40 @@ var _ libkbfs.Node = (*repoDirNode)(nil)
 // repoDirNode.
 func (rdn *repoDirNode) ShouldCreateMissedLookup(
 	ctx context.Context, name string) (
-	bool, context.Context, libkbfs.EntryType, string) {
-	if !strings.HasPrefix(name, AutogitBranchPrefix) {
+	bool, context.Context, data.EntryType, os.FileInfo, string) {
+	switch {
+	case strings.HasPrefix(name, AutogitBranchPrefix):
+		branchName := strings.TrimPrefix(name, AutogitBranchPrefix)
+		if len(branchName) == 0 {
+			return rdn.Node.ShouldCreateMissedLookup(ctx, name)
+		}
+		// It's difficult to tell if a given name is a legitimate
+		// prefix for a branch name or not, so just accept everything.
+		// If it's not legit, trying to read the data will error out.
+		return true, ctx, data.FakeDir, nil, ""
+	case strings.HasPrefix(name, AutogitCommitPrefix):
+		commit := strings.TrimPrefix(name, AutogitCommitPrefix)
+		if len(commit) == 0 {
+			return rdn.Node.ShouldCreateMissedLookup(ctx, name)
+		}
+
+		rcn := &repoCommitNode{
+			Node:      nil,
+			am:        rdn.am,
+			gitRootFS: rdn.gitRootFS,
+			repo:      rdn.repo,
+			hash:      plumbing.NewHash(commit),
+		}
+		f := rcn.GetFile(ctx)
+		if f == nil {
+			rdn.am.log.CDebugf(ctx, "Error getting commit file")
+			return rdn.Node.ShouldCreateMissedLookup(ctx, name)
+		}
+		return true, ctx, data.FakeFile, f.(*diffFile).GetInfo(), ""
+	default:
 		return rdn.Node.ShouldCreateMissedLookup(ctx, name)
 	}
 
-	branchName := strings.TrimPrefix(name, AutogitBranchPrefix)
-	if len(branchName) == 0 {
-		return rdn.Node.ShouldCreateMissedLookup(ctx, name)
-	}
-
-	// It's difficult to tell if a given name is a legitimate prefix
-	// to a branch name or not, so just accept everything.  If it's
-	// not legit, trying to read the data will error out.
-	return true, ctx, libkbfs.FakeDir, ""
 }
 
 func (rdn *repoDirNode) GetFS(ctx context.Context) billy.Filesystem {
@@ -132,12 +183,18 @@ func (rdn *repoDirNode) GetFS(ctx context.Context) billy.Filesystem {
 		return nil
 	}
 
-	if rdn.subdir == "" && rdn.branch == "" {
+	if rdn.subdir == "" {
 		// If this is the root node for the repo, register it exactly once.
 		rdn.once.Do(func() {
+			// TODO(KBFS-4077): remove this debugging when we find the bug
+			// where b.tree seems to be disappearing.
+			rdn.am.log.CDebugf(
+				ctx, "Got browser %p for repo=%s, branch=%s, subdir=%s, "+
+					"with tree %p", b, rdn.repo, rdn.branch, rdn.subdir,
+				b.tree)
 			billyFS, err := rdn.gitRootFS.Chroot(rdn.repo)
 			if err != nil {
-				rdn.am.log.CDebugf(nil, "Error getting repo FS: %+v", err)
+				rdn.am.log.CDebugf(ctx, "Error getting repo FS: %+v", err)
 				return
 			}
 			repoFS := billyFS.(*libfs.FS)
@@ -167,9 +224,18 @@ func (rdn *repoDirNode) WrapChild(child libkbfs.Node) libkbfs.Node {
 			subdir:    "",
 			branch:    branch,
 		}
+	} else if strings.HasPrefix(name, AutogitCommitPrefix) {
+		commit := strings.TrimPrefix(name, AutogitCommitPrefix)
+		return &repoCommitNode{
+			Node:      child,
+			am:        rdn.am,
+			gitRootFS: rdn.gitRootFS,
+			repo:      rdn.repo,
+			hash:      plumbing.NewHash(commit),
+		}
 	}
 
-	if child.EntryType() == libkbfs.Dir {
+	if child.EntryType() == data.Dir {
 		return &repoDirNode{
 			Node:      child,
 			am:        rdn.am,
@@ -247,7 +313,7 @@ var _ libkbfs.Node = (*rootNode)(nil)
 // ShouldCreateMissedLookup implements the Node interface for
 // rootNode.
 func (rn *rootNode) ShouldCreateMissedLookup(ctx context.Context, name string) (
-	bool, context.Context, libkbfs.EntryType, string) {
+	bool, context.Context, data.EntryType, os.FileInfo, string) {
 	if name != AutogitRoot {
 		return rn.Node.ShouldCreateMissedLookup(ctx, name)
 	}
@@ -276,7 +342,7 @@ func (rn *rootNode) ShouldCreateMissedLookup(ctx context.Context, name string) (
 		}
 		rn.fs = fs
 	}
-	return true, ctx, libkbfs.FakeDir, ""
+	return true, ctx, data.FakeDir, nil, ""
 }
 
 // WrapChild implements the Node interface for rootNode.

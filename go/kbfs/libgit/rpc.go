@@ -8,9 +8,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/keybase/client/go/kbfs/data"
 	"github.com/keybase/client/go/kbfs/kbfsmd"
 	"github.com/keybase/client/go/kbfs/libkbfs"
 	"github.com/keybase/client/go/kbfs/tlf"
+	"github.com/keybase/client/go/kbfs/tlfhandle"
 	"github.com/keybase/client/go/logger"
 	"github.com/keybase/client/go/protocol/keybase1"
 	"github.com/pkg/errors"
@@ -41,14 +43,14 @@ var _ keybase1.KBFSGitInterface = (*RPCHandler)(nil)
 
 func (rh *RPCHandler) waitForJournal(
 	ctx context.Context, gitConfig libkbfs.Config,
-	h *libkbfs.TlfHandle) error {
+	h *tlfhandle.Handle) error {
 	err := CleanOldDeletedReposTimeLimited(ctx, gitConfig, h)
 	if err != nil {
 		return err
 	}
 
 	rootNode, _, err := gitConfig.KBFSOps().GetOrCreateRootNode(
-		ctx, h, libkbfs.MasterBranch)
+		ctx, h, data.MasterBranch)
 	if err != nil {
 		return err
 	}
@@ -94,9 +96,9 @@ func (rh *RPCHandler) waitForJournal(
 }
 
 func (rh *RPCHandler) getHandleAndConfig(
-	ctx context.Context, folder keybase1.Folder) (
+	ctx context.Context, folder keybase1.FolderHandle) (
 	newCtx context.Context, gitConfigRet libkbfs.Config,
-	tlfHandle *libkbfs.TlfHandle, tempDirRet string, err error) {
+	tlfHandle *tlfhandle.Handle, tempDirRet string, err error) {
 	newCtx, gitConfig, tempDir, err := getNewConfig(
 		ctx, rh.config, rh.kbCtx, rh.kbfsInitParams, rh.log)
 	if err != nil {
@@ -117,7 +119,7 @@ func (rh *RPCHandler) getHandleAndConfig(
 	// Use `gitConfig`, rather than `rh.config`, to make sure the
 	// journal is created under the right journal server.
 	tlfHandle, err = libkbfs.GetHandleFromFolderNameAndType(
-		ctx, gitConfig.KBPKI(), gitConfig.MDOps(), folder.Name,
+		ctx, gitConfig.KBPKI(), gitConfig.MDOps(), gitConfig, folder.Name,
 		tlf.TypeFromFolderType(folder.FolderType))
 	if err != nil {
 		return nil, nil, nil, "", err
@@ -166,7 +168,7 @@ func (rh *RPCHandler) CreateRepo(
 	return keybase1.RepoID(gitID.String()), nil
 }
 
-func (rh *RPCHandler) scheduleCleaning(folder keybase1.Folder) {
+func (rh *RPCHandler) scheduleCleaning(folder keybase1.FolderHandle) {
 	// TODO: cancel outstanding timers on shutdown, if we ever utilize
 	// the DeleteRepo RPC handler in a test.
 	time.AfterFunc(minDeletedAgeForCleaning+1*time.Second, func() {
@@ -290,7 +292,7 @@ func (rh *RPCHandler) Gc(
 //
 // TODO: Hook this up to an RPC.
 func (rh *RPCHandler) RenameRepo(ctx context.Context,
-	folder keybase1.Folder, oldName, newName string) (err error) {
+	folder keybase1.FolderHandle, oldName, newName string) (err error) {
 	rh.log.CDebugf(ctx, "Renaming repo %s to %s", oldName, newName)
 	defer func() {
 		rh.log.CDebugf(ctx, "Done renaming repo: %+v", err)

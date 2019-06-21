@@ -20,7 +20,7 @@ func AddPhoneNumber(mctx libkb.MetaContext, phoneNumber keybase1.PhoneNumber, vi
 		SessionType: libkb.APISessionTypeREQUIRED,
 	}
 
-	_, err := mctx.G().API.PostJSON(arg)
+	_, err := mctx.G().API.PostJSON(mctx, arg)
 	return err
 }
 
@@ -37,7 +37,7 @@ func VerifyPhoneNumber(mctx libkb.MetaContext, phoneNumber keybase1.PhoneNumber,
 		SessionType: libkb.APISessionTypeREQUIRED,
 	}
 
-	_, err := mctx.G().API.PostJSON(arg)
+	_, err := mctx.G().API.PostJSON(mctx, arg)
 	return err
 }
 
@@ -54,7 +54,7 @@ func GetPhoneNumbers(mctx libkb.MetaContext) ([]keybase1.UserPhoneNumber, error)
 		SessionType: libkb.APISessionTypeREQUIRED,
 	}
 	var resp phoneNumbersResponse
-	err := mctx.G().API.GetDecode(arg, &resp)
+	err := mctx.G().API.GetDecode(mctx, arg, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func DeletePhoneNumber(mctx libkb.MetaContext, phoneNumber keybase1.PhoneNumber)
 		SessionType: libkb.APISessionTypeREQUIRED,
 	}
 
-	_, err := mctx.G().API.Delete(arg)
+	_, err := mctx.G().API.Delete(mctx, arg)
 	return err
 }
 
@@ -86,7 +86,7 @@ func SetVisibilityPhoneNumber(mctx libkb.MetaContext, phoneNumber keybase1.Phone
 		SessionType: libkb.APISessionTypeREQUIRED,
 	}
 
-	_, err := mctx.G().API.PostJSON(arg)
+	_, err := mctx.G().API.PostJSON(mctx, arg)
 	return err
 }
 
@@ -101,30 +101,6 @@ func SetVisibilityAllPhoneNumber(mctx libkb.MetaContext, visibility keybase1.Ide
 		SessionType: libkb.APISessionTypeREQUIRED,
 	}
 
-	_, err := mctx.G().API.PostJSON(arg)
+	_, err := mctx.G().API.PostJSON(mctx, arg)
 	return err
-}
-
-type phoneLookupAPIResult struct {
-	libkb.AppStatusEmbed
-	Resolutions []keybase1.PhoneNumberLookupResult `json:"resolutions"`
-}
-
-func BulkLookupPhoneNumbers(mctx libkb.MetaContext, phoneNumberContacts []keybase1.RawPhoneNumber, regionCodes []keybase1.RegionCode, userRegionCode *keybase1.RegionCode) ([]keybase1.PhoneNumberLookupResult, error) {
-	payload := make(libkb.JSONPayload)
-	payload["phone_numbers"] = phoneNumberContacts
-	payload["region_codes"] = regionCodes
-	payload["user_region_code"] = userRegionCode
-
-	arg := libkb.APIArg{
-		Endpoint:    "user/phone_numbers_bulk_lookup",
-		JSONPayload: payload,
-		SessionType: libkb.APISessionTypeREQUIRED,
-	}
-	var resp phoneLookupAPIResult
-	err := mctx.G().API.PostDecode(arg, &resp)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Resolutions, nil
 }

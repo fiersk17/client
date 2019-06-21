@@ -116,6 +116,120 @@ func (o RelayClaimPost) DeepCopy() RelayClaimPost {
 	}
 }
 
+type PathPaymentPost struct {
+	FromDeviceID       keybase1.DeviceID     `codec:"fromDeviceID" json:"fromDeviceID"`
+	To                 *keybase1.UserVersion `codec:"to,omitempty" json:"to,omitempty"`
+	NoteB64            string                `codec:"noteB64" json:"noteB64"`
+	SignedTransaction  string                `codec:"signedTransaction" json:"signedTransaction"`
+	QuickReturn        bool                  `codec:"quickReturn" json:"quickReturn"`
+	ChatConversationID *ChatConversationID   `codec:"chatConversationID,omitempty" json:"chatConversationID,omitempty"`
+}
+
+func (o PathPaymentPost) DeepCopy() PathPaymentPost {
+	return PathPaymentPost{
+		FromDeviceID: o.FromDeviceID.DeepCopy(),
+		To: (func(x *keybase1.UserVersion) *keybase1.UserVersion {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.To),
+		NoteB64:           o.NoteB64,
+		SignedTransaction: o.SignedTransaction,
+		QuickReturn:       o.QuickReturn,
+		ChatConversationID: (func(x *ChatConversationID) *ChatConversationID {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.ChatConversationID),
+	}
+}
+
+type DirectOp struct {
+	NoteB64 string `codec:"noteB64" json:"noteB64"`
+}
+
+func (o DirectOp) DeepCopy() DirectOp {
+	return DirectOp{
+		NoteB64: o.NoteB64,
+	}
+}
+
+type RelayOp struct {
+	ToAssertion  string          `codec:"toAssertion" json:"toAssertion"`
+	RelayAccount AccountID       `codec:"relayAccount" json:"relayAccount"`
+	TeamID       keybase1.TeamID `codec:"teamID" json:"teamID"`
+	BoxB64       string          `codec:"boxB64" json:"boxB64"`
+}
+
+func (o RelayOp) DeepCopy() RelayOp {
+	return RelayOp{
+		ToAssertion:  o.ToAssertion,
+		RelayAccount: o.RelayAccount.DeepCopy(),
+		TeamID:       o.TeamID.DeepCopy(),
+		BoxB64:       o.BoxB64,
+	}
+}
+
+type PaymentOp struct {
+	To     *keybase1.UserVersion `codec:"to,omitempty" json:"to,omitempty"`
+	Direct *DirectOp             `codec:"direct,omitempty" json:"direct,omitempty"`
+	Relay  *RelayOp              `codec:"relay,omitempty" json:"relay,omitempty"`
+}
+
+func (o PaymentOp) DeepCopy() PaymentOp {
+	return PaymentOp{
+		To: (func(x *keybase1.UserVersion) *keybase1.UserVersion {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.To),
+		Direct: (func(x *DirectOp) *DirectOp {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.Direct),
+		Relay: (func(x *RelayOp) *RelayOp {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.Relay),
+	}
+}
+
+type PaymentMultiPost struct {
+	FromDeviceID      keybase1.DeviceID `codec:"fromDeviceID" json:"fromDeviceID"`
+	SignedTransaction string            `codec:"signedTransaction" json:"signedTransaction"`
+	Operations        []PaymentOp       `codec:"operations" json:"operations"`
+}
+
+func (o PaymentMultiPost) DeepCopy() PaymentMultiPost {
+	return PaymentMultiPost{
+		FromDeviceID:      o.FromDeviceID.DeepCopy(),
+		SignedTransaction: o.SignedTransaction,
+		Operations: (func(x []PaymentOp) []PaymentOp {
+			if x == nil {
+				return nil
+			}
+			ret := make([]PaymentOp, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Operations),
+	}
+}
+
 type PaymentSummaryType int
 
 const (
@@ -255,14 +369,22 @@ func (o PaymentSummary) DeepCopy() PaymentSummary {
 }
 
 type PaymentSummaryStellar struct {
-	TxID        TransactionID `codec:"txID" json:"txID"`
-	From        AccountID     `codec:"from" json:"from"`
-	To          AccountID     `codec:"to" json:"to"`
-	Amount      string        `codec:"amount" json:"amount"`
-	Asset       Asset         `codec:"asset" json:"asset"`
-	Ctime       TimeMs        `codec:"ctime" json:"ctime"`
-	CursorToken string        `codec:"cursorToken" json:"cursorToken"`
-	Unread      bool          `codec:"unread" json:"unread"`
+	TxID               TransactionID `codec:"txID" json:"txID"`
+	From               AccountID     `codec:"from" json:"from"`
+	To                 AccountID     `codec:"to" json:"to"`
+	Amount             string        `codec:"amount" json:"amount"`
+	Asset              Asset         `codec:"asset" json:"asset"`
+	Ctime              TimeMs        `codec:"ctime" json:"ctime"`
+	CursorToken        string        `codec:"cursorToken" json:"cursorToken"`
+	Unread             bool          `codec:"unread" json:"unread"`
+	IsInflation        bool          `codec:"isInflation" json:"isInflation"`
+	InflationSource    *string       `codec:"inflationSource,omitempty" json:"inflationSource,omitempty"`
+	SourceAmountMax    string        `codec:"sourceAmountMax" json:"sourceAmountMax"`
+	SourceAmountActual string        `codec:"sourceAmountActual" json:"sourceAmountActual"`
+	SourceAsset        Asset         `codec:"sourceAsset" json:"sourceAsset"`
+	IsAdvanced         bool          `codec:"isAdvanced" json:"isAdvanced"`
+	SummaryAdvanced    string        `codec:"summaryAdvanced" json:"summaryAdvanced"`
+	Operations         []string      `codec:"operations" json:"operations"`
 }
 
 func (o PaymentSummaryStellar) DeepCopy() PaymentSummaryStellar {
@@ -275,6 +397,30 @@ func (o PaymentSummaryStellar) DeepCopy() PaymentSummaryStellar {
 		Ctime:       o.Ctime.DeepCopy(),
 		CursorToken: o.CursorToken,
 		Unread:      o.Unread,
+		IsInflation: o.IsInflation,
+		InflationSource: (func(x *string) *string {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x)
+			return &tmp
+		})(o.InflationSource),
+		SourceAmountMax:    o.SourceAmountMax,
+		SourceAmountActual: o.SourceAmountActual,
+		SourceAsset:        o.SourceAsset.DeepCopy(),
+		IsAdvanced:         o.IsAdvanced,
+		SummaryAdvanced:    o.SummaryAdvanced,
+		Operations: (func(x []string) []string {
+			if x == nil {
+				return nil
+			}
+			ret := make([]string, len(x))
+			for i, v := range x {
+				vCopy := v
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Operations),
 	}
 }
 
@@ -303,6 +449,9 @@ type PaymentSummaryDirect struct {
 	FromPrimary         bool                  `codec:"fromPrimary" json:"fromPrimary"`
 	BatchID             string                `codec:"batchID" json:"batchID"`
 	FromAirdrop         bool                  `codec:"fromAirdrop" json:"fromAirdrop"`
+	SourceAmountMax     string                `codec:"sourceAmountMax" json:"sourceAmountMax"`
+	SourceAmountActual  string                `codec:"sourceAmountActual" json:"sourceAmountActual"`
+	SourceAsset         Asset                 `codec:"sourceAsset" json:"sourceAsset"`
 }
 
 func (o PaymentSummaryDirect) DeepCopy() PaymentSummaryDirect {
@@ -349,6 +498,9 @@ func (o PaymentSummaryDirect) DeepCopy() PaymentSummaryDirect {
 		FromPrimary:         o.FromPrimary,
 		BatchID:             o.BatchID,
 		FromAirdrop:         o.FromAirdrop,
+		SourceAmountMax:     o.SourceAmountMax,
+		SourceAmountActual:  o.SourceAmountActual,
+		SourceAsset:         o.SourceAsset.DeepCopy(),
 	}
 }
 
@@ -451,6 +603,7 @@ type PaymentDetails struct {
 	Memo          string         `codec:"memo" json:"memo"`
 	MemoType      string         `codec:"memoType" json:"memoType"`
 	ExternalTxURL string         `codec:"externalTxURL" json:"externalTxURL"`
+	FeeCharged    string         `codec:"feeCharged" json:"feeCharged"`
 }
 
 func (o PaymentDetails) DeepCopy() PaymentDetails {
@@ -459,6 +612,7 @@ func (o PaymentDetails) DeepCopy() PaymentDetails {
 		Memo:          o.Memo,
 		MemoType:      o.MemoType,
 		ExternalTxURL: o.ExternalTxURL,
+		FeeCharged:    o.FeeCharged,
 	}
 }
 
@@ -555,6 +709,16 @@ func (o PaymentsPage) DeepCopy() PaymentsPage {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.OldestUnread),
+	}
+}
+
+type SubmitMultiRes struct {
+	TxID TransactionID `codec:"txID" json:"txID"`
+}
+
+func (o SubmitMultiRes) DeepCopy() SubmitMultiRes {
+	return SubmitMultiRes{
+		TxID: o.TxID.DeepCopy(),
 	}
 }
 
@@ -668,22 +832,78 @@ func (o TimeboundsRecommendation) DeepCopy() TimeboundsRecommendation {
 	}
 }
 
+type NetworkOptions struct {
+	BaseFee uint64 `codec:"baseFee" json:"baseFee"`
+}
+
+func (o NetworkOptions) DeepCopy() NetworkOptions {
+	return NetworkOptions{
+		BaseFee: o.BaseFee,
+	}
+}
+
+type DetailsPlusPayments struct {
+	Details         AccountDetails   `codec:"details" json:"details"`
+	RecentPayments  PaymentsPage     `codec:"recentPayments" json:"recentPayments"`
+	PendingPayments []PaymentSummary `codec:"pendingPayments" json:"pendingPayments"`
+}
+
+func (o DetailsPlusPayments) DeepCopy() DetailsPlusPayments {
+	return DetailsPlusPayments{
+		Details:        o.Details.DeepCopy(),
+		RecentPayments: o.RecentPayments.DeepCopy(),
+		PendingPayments: (func(x []PaymentSummary) []PaymentSummary {
+			if x == nil {
+				return nil
+			}
+			ret := make([]PaymentSummary, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.PendingPayments),
+	}
+}
+
+type PaymentPathQuery struct {
+	Source           AccountID `codec:"source" json:"source"`
+	Destination      AccountID `codec:"destination" json:"destination"`
+	SourceAsset      Asset     `codec:"sourceAsset" json:"sourceAsset"`
+	DestinationAsset Asset     `codec:"destinationAsset" json:"destinationAsset"`
+	Amount           string    `codec:"amount" json:"amount"`
+}
+
+func (o PaymentPathQuery) DeepCopy() PaymentPathQuery {
+	return PaymentPathQuery{
+		Source:           o.Source.DeepCopy(),
+		Destination:      o.Destination.DeepCopy(),
+		SourceAsset:      o.SourceAsset.DeepCopy(),
+		DestinationAsset: o.DestinationAsset.DeepCopy(),
+		Amount:           o.Amount,
+	}
+}
+
 type BalancesArg struct {
 	Caller    keybase1.UserVersion `codec:"caller" json:"caller"`
 	AccountID AccountID            `codec:"accountID" json:"accountID"`
 }
 
 type DetailsArg struct {
-	Caller    keybase1.UserVersion `codec:"caller" json:"caller"`
-	AccountID AccountID            `codec:"accountID" json:"accountID"`
+	Caller          keybase1.UserVersion `codec:"caller" json:"caller"`
+	AccountID       AccountID            `codec:"accountID" json:"accountID"`
+	IncludeMulti    bool                 `codec:"includeMulti" json:"includeMulti"`
+	IncludeAdvanced bool                 `codec:"includeAdvanced" json:"includeAdvanced"`
 }
 
 type RecentPaymentsArg struct {
-	Caller      keybase1.UserVersion `codec:"caller" json:"caller"`
-	AccountID   AccountID            `codec:"accountID" json:"accountID"`
-	Cursor      *PageCursor          `codec:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit       int                  `codec:"limit" json:"limit"`
-	SkipPending bool                 `codec:"skipPending" json:"skipPending"`
+	Caller          keybase1.UserVersion `codec:"caller" json:"caller"`
+	AccountID       AccountID            `codec:"accountID" json:"accountID"`
+	Cursor          *PageCursor          `codec:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit           int                  `codec:"limit" json:"limit"`
+	SkipPending     bool                 `codec:"skipPending" json:"skipPending"`
+	IncludeMulti    bool                 `codec:"includeMulti" json:"includeMulti"`
+	IncludeAdvanced bool                 `codec:"includeAdvanced" json:"includeAdvanced"`
 }
 
 type PendingPaymentsArg struct {
@@ -722,6 +942,16 @@ type SubmitRelayPaymentArg struct {
 type SubmitRelayClaimArg struct {
 	Caller keybase1.UserVersion `codec:"caller" json:"caller"`
 	Claim  RelayClaimPost       `codec:"claim" json:"claim"`
+}
+
+type SubmitPathPaymentArg struct {
+	Caller  keybase1.UserVersion `codec:"caller" json:"caller"`
+	Payment PathPaymentPost      `codec:"payment" json:"payment"`
+}
+
+type SubmitMultiPaymentArg struct {
+	Caller  keybase1.UserVersion `codec:"caller" json:"caller"`
+	Payment PaymentMultiPost     `codec:"payment" json:"payment"`
 }
 
 type AcquireAutoClaimLockArg struct {
@@ -765,6 +995,45 @@ type SetInflationDestinationArg struct {
 type PingArg struct {
 }
 
+type NetworkOptionsArg struct {
+	Caller keybase1.UserVersion `codec:"caller" json:"caller"`
+}
+
+type DetailsPlusPaymentsArg struct {
+	Caller          keybase1.UserVersion `codec:"caller" json:"caller"`
+	AccountID       AccountID            `codec:"accountID" json:"accountID"`
+	IncludeAdvanced bool                 `codec:"includeAdvanced" json:"includeAdvanced"`
+}
+
+type AssetSearchArg struct {
+	AssetCode       string `codec:"assetCode" json:"assetCode"`
+	IssuerAccountID string `codec:"issuerAccountID" json:"issuerAccountID"`
+}
+
+type FuzzyAssetSearchArg struct {
+	Caller       keybase1.UserVersion `codec:"caller" json:"caller"`
+	SearchString string               `codec:"searchString" json:"searchString"`
+}
+
+type ListPopularAssetsArg struct {
+	Caller keybase1.UserVersion `codec:"caller" json:"caller"`
+}
+
+type ChangeTrustlineArg struct {
+	Caller            keybase1.UserVersion `codec:"caller" json:"caller"`
+	SignedTransaction string               `codec:"signedTransaction" json:"signedTransaction"`
+}
+
+type FindPaymentPathArg struct {
+	Caller keybase1.UserVersion `codec:"caller" json:"caller"`
+	Query  PaymentPathQuery     `codec:"query" json:"query"`
+}
+
+type PostAnyTransactionArg struct {
+	Caller            keybase1.UserVersion `codec:"caller" json:"caller"`
+	SignedTransaction string               `codec:"signedTransaction" json:"signedTransaction"`
+}
+
 type RemoteInterface interface {
 	Balances(context.Context, BalancesArg) ([]Balance, error)
 	Details(context.Context, DetailsArg) (AccountDetails, error)
@@ -776,6 +1045,8 @@ type RemoteInterface interface {
 	SubmitPayment(context.Context, SubmitPaymentArg) (PaymentResult, error)
 	SubmitRelayPayment(context.Context, SubmitRelayPaymentArg) (PaymentResult, error)
 	SubmitRelayClaim(context.Context, SubmitRelayClaimArg) (RelayClaimResult, error)
+	SubmitPathPayment(context.Context, SubmitPathPaymentArg) (PaymentResult, error)
+	SubmitMultiPayment(context.Context, SubmitMultiPaymentArg) (SubmitMultiRes, error)
 	AcquireAutoClaimLock(context.Context, keybase1.UserVersion) (string, error)
 	ReleaseAutoClaimLock(context.Context, ReleaseAutoClaimLockArg) error
 	NextAutoClaim(context.Context, keybase1.UserVersion) (*AutoClaim, error)
@@ -785,6 +1056,14 @@ type RemoteInterface interface {
 	CancelRequest(context.Context, CancelRequestArg) error
 	SetInflationDestination(context.Context, SetInflationDestinationArg) error
 	Ping(context.Context) (string, error)
+	NetworkOptions(context.Context, keybase1.UserVersion) (NetworkOptions, error)
+	DetailsPlusPayments(context.Context, DetailsPlusPaymentsArg) (DetailsPlusPayments, error)
+	AssetSearch(context.Context, AssetSearchArg) ([]Asset, error)
+	FuzzyAssetSearch(context.Context, FuzzyAssetSearchArg) ([]Asset, error)
+	ListPopularAssets(context.Context, keybase1.UserVersion) (AssetListResult, error)
+	ChangeTrustline(context.Context, ChangeTrustlineArg) error
+	FindPaymentPath(context.Context, FindPaymentPathArg) (PaymentPath, error)
+	PostAnyTransaction(context.Context, PostAnyTransactionArg) error
 }
 
 func RemoteProtocol(i RemoteInterface) rpc.Protocol {
@@ -941,6 +1220,36 @@ func RemoteProtocol(i RemoteInterface) rpc.Protocol {
 					return
 				},
 			},
+			"submitPathPayment": {
+				MakeArg: func() interface{} {
+					var ret [1]SubmitPathPaymentArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SubmitPathPaymentArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SubmitPathPaymentArg)(nil), args)
+						return
+					}
+					ret, err = i.SubmitPathPayment(ctx, typedArgs[0])
+					return
+				},
+			},
+			"submitMultiPayment": {
+				MakeArg: func() interface{} {
+					var ret [1]SubmitMultiPaymentArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SubmitMultiPaymentArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SubmitMultiPaymentArg)(nil), args)
+						return
+					}
+					ret, err = i.SubmitMultiPayment(ctx, typedArgs[0])
+					return
+				},
+			},
 			"acquireAutoClaimLock": {
 				MakeArg: func() interface{} {
 					var ret [1]AcquireAutoClaimLockArg
@@ -1071,6 +1380,126 @@ func RemoteProtocol(i RemoteInterface) rpc.Protocol {
 					return
 				},
 			},
+			"networkOptions": {
+				MakeArg: func() interface{} {
+					var ret [1]NetworkOptionsArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]NetworkOptionsArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]NetworkOptionsArg)(nil), args)
+						return
+					}
+					ret, err = i.NetworkOptions(ctx, typedArgs[0].Caller)
+					return
+				},
+			},
+			"detailsPlusPayments": {
+				MakeArg: func() interface{} {
+					var ret [1]DetailsPlusPaymentsArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]DetailsPlusPaymentsArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]DetailsPlusPaymentsArg)(nil), args)
+						return
+					}
+					ret, err = i.DetailsPlusPayments(ctx, typedArgs[0])
+					return
+				},
+			},
+			"assetSearch": {
+				MakeArg: func() interface{} {
+					var ret [1]AssetSearchArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]AssetSearchArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]AssetSearchArg)(nil), args)
+						return
+					}
+					ret, err = i.AssetSearch(ctx, typedArgs[0])
+					return
+				},
+			},
+			"fuzzyAssetSearch": {
+				MakeArg: func() interface{} {
+					var ret [1]FuzzyAssetSearchArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]FuzzyAssetSearchArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]FuzzyAssetSearchArg)(nil), args)
+						return
+					}
+					ret, err = i.FuzzyAssetSearch(ctx, typedArgs[0])
+					return
+				},
+			},
+			"listPopularAssets": {
+				MakeArg: func() interface{} {
+					var ret [1]ListPopularAssetsArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]ListPopularAssetsArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]ListPopularAssetsArg)(nil), args)
+						return
+					}
+					ret, err = i.ListPopularAssets(ctx, typedArgs[0].Caller)
+					return
+				},
+			},
+			"changeTrustline": {
+				MakeArg: func() interface{} {
+					var ret [1]ChangeTrustlineArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]ChangeTrustlineArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]ChangeTrustlineArg)(nil), args)
+						return
+					}
+					err = i.ChangeTrustline(ctx, typedArgs[0])
+					return
+				},
+			},
+			"findPaymentPath": {
+				MakeArg: func() interface{} {
+					var ret [1]FindPaymentPathArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]FindPaymentPathArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]FindPaymentPathArg)(nil), args)
+						return
+					}
+					ret, err = i.FindPaymentPath(ctx, typedArgs[0])
+					return
+				},
+			},
+			"postAnyTransaction": {
+				MakeArg: func() interface{} {
+					var ret [1]PostAnyTransactionArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]PostAnyTransactionArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]PostAnyTransactionArg)(nil), args)
+						return
+					}
+					err = i.PostAnyTransaction(ctx, typedArgs[0])
+					return
+				},
+			},
 		},
 	}
 }
@@ -1129,6 +1558,16 @@ func (c RemoteClient) SubmitRelayClaim(ctx context.Context, __arg SubmitRelayCla
 	return
 }
 
+func (c RemoteClient) SubmitPathPayment(ctx context.Context, __arg SubmitPathPaymentArg) (res PaymentResult, err error) {
+	err = c.Cli.Call(ctx, "stellar.1.remote.submitPathPayment", []interface{}{__arg}, &res)
+	return
+}
+
+func (c RemoteClient) SubmitMultiPayment(ctx context.Context, __arg SubmitMultiPaymentArg) (res SubmitMultiRes, err error) {
+	err = c.Cli.Call(ctx, "stellar.1.remote.submitMultiPayment", []interface{}{__arg}, &res)
+	return
+}
+
 func (c RemoteClient) AcquireAutoClaimLock(ctx context.Context, caller keybase1.UserVersion) (res string, err error) {
 	__arg := AcquireAutoClaimLockArg{Caller: caller}
 	err = c.Cli.Call(ctx, "stellar.1.remote.acquireAutoClaimLock", []interface{}{__arg}, &res)
@@ -1173,5 +1612,47 @@ func (c RemoteClient) SetInflationDestination(ctx context.Context, __arg SetInfl
 
 func (c RemoteClient) Ping(ctx context.Context) (res string, err error) {
 	err = c.Cli.Call(ctx, "stellar.1.remote.ping", []interface{}{PingArg{}}, &res)
+	return
+}
+
+func (c RemoteClient) NetworkOptions(ctx context.Context, caller keybase1.UserVersion) (res NetworkOptions, err error) {
+	__arg := NetworkOptionsArg{Caller: caller}
+	err = c.Cli.Call(ctx, "stellar.1.remote.networkOptions", []interface{}{__arg}, &res)
+	return
+}
+
+func (c RemoteClient) DetailsPlusPayments(ctx context.Context, __arg DetailsPlusPaymentsArg) (res DetailsPlusPayments, err error) {
+	err = c.Cli.Call(ctx, "stellar.1.remote.detailsPlusPayments", []interface{}{__arg}, &res)
+	return
+}
+
+func (c RemoteClient) AssetSearch(ctx context.Context, __arg AssetSearchArg) (res []Asset, err error) {
+	err = c.Cli.Call(ctx, "stellar.1.remote.assetSearch", []interface{}{__arg}, &res)
+	return
+}
+
+func (c RemoteClient) FuzzyAssetSearch(ctx context.Context, __arg FuzzyAssetSearchArg) (res []Asset, err error) {
+	err = c.Cli.Call(ctx, "stellar.1.remote.fuzzyAssetSearch", []interface{}{__arg}, &res)
+	return
+}
+
+func (c RemoteClient) ListPopularAssets(ctx context.Context, caller keybase1.UserVersion) (res AssetListResult, err error) {
+	__arg := ListPopularAssetsArg{Caller: caller}
+	err = c.Cli.Call(ctx, "stellar.1.remote.listPopularAssets", []interface{}{__arg}, &res)
+	return
+}
+
+func (c RemoteClient) ChangeTrustline(ctx context.Context, __arg ChangeTrustlineArg) (err error) {
+	err = c.Cli.Call(ctx, "stellar.1.remote.changeTrustline", []interface{}{__arg}, nil)
+	return
+}
+
+func (c RemoteClient) FindPaymentPath(ctx context.Context, __arg FindPaymentPathArg) (res PaymentPath, err error) {
+	err = c.Cli.Call(ctx, "stellar.1.remote.findPaymentPath", []interface{}{__arg}, &res)
+	return
+}
+
+func (c RemoteClient) PostAnyTransaction(ctx context.Context, __arg PostAnyTransactionArg) (err error) {
+	err = c.Cli.Call(ctx, "stellar.1.remote.postAnyTransaction", []interface{}{__arg}, nil)
 	return
 }

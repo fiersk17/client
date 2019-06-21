@@ -281,6 +281,10 @@
           "name": "convID"
         },
         {
+          "type": "keybase1.UserReacjis",
+          "name": "userReacjis"
+        },
+        {
           "type": {
             "type": "array",
             "items": "ReactionUpdate"
@@ -490,6 +494,13 @@
             "items": "ChatSyncIncrementalConv"
           },
           "name": "items"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "name": "removals"
         }
       ]
     },

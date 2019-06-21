@@ -1175,22 +1175,6 @@ func (o FolderSyncConfig) DeepCopy() FolderSyncConfig {
 	}
 }
 
-type FolderSyncStatus struct {
-	LocalDiskBytesAvailable int64            `codec:"localDiskBytesAvailable" json:"localDiskBytesAvailable"`
-	LocalDiskBytesTotal     int64            `codec:"localDiskBytesTotal" json:"localDiskBytesTotal"`
-	PrefetchStatus          PrefetchStatus   `codec:"prefetchStatus" json:"prefetchStatus"`
-	PrefetchProgress        PrefetchProgress `codec:"prefetchProgress" json:"prefetchProgress"`
-}
-
-func (o FolderSyncStatus) DeepCopy() FolderSyncStatus {
-	return FolderSyncStatus{
-		LocalDiskBytesAvailable: o.LocalDiskBytesAvailable,
-		LocalDiskBytesTotal:     o.LocalDiskBytesTotal,
-		PrefetchStatus:          o.PrefetchStatus.DeepCopy(),
-		PrefetchProgress:        o.PrefetchProgress.DeepCopy(),
-	}
-}
-
 type FolderSyncConfigAndStatus struct {
 	Config FolderSyncConfig `codec:"config" json:"config"`
 	Status FolderSyncStatus `codec:"status" json:"status"`
@@ -1200,6 +1184,52 @@ func (o FolderSyncConfigAndStatus) DeepCopy() FolderSyncConfigAndStatus {
 	return FolderSyncConfigAndStatus{
 		Config: o.Config.DeepCopy(),
 		Status: o.Status.DeepCopy(),
+	}
+}
+
+type FolderSyncConfigAndStatusWithFolder struct {
+	Folder Folder           `codec:"folder" json:"folder"`
+	Config FolderSyncConfig `codec:"config" json:"config"`
+	Status FolderSyncStatus `codec:"status" json:"status"`
+}
+
+func (o FolderSyncConfigAndStatusWithFolder) DeepCopy() FolderSyncConfigAndStatusWithFolder {
+	return FolderSyncConfigAndStatusWithFolder{
+		Folder: o.Folder.DeepCopy(),
+		Config: o.Config.DeepCopy(),
+		Status: o.Status.DeepCopy(),
+	}
+}
+
+type SyncConfigAndStatusRes struct {
+	Folders       []FolderSyncConfigAndStatusWithFolder `codec:"folders" json:"folders"`
+	OverallStatus FolderSyncStatus                      `codec:"overallStatus" json:"overallStatus"`
+}
+
+func (o SyncConfigAndStatusRes) DeepCopy() SyncConfigAndStatusRes {
+	return SyncConfigAndStatusRes{
+		Folders: (func(x []FolderSyncConfigAndStatusWithFolder) []FolderSyncConfigAndStatusWithFolder {
+			if x == nil {
+				return nil
+			}
+			ret := make([]FolderSyncConfigAndStatusWithFolder, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Folders),
+		OverallStatus: o.OverallStatus.DeepCopy(),
+	}
+}
+
+type FSSettings struct {
+	SpaceAvailableNotificationThreshold int64 `codec:"spaceAvailableNotificationThreshold" json:"spaceAvailableNotificationThreshold"`
+}
+
+func (o FSSettings) DeepCopy() FSSettings {
+	return FSSettings{
+		SpaceAvailableNotificationThreshold: o.SpaceAvailableNotificationThreshold,
 	}
 }
 
@@ -1287,8 +1317,9 @@ type SimpleFSRemoveArg struct {
 }
 
 type SimpleFSStatArg struct {
-	Path             Path                 `codec:"path" json:"path"`
-	IdentifyBehavior *TLFIdentifyBehavior `codec:"identifyBehavior,omitempty" json:"identifyBehavior,omitempty"`
+	Path                Path                 `codec:"path" json:"path"`
+	IdentifyBehavior    *TLFIdentifyBehavior `codec:"identifyBehavior,omitempty" json:"identifyBehavior,omitempty"`
+	RefreshSubscription bool                 `codec:"refreshSubscription" json:"refreshSubscription"`
 }
 
 type SimpleFSGetRevisionsArg struct {
@@ -1326,6 +1357,18 @@ type SimpleFSWaitArg struct {
 type SimpleFSDumpDebuggingInfoArg struct {
 }
 
+type SimpleFSClearConflictStateArg struct {
+	Path Path `codec:"path" json:"path"`
+}
+
+type SimpleFSFinishResolvingConflictArg struct {
+	Path Path `codec:"path" json:"path"`
+}
+
+type SimpleFSForceStuckConflictArg struct {
+	Path Path `codec:"path" json:"path"`
+}
+
 type SimpleFSSyncStatusArg struct {
 	Filter ListFilter `codec:"filter" json:"filter"`
 }
@@ -1340,7 +1383,14 @@ type SimpleFSFolderEditHistoryArg struct {
 	Path Path `codec:"path" json:"path"`
 }
 
+type SimpleFSListFavoritesArg struct {
+}
+
 type SimpleFSGetUserQuotaUsageArg struct {
+}
+
+type SimpleFSGetTeamQuotaUsageArg struct {
+	TeamName TeamName `codec:"teamName" json:"teamName"`
 }
 
 type SimpleFSResetArg struct {
@@ -1354,6 +1404,26 @@ type SimpleFSFolderSyncConfigAndStatusArg struct {
 type SimpleFSSetFolderSyncConfigArg struct {
 	Path   Path             `codec:"path" json:"path"`
 	Config FolderSyncConfig `codec:"config" json:"config"`
+}
+
+type SimpleFSSyncConfigAndStatusArg struct {
+}
+
+type SimpleFSAreWeConnectedToMDServerArg struct {
+}
+
+type SimpleFSCheckReachabilityArg struct {
+}
+
+type SimpleFSSetDebugLevelArg struct {
+	Level string `codec:"level" json:"level"`
+}
+
+type SimpleFSSettingsArg struct {
+}
+
+type SimpleFSSetNotificationThresholdArg struct {
+	Threshold int64 `codec:"threshold" json:"threshold"`
 }
 
 type SimpleFSInterface interface {
@@ -1424,6 +1494,10 @@ type SimpleFSInterface interface {
 	SimpleFSWait(context.Context, OpID) error
 	// Instructs KBFS to dump debugging info into its logs.
 	SimpleFSDumpDebuggingInfo(context.Context) error
+	SimpleFSClearConflictState(context.Context, Path) error
+	SimpleFSFinishResolvingConflict(context.Context, Path) error
+	// Force a TLF into a stuck conflict state (for testing).
+	SimpleFSForceStuckConflict(context.Context, Path) error
 	// Get sync status.
 	SimpleFSSyncStatus(context.Context, ListFilter) (FSSyncStatus, error)
 	// This RPC generates a random token to be used by a client that needs to
@@ -1447,15 +1521,27 @@ type SimpleFSInterface interface {
 	// The writers are in descending order by the modification time (as
 	// recorded by the server) of their most recent edit.
 	SimpleFSFolderEditHistory(context.Context, Path) (FSFolderEditHistory, error)
+	// simpleFSListFavorites gets the current favorites, ignored folders, and new
+	// folders from the KBFS cache.
+	SimpleFSListFavorites(context.Context) (FavoritesResult, error)
 	// simpleFSGetUserQuotaUsage returns the quota usage for the logged-in
-	// user.  It results in an RPC to the server, and any usage includes
-	// local journal usage as well.
+	// user.  Any usage includes local journal usage as well.
 	SimpleFSGetUserQuotaUsage(context.Context) (SimpleFSQuotaUsage, error)
+	// simpleFSGetTeamQuotaUsage returns the quota usage for the given team, if
+	// the logged-in user has access to that team.  Any usage includes
+	// local journal usage as well.
+	SimpleFSGetTeamQuotaUsage(context.Context, TeamName) (SimpleFSQuotaUsage, error)
 	// simpleFSReset completely resets the KBFS folder referenced in `path`.
 	// It should only be called after explicit user confirmation.
 	SimpleFSReset(context.Context, Path) error
 	SimpleFSFolderSyncConfigAndStatus(context.Context, Path) (FolderSyncConfigAndStatus, error)
 	SimpleFSSetFolderSyncConfig(context.Context, SimpleFSSetFolderSyncConfigArg) error
+	SimpleFSSyncConfigAndStatus(context.Context) (SyncConfigAndStatusRes, error)
+	SimpleFSAreWeConnectedToMDServer(context.Context) (bool, error)
+	SimpleFSCheckReachability(context.Context) error
+	SimpleFSSetDebugLevel(context.Context, string) error
+	SimpleFSSettings(context.Context) (FSSettings, error)
+	SimpleFSSetNotificationThreshold(context.Context, int64) error
 }
 
 func SimpleFSProtocol(i SimpleFSInterface) rpc.Protocol {
@@ -1807,6 +1893,51 @@ func SimpleFSProtocol(i SimpleFSInterface) rpc.Protocol {
 					return
 				},
 			},
+			"simpleFSClearConflictState": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSClearConflictStateArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SimpleFSClearConflictStateArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SimpleFSClearConflictStateArg)(nil), args)
+						return
+					}
+					err = i.SimpleFSClearConflictState(ctx, typedArgs[0].Path)
+					return
+				},
+			},
+			"simpleFSFinishResolvingConflict": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSFinishResolvingConflictArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SimpleFSFinishResolvingConflictArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SimpleFSFinishResolvingConflictArg)(nil), args)
+						return
+					}
+					err = i.SimpleFSFinishResolvingConflict(ctx, typedArgs[0].Path)
+					return
+				},
+			},
+			"simpleFSForceStuckConflict": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSForceStuckConflictArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SimpleFSForceStuckConflictArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SimpleFSForceStuckConflictArg)(nil), args)
+						return
+					}
+					err = i.SimpleFSForceStuckConflict(ctx, typedArgs[0].Path)
+					return
+				},
+			},
 			"simpleFSSyncStatus": {
 				MakeArg: func() interface{} {
 					var ret [1]SimpleFSSyncStatusArg
@@ -1857,6 +1988,16 @@ func SimpleFSProtocol(i SimpleFSInterface) rpc.Protocol {
 					return
 				},
 			},
+			"simpleFSListFavorites": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSListFavoritesArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					ret, err = i.SimpleFSListFavorites(ctx)
+					return
+				},
+			},
 			"simpleFSGetUserQuotaUsage": {
 				MakeArg: func() interface{} {
 					var ret [1]SimpleFSGetUserQuotaUsageArg
@@ -1864,6 +2005,21 @@ func SimpleFSProtocol(i SimpleFSInterface) rpc.Protocol {
 				},
 				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
 					ret, err = i.SimpleFSGetUserQuotaUsage(ctx)
+					return
+				},
+			},
+			"simpleFSGetTeamQuotaUsage": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSGetTeamQuotaUsageArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SimpleFSGetTeamQuotaUsageArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SimpleFSGetTeamQuotaUsageArg)(nil), args)
+						return
+					}
+					ret, err = i.SimpleFSGetTeamQuotaUsage(ctx, typedArgs[0].TeamName)
 					return
 				},
 			},
@@ -1909,6 +2065,76 @@ func SimpleFSProtocol(i SimpleFSInterface) rpc.Protocol {
 						return
 					}
 					err = i.SimpleFSSetFolderSyncConfig(ctx, typedArgs[0])
+					return
+				},
+			},
+			"simpleFSSyncConfigAndStatus": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSSyncConfigAndStatusArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					ret, err = i.SimpleFSSyncConfigAndStatus(ctx)
+					return
+				},
+			},
+			"simpleFSAreWeConnectedToMDServer": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSAreWeConnectedToMDServerArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					ret, err = i.SimpleFSAreWeConnectedToMDServer(ctx)
+					return
+				},
+			},
+			"simpleFSCheckReachability": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSCheckReachabilityArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					err = i.SimpleFSCheckReachability(ctx)
+					return
+				},
+			},
+			"simpleFSSetDebugLevel": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSSetDebugLevelArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SimpleFSSetDebugLevelArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SimpleFSSetDebugLevelArg)(nil), args)
+						return
+					}
+					err = i.SimpleFSSetDebugLevel(ctx, typedArgs[0].Level)
+					return
+				},
+			},
+			"simpleFSSettings": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSSettingsArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					ret, err = i.SimpleFSSettings(ctx)
+					return
+				},
+			},
+			"simpleFSSetNotificationThreshold": {
+				MakeArg: func() interface{} {
+					var ret [1]SimpleFSSetNotificationThresholdArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SimpleFSSetNotificationThresholdArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SimpleFSSetNotificationThresholdArg)(nil), args)
+						return
+					}
+					err = i.SimpleFSSetNotificationThreshold(ctx, typedArgs[0].Threshold)
 					return
 				},
 			},
@@ -2089,6 +2315,25 @@ func (c SimpleFSClient) SimpleFSDumpDebuggingInfo(ctx context.Context) (err erro
 	return
 }
 
+func (c SimpleFSClient) SimpleFSClearConflictState(ctx context.Context, path Path) (err error) {
+	__arg := SimpleFSClearConflictStateArg{Path: path}
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSClearConflictState", []interface{}{__arg}, nil)
+	return
+}
+
+func (c SimpleFSClient) SimpleFSFinishResolvingConflict(ctx context.Context, path Path) (err error) {
+	__arg := SimpleFSFinishResolvingConflictArg{Path: path}
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSFinishResolvingConflict", []interface{}{__arg}, nil)
+	return
+}
+
+// Force a TLF into a stuck conflict state (for testing).
+func (c SimpleFSClient) SimpleFSForceStuckConflict(ctx context.Context, path Path) (err error) {
+	__arg := SimpleFSForceStuckConflictArg{Path: path}
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSForceStuckConflict", []interface{}{__arg}, nil)
+	return
+}
+
 // Get sync status.
 func (c SimpleFSClient) SimpleFSSyncStatus(ctx context.Context, filter ListFilter) (res FSSyncStatus, err error) {
 	__arg := SimpleFSSyncStatusArg{Filter: filter}
@@ -2130,11 +2375,26 @@ func (c SimpleFSClient) SimpleFSFolderEditHistory(ctx context.Context, path Path
 	return
 }
 
+// simpleFSListFavorites gets the current favorites, ignored folders, and new
+// folders from the KBFS cache.
+func (c SimpleFSClient) SimpleFSListFavorites(ctx context.Context) (res FavoritesResult, err error) {
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSListFavorites", []interface{}{SimpleFSListFavoritesArg{}}, &res)
+	return
+}
+
 // simpleFSGetUserQuotaUsage returns the quota usage for the logged-in
-// user.  It results in an RPC to the server, and any usage includes
-// local journal usage as well.
+// user.  Any usage includes local journal usage as well.
 func (c SimpleFSClient) SimpleFSGetUserQuotaUsage(ctx context.Context) (res SimpleFSQuotaUsage, err error) {
 	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSGetUserQuotaUsage", []interface{}{SimpleFSGetUserQuotaUsageArg{}}, &res)
+	return
+}
+
+// simpleFSGetTeamQuotaUsage returns the quota usage for the given team, if
+// the logged-in user has access to that team.  Any usage includes
+// local journal usage as well.
+func (c SimpleFSClient) SimpleFSGetTeamQuotaUsage(ctx context.Context, teamName TeamName) (res SimpleFSQuotaUsage, err error) {
+	__arg := SimpleFSGetTeamQuotaUsageArg{TeamName: teamName}
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSGetTeamQuotaUsage", []interface{}{__arg}, &res)
 	return
 }
 
@@ -2154,5 +2414,37 @@ func (c SimpleFSClient) SimpleFSFolderSyncConfigAndStatus(ctx context.Context, p
 
 func (c SimpleFSClient) SimpleFSSetFolderSyncConfig(ctx context.Context, __arg SimpleFSSetFolderSyncConfigArg) (err error) {
 	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSSetFolderSyncConfig", []interface{}{__arg}, nil)
+	return
+}
+
+func (c SimpleFSClient) SimpleFSSyncConfigAndStatus(ctx context.Context) (res SyncConfigAndStatusRes, err error) {
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSSyncConfigAndStatus", []interface{}{SimpleFSSyncConfigAndStatusArg{}}, &res)
+	return
+}
+
+func (c SimpleFSClient) SimpleFSAreWeConnectedToMDServer(ctx context.Context) (res bool, err error) {
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSAreWeConnectedToMDServer", []interface{}{SimpleFSAreWeConnectedToMDServerArg{}}, &res)
+	return
+}
+
+func (c SimpleFSClient) SimpleFSCheckReachability(ctx context.Context) (err error) {
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSCheckReachability", []interface{}{SimpleFSCheckReachabilityArg{}}, nil)
+	return
+}
+
+func (c SimpleFSClient) SimpleFSSetDebugLevel(ctx context.Context, level string) (err error) {
+	__arg := SimpleFSSetDebugLevelArg{Level: level}
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSSetDebugLevel", []interface{}{__arg}, nil)
+	return
+}
+
+func (c SimpleFSClient) SimpleFSSettings(ctx context.Context) (res FSSettings, err error) {
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSSettings", []interface{}{SimpleFSSettingsArg{}}, &res)
+	return
+}
+
+func (c SimpleFSClient) SimpleFSSetNotificationThreshold(ctx context.Context, threshold int64) (err error) {
+	__arg := SimpleFSSetNotificationThresholdArg{Threshold: threshold}
+	err = c.Cli.Call(ctx, "keybase.1.SimpleFS.simpleFSSetNotificationThreshold", []interface{}{__arg}, nil)
 	return
 }

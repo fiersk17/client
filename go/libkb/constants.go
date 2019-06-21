@@ -1,9 +1,9 @@
 // Copyright 2015 Keybase, Inc. All rights reserved. Use of
 // this source code is governed by the included BSD license.
-
 package libkb
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"time"
@@ -17,7 +17,7 @@ const (
 	DevelServerURI      = "http://localhost:3000"
 	StagingServerURI    = "https://stage0.keybase.io"
 	ProductionServerURI = "https://api-0.core.keybaseapi.com"
-	TorServerURI        = "http://fncuwbiisyh6ak3i.onion"
+	TorServerURI        = "http://keybase5wmilwokqirssclfnsqrjdsi7jdir5wy7y7iu3tanwmtp6oid.onion"
 )
 
 const (
@@ -40,12 +40,6 @@ const (
 	RunModeError      RunMode = kbconst.RunModeError
 	NoRunMode         RunMode = kbconst.NoRunMode
 )
-
-var ServerLookup = map[RunMode]string{
-	DevelRunMode:      DevelServerURI,
-	StagingRunMode:    StagingServerURI,
-	ProductionRunMode: ProductionServerURI,
-}
 
 var SiteURILookup = map[RunMode]string{
 	DevelRunMode:      DevelSiteURI,
@@ -88,6 +82,23 @@ const (
 // our User-Agent string. (See https://github.com/reddit/reddit/wiki/API.) If
 // something else comes up, we'll want to make this more configurable.
 var UserAgent = runtime.GOOS + ":" + "Keybase CLI (" + runtime.Version() + "):" + Version
+
+// Returns a simplified UserAgent that's used as the kb_ua GET param.
+func ProofUserAgent() string {
+	var os string
+	if runtime.GOOS == "darwin" {
+		// Either ios or mac
+		if isIOS {
+			os = "ios"
+		} else {
+			os = "mac"
+		}
+	} else {
+		os = runtime.GOOS
+	}
+
+	return fmt.Sprintf("%s:%s", os, Version)
+}
 
 const (
 	PermFile          os.FileMode = 0600
@@ -164,10 +175,10 @@ var MerkleStagingKIDs = []string{
 
 var CodeSigningProdKIDs = []string{
 	"01209092ae4e790763dc7343851b977930f35b16cf43ab0ad900a2af3d3ad5cea1a10a", // keybot (device)
-	"0120d3458bbecdfc0d0ae39fec05722c6e3e897c169223835977a8aa208dfcd902d30a", // max (device, home)
-	"012065ae849d1949a8b0021b165b0edaf722e2a7a9036e07817e056e2d721bddcc0e0a", // max (paper key)
-	"01203a5a45c545ef4f661b8b7573711aaecee3fd5717053484a3a3e725cd68abaa5a0a", // chris (device, ccpro)
-	"012003d86864fb20e310590042ad3d5492c3f5d06728620175b03c717c211bfaccc20a", // chris (paper key, clay harbor)
+	"012045891a45f03cec001196ad05207f3f80045b2b9f0ca38288a85f8120ac74db960a", // max (tiber - 2019-01)
+	"012065ae849d1949a8b0021b165b0edaf722e2a7a9036e07817e056e2d721bddcc0e0a", // max (cry glass)
+	"01202a70fa31596ae2afabbbea827c7d1efb205c4b02b2b98b8f8c75915be433ccb50a", // mike (demise sort)
+	"012003d86864fb20e310590042ad3d5492c3f5d06728620175b03c717c211bfaccc20a", // chris (clay harbor)
 }
 var CodeSigningTestKIDs = []string{}
 var CodeSigningStagingKIDs = []string{}
@@ -181,6 +192,7 @@ const (
 	KeybaseNullSigVersion SigVersion = 0
 	KeybaseSignatureV1    SigVersion = 1
 	KeybaseSignatureV2    SigVersion = 2
+	KeybaseSignatureV3    SigVersion = 3
 )
 
 const (
@@ -213,6 +225,8 @@ const (
 	SCAlreadyLoggedIn                           = int(keybase1.StatusCode_SCAlreadyLoggedIn)
 	SCCanceled                                  = int(keybase1.StatusCode_SCCanceled)
 	SCInputCanceled                             = int(keybase1.StatusCode_SCInputCanceled)
+	SCBadUsername                               = int(keybase1.StatusCode_SCBadUsername)
+	SCOffline                                   = int(keybase1.StatusCode_SCOffline)
 	SCExists                                    = int(keybase1.StatusCode_SCExists)
 	SCInvalidAddress                            = int(keybase1.StatusCode_SCInvalidAddress)
 	SCReloginRequired                           = int(keybase1.StatusCode_SCReloginRequired)
@@ -333,6 +347,7 @@ const (
 	SCStellarMobileOnlyPurgatory                = int(keybase1.StatusCode_SCStellarMobileOnlyPurgatory)
 	SCStellarIncompatibleVersion                = int(keybase1.StatusCode_SCStellarIncompatibleVersion)
 	SCStellarMissingAccount                     = int(keybase1.StatusCode_SCStellarMissingAccount)
+	SCNoPaperKeys                               = int(keybase1.StatusCode_SCNoPaperKeys)
 )
 
 const (
@@ -441,7 +456,7 @@ var RemoteServiceTypes = map[string]keybase1.ProofType{
 	"generic_social": keybase1.ProofType_GENERIC_SOCIAL,
 }
 
-// TODO Remove with CORE-9923
+// remove when ShouldUseParameterizedProofs is removed
 var RemoteServiceOrder = []keybase1.ProofType{
 	keybase1.ProofType_KEYBASE,
 	keybase1.ProofType_TWITTER,
@@ -569,11 +584,14 @@ const (
 )
 
 const (
-	EncryptionReasonChatLocalStorage       EncryptionReason = "Keybase-Chat-Local-Storage-1"
-	EncryptionReasonChatMessage            EncryptionReason = "Keybase-Chat-Message-1"
-	EncryptionReasonTeamsLocalStorage      EncryptionReason = "Keybase-Teams-Local-Storage-1"
-	EncryptionReasonTeamsFTLLocalStorage   EncryptionReason = "Keybase-Teams-FTL-Local-Storage-1"
-	EncryptionReasonErasableKVLocalStorage EncryptionReason = "Keybase-Erasable-KV-Local-Storage-1"
+	EncryptionReasonChatLocalStorage        EncryptionReason = "Keybase-Chat-Local-Storage-1"
+	EncryptionReasonChatMessage             EncryptionReason = "Keybase-Chat-Message-1"
+	EncryptionReasonChatIndexerTokenKey     EncryptionReason = "Keybase-Chat-IndexerTokenKey-1"
+	EncryptionReasonChatIndexerAliasKey     EncryptionReason = "Keybase-Chat-IndexerAliasKey-1"
+	EncryptionReasonTeamsLocalStorage       EncryptionReason = "Keybase-Teams-Local-Storage-1"
+	EncryptionReasonTeamsFTLLocalStorage    EncryptionReason = "Keybase-Teams-FTL-Local-Storage-1"
+	EncryptionReasonTeamsHiddenLocalStorage EncryptionReason = "Keybase-Teams-Hidden-Local-Storage-1"
+	EncryptionReasonErasableKVLocalStorage  EncryptionReason = "Keybase-Erasable-KV-Local-Storage-1"
 )
 
 type DeriveReason string
@@ -593,6 +611,8 @@ const (
 	DeriveReasonTeamEKExplodingChat DeriveReason = "Derived-Ephemeral-Team-NaCl-SecretBox-ExplodingChat-1"
 
 	DeriveReasonChatPairwiseMAC DeriveReason = "Derived-Chat-Pairwise-HMAC-SHA256-1"
+
+	DeriveReasonLinuxRevokableKeyring DeriveReason = "Keybase-Derived-LKS-SecretBox-1"
 )
 
 // Not a DeriveReason because it is not used in the same way.
@@ -644,6 +664,7 @@ const (
 	TeamGitMetadataDerivationString      = "Keybase-Derived-Team-NaCl-GitMetadata-1"
 	TeamSeitanTokenDerivationString      = "Keybase-Derived-Team-NaCl-SeitanInviteToken-1"
 	TeamStellarRelayDerivationString     = "Keybase-Derived-Team-NaCl-StellarRelay-1"
+	TeamKeySeedCheckDerivationString     = "Keybase-Derived-Team-Seedcheck-1"
 )
 
 func CurrentSaltpackVersion() saltpack.Version {
@@ -685,3 +706,20 @@ const ClientTriplesecVersion = 3
 
 // Also hard-coded in packaging/linux/{post_install.sh,run_keybase}
 const DisableRootRedirectorConfigKey = "disable-root-redirector"
+
+// Also defined in lib_public/public_constants.iced
+const (
+	AutoresetEventStart  = 0
+	AutoresetEventVerify = 1
+	AutoresetEventCancel = 2
+	AutoresetEventNotify = 3
+	AutoresetEventReady  = 4
+	AutoresetEventReset  = 5
+)
+
+const ProfileProofSuggestions = true
+
+const (
+	ExternalURLsBaseKey         = "external_urls"
+	ExternalURLsStellarPartners = "stellar_partners"
+)

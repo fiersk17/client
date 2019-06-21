@@ -96,7 +96,7 @@ func (c *FullCachingSource) StopBackgroundTasks(m libkb.MetaContext) {
 }
 
 func (c *FullCachingSource) debug(m libkb.MetaContext, msg string, args ...interface{}) {
-	m.CDebugf("Avatars.FullCachingSource: %s", fmt.Sprintf(msg, args...))
+	m.Debug("Avatars.FullCachingSource: %s", fmt.Sprintf(msg, args...))
 }
 
 func (c *FullCachingSource) avatarKey(name string, format keybase1.AvatarFormat) string {
@@ -108,12 +108,17 @@ func (c *FullCachingSource) isStale(m libkb.MetaContext, item lru.DiskLRUEntry) 
 }
 
 func (c *FullCachingSource) monitorAppState(m libkb.MetaContext) {
-	c.debug(m, "monitorAppState: starting up")
-	state := keybase1.AppState_FOREGROUND
+	size, err := c.diskLRU.Size(m.Ctx(), m.G())
+	if err != nil {
+		c.debug(m, "unable to get diskLRU size: %v", err)
+	}
+	c.debug(m, "monitorAppState: starting up, lru current size: %d,  max size: %d",
+		size, c.diskLRU.MaxSize())
+	state := keybase1.MobileAppState_FOREGROUND
 	for {
-		state = <-m.G().AppState.NextUpdate(&state)
+		state = <-m.G().MobileAppState.NextUpdate(&state)
 		switch state {
-		case keybase1.AppState_BACKGROUND:
+		case keybase1.MobileAppState_BACKGROUND:
 			c.debug(m, "monitorAppState: backgrounded")
 			c.diskLRU.Flush(m.Ctx(), m.G())
 		}
@@ -135,7 +140,7 @@ func (c *FullCachingSource) specLoad(m libkb.MetaContext, names []string, format
 
 			// If we found something in the index, let's make sure we have it on the disk as well.
 			if found {
-				lp.path = entry.Value.(string)
+				lp.path = c.normalizeFilenameFromCache(m, entry.Value.(string))
 				var file *os.File
 				if file, err = os.Open(lp.path); err != nil {
 					c.debug(m, "specLoad: error loading hit: file: %s err: %s", lp.path, err)
@@ -171,16 +176,16 @@ func (c *FullCachingSource) getFullFilename(fileName string) string {
 	return fileName + ".avatar"
 }
 
+// normalizeFilenameFromCache substitutes the existing cache dir value into the
+// file path since it's possible for the path to the cache dir to change,
+// especially on mobile.
+func (c *FullCachingSource) normalizeFilenameFromCache(mctx libkb.MetaContext, file string) string {
+	file = filepath.Base(file)
+	return filepath.Join(c.getCacheDir(mctx), file)
+}
+
 func (c *FullCachingSource) commitAvatarToDisk(m libkb.MetaContext, data io.ReadCloser, previousPath string) (path string, err error) {
 	c.prepareDirs.Do(func() {
-		// Avatars used to be in main cache directory before we
-		// started saving them to `avatars/` subdir. If user has just
-		// updated to client with new path, it's fine to have them
-		// start clean.
-		if len(c.tempDir) == 0 {
-			c.unlinkAllAvatars(m, m.G().GetCacheDir())
-		}
-
 		err := os.MkdirAll(c.getCacheDir(m), os.ModePerm)
 		c.debug(m, "creating directory for avatars %q: %v", c.getCacheDir(m), err)
 	})
@@ -220,7 +225,7 @@ func (c *FullCachingSource) commitAvatarToDisk(m libkb.MetaContext, data io.Read
 
 func (c *FullCachingSource) removeFile(m libkb.MetaContext, ent *lru.DiskLRUEntry) {
 	if ent != nil {
-		file := ent.Value.(string)
+		file := c.normalizeFilenameFromCache(m, ent.Value.(string))
 		if err := os.Remove(file); err != nil {
 			c.debug(m, "removeFile: failed to remove: file: %s err: %s", file, err)
 		} else {
@@ -249,7 +254,7 @@ func (c *FullCachingSource) populateCacheWorker(m libkb.MetaContext) {
 			continue
 		}
 		if found {
-			previousPath = ent.Value.(string)
+			previousPath = c.normalizeFilenameFromCache(m, ent.Value.(string))
 		}
 
 		// Save to disk
@@ -372,35 +377,25 @@ func (c *FullCachingSource) clearName(m libkb.MetaContext, name string, formats 
 }
 
 func (c *FullCachingSource) LoadUsers(m libkb.MetaContext, usernames []string, formats []keybase1.AvatarFormat) (res keybase1.LoadAvatarsRes, err error) {
-	defer m.CTrace("FullCachingSource.LoadUsers", func() error { return err })()
+	defer m.Trace("FullCachingSource.LoadUsers", func() error { return err })()
 	return c.loadNames(m, usernames, formats, c.simpleSource.LoadUsers)
 }
 
 func (c *FullCachingSource) LoadTeams(m libkb.MetaContext, teams []string, formats []keybase1.AvatarFormat) (res keybase1.LoadAvatarsRes, err error) {
-	defer m.CTrace("FullCachingSource.LoadTeams", func() error { return err })()
+	defer m.Trace("FullCachingSource.LoadTeams", func() error { return err })()
 	return c.loadNames(m, teams, formats, c.simpleSource.LoadTeams)
 }
 
 func (c *FullCachingSource) ClearCacheForName(m libkb.MetaContext, name string, formats []keybase1.AvatarFormat) (err error) {
-	defer m.CTrace(fmt.Sprintf("FullCachingSource.ClearCacheForUser(%q,%v)", name, formats), func() error { return err })()
+	defer m.Trace(fmt.Sprintf("FullCachingSource.ClearCacheForUser(%q,%v)", name, formats), func() error { return err })()
 	return c.clearName(m, name, formats)
 }
 
-func (c *FullCachingSource) unlinkAllAvatars(m libkb.MetaContext, dirpath string) {
-	files, err := filepath.Glob(filepath.Join(dirpath, "avatar*.avatar"))
-	if err != nil {
-		c.debug(m, "unlinkAllAvatars: failed to clear files from %q: %s", dirpath, err)
-		return
-	}
-
-	c.debug(m, "unlinkAllAvatars: found %d avatars files to delete in %s", len(files), dirpath)
-	for _, v := range files {
-		if err := os.Remove(v); err != nil {
-			c.debug(m, "unlinkAllAvatars: failed to delete file %q: %s", v, err)
+func (c *FullCachingSource) OnDbNuke(m libkb.MetaContext) error {
+	if c.diskLRU != nil {
+		if err := c.diskLRU.Clean(m.Ctx(), m.G(), c.getCacheDir(m)); err != nil {
+			c.debug(m, "unable to run clean: %v", err)
 		}
 	}
-}
-
-func (c *FullCachingSource) OnCacheCleared(m libkb.MetaContext) {
-	c.unlinkAllAvatars(m, c.getCacheDir(m))
+	return nil
 }

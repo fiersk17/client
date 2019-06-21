@@ -45,7 +45,8 @@ func (r *rawGetHome) GetAppStatus() *libkb.AppStatus {
 
 func NewHome(g *libkb.GlobalContext) *Home {
 	home := &Home{Contextified: libkb.NewContextified(g)}
-	g.AddLogoutHook(home)
+	g.AddLogoutHook(home, "home")
+	g.AddDbNukeHook(home, "home")
 	return home
 }
 
@@ -57,7 +58,8 @@ func homeRetry(a libkb.APIArg) libkb.APIArg {
 }
 
 func (h *Home) getToCache(ctx context.Context, markedViewed bool, numPeopleWanted int, skipPeople bool) (err error) {
-	defer h.G().CTraceTimed(ctx, "Home#getToCache", func() error { return err })()
+	mctx := libkb.NewMetaContext(ctx, h.G())
+	defer mctx.TraceTimed("Home#getToCache", func() error { return err })()
 
 	numPeopleToRequest := 100
 	if numPeopleWanted > numPeopleToRequest {
@@ -66,14 +68,14 @@ func (h *Home) getToCache(ctx context.Context, markedViewed bool, numPeopleWante
 	if skipPeople {
 		numPeopleToRequest = 0
 	}
-	arg := libkb.NewAPIArgWithNetContext(ctx, "home")
+	arg := libkb.NewAPIArg("home")
 	arg.SessionType = libkb.APISessionTypeREQUIRED
 	arg.Args = libkb.HTTPArgs{
 		"record_visit": libkb.B{Val: markedViewed},
 		"num_people":   libkb.I{Val: numPeopleToRequest},
 	}
 	var raw rawGetHome
-	if err = h.G().API.GetDecode(homeRetry(arg), &raw); err != nil {
+	if err = mctx.G().API.GetDecode(mctx, homeRetry(arg), &raw); err != nil {
 		return err
 	}
 	home := raw.Home
@@ -88,7 +90,7 @@ func (h *Home) getToCache(ctx context.Context, markedViewed bool, numPeopleWante
 	}
 	h.peopleCache = newPeopleCache
 
-	h.G().Log.CDebugf(ctx, "| %d follow suggestions returned", len(home.FollowSuggestions))
+	mctx.Debug("| %d follow suggestions returned", len(home.FollowSuggestions))
 	home.FollowSuggestions = nil
 
 	h.homeCache = &homeCache{
@@ -198,30 +200,30 @@ func (p *peopleCache) isValid(ctx context.Context, g *libkb.GlobalContext, numPe
 }
 
 func (h *Home) skipTodoType(ctx context.Context, typ keybase1.HomeScreenTodoType) (err error) {
-	defer h.G().CTraceTimed(ctx, "Home#skipTodoType", func() error { return err })()
+	mctx := libkb.NewMetaContext(ctx, h.G())
+	defer mctx.TraceTimed("Home#skipTodoType", func() error { return err })()
 
-	_, err = h.G().API.Post(homeRetry(libkb.APIArg{
+	_, err = mctx.G().API.Post(mctx, homeRetry(libkb.APIArg{
 		Endpoint:    "home/todo/skip",
 		SessionType: libkb.APISessionTypeREQUIRED,
 		Args: libkb.HTTPArgs{
 			"type": libkb.I{Val: int(typ)},
 		},
-		NetContext: ctx,
 	}))
 
 	return err
 }
 
 func (h *Home) DismissAnnouncement(ctx context.Context, id keybase1.HomeScreenAnnouncementID) (err error) {
-	defer h.G().CTraceTimed(ctx, "Home#DismissAnnouncement", func() error { return err })()
+	mctx := libkb.NewMetaContext(ctx, h.G())
+	defer mctx.TraceTimed("Home#DismissAnnouncement", func() error { return err })()
 
-	_, err = h.G().API.Post(homeRetry(libkb.APIArg{
+	_, err = mctx.G().API.Post(mctx, homeRetry(libkb.APIArg{
 		Endpoint:    "home/todo/skip",
 		SessionType: libkb.APISessionTypeREQUIRED,
 		Args: libkb.HTTPArgs{
 			"announcement": libkb.I{Val: int(id)},
 		},
-		NetContext: ctx,
 	}))
 
 	return err
@@ -296,15 +298,15 @@ func (h *Home) markViewedWithLock(ctx context.Context) (err error) {
 }
 
 func (h *Home) markViewedAPICall(ctx context.Context) (err error) {
-	defer h.G().CTraceTimed(ctx, "Home#markViewedAPICall", func() error { return err })()
+	mctx := libkb.NewMetaContext(ctx, h.G())
+	defer mctx.TraceTimed("Home#markViewedAPICall", func() error { return err })()
 
-	if _, err = h.G().API.Post(homeRetry(libkb.APIArg{
+	if _, err = mctx.G().API.Post(mctx, homeRetry(libkb.APIArg{
 		Endpoint:    "home/visit",
 		SessionType: libkb.APISessionTypeREQUIRED,
 		Args:        libkb.HTTPArgs{},
-		NetContext:  ctx,
 	})); err != nil {
-		h.G().Log.CWarningf(ctx, "Unable to home#markViewedAPICall: %v", err)
+		mctx.Warning("Unable to home#markViewedAPICall: %v", err)
 	}
 	return nil
 }
@@ -316,6 +318,11 @@ func (h *Home) ActionTaken(ctx context.Context) (err error) {
 }
 
 func (h *Home) OnLogout(m libkb.MetaContext) error {
+	h.bustCache(m.Ctx(), true)
+	return nil
+}
+
+func (h *Home) OnDbNuke(m libkb.MetaContext) error {
 	h.bustCache(m.Ctx(), true)
 	return nil
 }
@@ -409,39 +416,38 @@ func (h *Home) RunUpdateLoop(m libkb.MetaContext) {
 
 func (h *Home) updateLoopThread(m libkb.MetaContext) {
 	m = m.WithLogTag("HULT")
-	m.CDebugf("Starting Home#updateLoopThread")
+	m.Debug("Starting Home#updateLoopThread")
 	slp := time.Minute * (time.Duration(5) + time.Duration((rand.Int() % 10)))
 	var err error
 	for {
-		m.CDebugf("Sleeping %v until next poll", slp)
+		m.Debug("Sleeping %v until next poll", slp)
 		m.G().Clock().Sleep(slp)
 		slp, err = h.pollOnce(m)
 		if _, ok := err.(libkb.DeviceRequiredError); ok {
 			slp = time.Duration(1) * time.Minute
 		} else if err != nil {
 			slp = time.Duration(15) * time.Minute
-			m.CDebugf("Hit an error in home update loop: %v", err)
+			m.Debug("Hit an error in home update loop: %v", err)
 		}
 	}
 }
 
 func (h *Home) pollOnce(m libkb.MetaContext) (d time.Duration, err error) {
-	defer m.CTraceTimed("Home#pollOnce", func() error { return err })()
+	defer m.TraceTimed("Home#pollOnce", func() error { return err })()
 
 	if !m.HasAnySession() {
-		m.CDebugf("No-op, since don't have keys (and/or am not logged in)")
+		m.Debug("No-op, since don't have keys (and/or am not logged in)")
 		return time.Duration(0), libkb.DeviceRequiredError{}
 	}
 
 	var raw rawPollHome
-	err = m.G().API.GetDecode(libkb.APIArg{
+	err = m.G().API.GetDecode(m, libkb.APIArg{
 		Endpoint:    "home/poll",
 		SessionType: libkb.APISessionTypeREQUIRED,
 		Args:        libkb.HTTPArgs{},
-		MetaContext: m,
 	}, &raw)
 	if err != nil {
-		m.CWarningf("Unable to Home#pollOnce: %v", err)
+		m.Warning("Unable to Home#pollOnce: %v", err)
 		return time.Duration(0), err
 	}
 	return time.Duration(raw.NextPollSecs) * time.Second, nil

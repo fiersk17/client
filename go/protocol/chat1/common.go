@@ -83,6 +83,12 @@ func (o InboxVers) DeepCopy() InboxVers {
 	return o
 }
 
+type LocalConversationVers uint64
+
+func (o LocalConversationVers) DeepCopy() LocalConversationVers {
+	return o
+}
+
 type ConversationVers uint64
 
 func (o ConversationVers) DeepCopy() ConversationVers {
@@ -103,6 +109,17 @@ func (o OutboxID) DeepCopy() OutboxID {
 type TopicNameState []byte
 
 func (o TopicNameState) DeepCopy() TopicNameState {
+	return (func(x []byte) []byte {
+		if x == nil {
+			return nil
+		}
+		return append([]byte{}, x...)
+	})(o)
+}
+
+type FlipGameID []byte
+
+func (o FlipGameID) DeepCopy() FlipGameID {
 	return (func(x []byte) []byte {
 		if x == nil {
 			return nil
@@ -236,6 +253,7 @@ const (
 	MessageType_SENDPAYMENT        MessageType = 14
 	MessageType_REQUESTPAYMENT     MessageType = 15
 	MessageType_UNFURL             MessageType = 16
+	MessageType_FLIP               MessageType = 17
 )
 
 func (o MessageType) DeepCopy() MessageType { return o }
@@ -258,6 +276,7 @@ var MessageTypeMap = map[string]MessageType{
 	"SENDPAYMENT":        14,
 	"REQUESTPAYMENT":     15,
 	"UNFURL":             16,
+	"FLIP":               17,
 }
 
 var MessageTypeRevMap = map[MessageType]string{
@@ -278,6 +297,7 @@ var MessageTypeRevMap = map[MessageType]string{
 	14: "SENDPAYMENT",
 	15: "REQUESTPAYMENT",
 	16: "UNFURL",
+	17: "FLIP",
 }
 
 type TopicType int
@@ -544,10 +564,11 @@ func (e ConversationMemberStatus) String() string {
 }
 
 type Pagination struct {
-	Next     []byte `codec:"next" json:"next"`
-	Previous []byte `codec:"previous" json:"previous"`
-	Num      int    `codec:"num" json:"num"`
-	Last     bool   `codec:"last" json:"last"`
+	Next           []byte `codec:"next" json:"next"`
+	Previous       []byte `codec:"previous" json:"previous"`
+	Num            int    `codec:"num" json:"num"`
+	Last           bool   `codec:"last" json:"last"`
+	ForceFirstPage bool   `codec:"forceFirstPage" json:"forceFirstPage"`
 }
 
 func (o Pagination) DeepCopy() Pagination {
@@ -564,8 +585,9 @@ func (o Pagination) DeepCopy() Pagination {
 			}
 			return append([]byte{}, x...)
 		})(o.Previous),
-		Num:  o.Num,
-		Last: o.Last,
+		Num:            o.Num,
+		Last:           o.Last,
+		ForceFirstPage: o.ForceFirstPage,
 	}
 }
 
@@ -593,6 +615,7 @@ type GetInboxQuery struct {
 	Before            *gregor1.Time              `codec:"before,omitempty" json:"before,omitempty"`
 	After             *gregor1.Time              `codec:"after,omitempty" json:"after,omitempty"`
 	OneChatTypePerTLF *bool                      `codec:"oneChatTypePerTLF,omitempty" json:"oneChatTypePerTLF,omitempty"`
+	TopicName         *string                    `codec:"topicName,omitempty" json:"topicName,omitempty"`
 	Status            []ConversationStatus       `codec:"status" json:"status"`
 	MemberStatus      []ConversationMemberStatus `codec:"memberStatus" json:"memberStatus"`
 	Existences        []ConversationExistence    `codec:"existences" json:"existences"`
@@ -656,6 +679,13 @@ func (o GetInboxQuery) DeepCopy() GetInboxQuery {
 			tmp := (*x)
 			return &tmp
 		})(o.OneChatTypePerTLF),
+		TopicName: (func(x *string) *string {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x)
+			return &tmp
+		})(o.TopicName),
 		Status: (func(x []ConversationStatus) []ConversationStatus {
 			if x == nil {
 				return nil
@@ -780,6 +810,7 @@ type ConversationMetadata struct {
 	TeamType       TeamType                  `codec:"teamType" json:"teamType"`
 	Existence      ConversationExistence     `codec:"existence" json:"existence"`
 	Version        ConversationVers          `codec:"version" json:"version"`
+	LocalVersion   LocalConversationVers     `codec:"localVersion" json:"localVersion"`
 	FinalizeInfo   *ConversationFinalizeInfo `codec:"finalizeInfo,omitempty" json:"finalizeInfo,omitempty"`
 	Supersedes     []ConversationMetadata    `codec:"supersedes" json:"supersedes"`
 	SupersededBy   []ConversationMetadata    `codec:"supersededBy" json:"supersededBy"`
@@ -798,6 +829,7 @@ func (o ConversationMetadata) DeepCopy() ConversationMetadata {
 		TeamType:       o.TeamType.DeepCopy(),
 		Existence:      o.Existence.DeepCopy(),
 		Version:        o.Version.DeepCopy(),
+		LocalVersion:   o.LocalVersion.DeepCopy(),
 		FinalizeInfo: (func(x *ConversationFinalizeInfo) *ConversationFinalizeInfo {
 			if x == nil {
 				return nil
@@ -1116,6 +1148,7 @@ type MessageServerHeader struct {
 	SupersededBy MessageID     `codec:"supersededBy" json:"supersededBy"`
 	ReactionIDs  []MessageID   `codec:"r" json:"r"`
 	UnfurlIDs    []MessageID   `codec:"u" json:"u"`
+	Replies      []MessageID   `codec:"replies" json:"replies"`
 	Ctime        gregor1.Time  `codec:"ctime" json:"ctime"`
 	Now          gregor1.Time  `codec:"n" json:"n"`
 	Rtime        *gregor1.Time `codec:"rt,omitempty" json:"rt,omitempty"`
@@ -1147,6 +1180,17 @@ func (o MessageServerHeader) DeepCopy() MessageServerHeader {
 			}
 			return ret
 		})(o.UnfurlIDs),
+		Replies: (func(x []MessageID) []MessageID {
+			if x == nil {
+				return nil
+			}
+			ret := make([]MessageID, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Replies),
 		Ctime: o.Ctime.DeepCopy(),
 		Now:   o.Now.DeepCopy(),
 		Rtime: (func(x *gregor1.Time) *gregor1.Time {
@@ -1845,6 +1889,7 @@ const (
 	GetThreadReason_SEARCHER           GetThreadReason = 6
 	GetThreadReason_INDEXED_SEARCH     GetThreadReason = 7
 	GetThreadReason_KBFSFILEACTIVITY   GetThreadReason = 8
+	GetThreadReason_COINFLIP           GetThreadReason = 9
 )
 
 func (o GetThreadReason) DeepCopy() GetThreadReason { return o }
@@ -1859,6 +1904,7 @@ var GetThreadReasonMap = map[string]GetThreadReason{
 	"SEARCHER":           6,
 	"INDEXED_SEARCH":     7,
 	"KBFSFILEACTIVITY":   8,
+	"COINFLIP":           9,
 }
 
 var GetThreadReasonRevMap = map[GetThreadReason]string{
@@ -1871,6 +1917,7 @@ var GetThreadReasonRevMap = map[GetThreadReason]string{
 	6: "SEARCHER",
 	7: "INDEXED_SEARCH",
 	8: "KBFSFILEACTIVITY",
+	9: "COINFLIP",
 }
 
 func (e GetThreadReason) String() string {
@@ -1880,87 +1927,92 @@ func (e GetThreadReason) String() string {
 	return ""
 }
 
+type ReIndexingMode int
+
+const (
+	ReIndexingMode_NONE            ReIndexingMode = 0
+	ReIndexingMode_PRESEARCH_SYNC  ReIndexingMode = 1
+	ReIndexingMode_POSTSEARCH_SYNC ReIndexingMode = 2
+)
+
+func (o ReIndexingMode) DeepCopy() ReIndexingMode { return o }
+
+var ReIndexingModeMap = map[string]ReIndexingMode{
+	"NONE":            0,
+	"PRESEARCH_SYNC":  1,
+	"POSTSEARCH_SYNC": 2,
+}
+
+var ReIndexingModeRevMap = map[ReIndexingMode]string{
+	0: "NONE",
+	1: "PRESEARCH_SYNC",
+	2: "POSTSEARCH_SYNC",
+}
+
+func (e ReIndexingMode) String() string {
+	if v, ok := ReIndexingModeRevMap[e]; ok {
+		return v
+	}
+	return ""
+}
+
 type SearchOpts struct {
-	SentBy        string       `codec:"sentBy" json:"sentBy"`
-	SentBefore    gregor1.Time `codec:"sentBefore" json:"sentBefore"`
-	SentAfter     gregor1.Time `codec:"sentAfter" json:"sentAfter"`
-	MaxHits       int          `codec:"maxHits" json:"maxHits"`
-	MaxMessages   int          `codec:"maxMessages" json:"maxMessages"`
-	BeforeContext int          `codec:"beforeContext" json:"beforeContext"`
-	AfterContext  int          `codec:"afterContext" json:"afterContext"`
-	ForceReindex  bool         `codec:"forceReindex" json:"forceReindex"`
-	MaxConvs      int          `codec:"maxConvs" json:"maxConvs"`
+	IsRegex           bool            `codec:"isRegex" json:"isRegex"`
+	SentBy            string          `codec:"sentBy" json:"sentBy"`
+	SentTo            string          `codec:"sentTo" json:"sentTo"`
+	MatchMentions     bool            `codec:"matchMentions" json:"matchMentions"`
+	SentBefore        gregor1.Time    `codec:"sentBefore" json:"sentBefore"`
+	SentAfter         gregor1.Time    `codec:"sentAfter" json:"sentAfter"`
+	MaxHits           int             `codec:"maxHits" json:"maxHits"`
+	MaxMessages       int             `codec:"maxMessages" json:"maxMessages"`
+	BeforeContext     int             `codec:"beforeContext" json:"beforeContext"`
+	AfterContext      int             `codec:"afterContext" json:"afterContext"`
+	InitialPagination *Pagination     `codec:"initialPagination,omitempty" json:"initialPagination,omitempty"`
+	ReindexMode       ReIndexingMode  `codec:"reindexMode" json:"reindexMode"`
+	MaxConvsSearched  int             `codec:"maxConvsSearched" json:"maxConvsSearched"`
+	MaxConvsHit       int             `codec:"maxConvsHit" json:"maxConvsHit"`
+	ConvID            *ConversationID `codec:"convID,omitempty" json:"convID,omitempty"`
+	MaxNameConvs      int             `codec:"maxNameConvs" json:"maxNameConvs"`
 }
 
 func (o SearchOpts) DeepCopy() SearchOpts {
 	return SearchOpts{
+		IsRegex:       o.IsRegex,
 		SentBy:        o.SentBy,
+		SentTo:        o.SentTo,
+		MatchMentions: o.MatchMentions,
 		SentBefore:    o.SentBefore.DeepCopy(),
 		SentAfter:     o.SentAfter.DeepCopy(),
 		MaxHits:       o.MaxHits,
 		MaxMessages:   o.MaxMessages,
 		BeforeContext: o.BeforeContext,
 		AfterContext:  o.AfterContext,
-		ForceReindex:  o.ForceReindex,
-		MaxConvs:      o.MaxConvs,
-	}
-}
-
-type ConversationIndexMetadata struct {
-	SeenIDs map[MessageID]bool `codec:"s" json:"s"`
-	Version int                `codec:"v" json:"v"`
-}
-
-func (o ConversationIndexMetadata) DeepCopy() ConversationIndexMetadata {
-	return ConversationIndexMetadata{
-		SeenIDs: (func(x map[MessageID]bool) map[MessageID]bool {
+		InitialPagination: (func(x *Pagination) *Pagination {
 			if x == nil {
 				return nil
 			}
-			ret := make(map[MessageID]bool, len(x))
-			for k, v := range x {
-				kCopy := k.DeepCopy()
-				vCopy := v
-				ret[kCopy] = vCopy
-			}
-			return ret
-		})(o.SeenIDs),
-		Version: o.Version,
-	}
-}
-
-type ConversationIndex struct {
-	Index    map[string]map[MessageID]bool `codec:"i" json:"i"`
-	Metadata ConversationIndexMetadata     `codec:"m" json:"m"`
-}
-
-func (o ConversationIndex) DeepCopy() ConversationIndex {
-	return ConversationIndex{
-		Index: (func(x map[string]map[MessageID]bool) map[string]map[MessageID]bool {
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.InitialPagination),
+		ReindexMode:      o.ReindexMode.DeepCopy(),
+		MaxConvsSearched: o.MaxConvsSearched,
+		MaxConvsHit:      o.MaxConvsHit,
+		ConvID: (func(x *ConversationID) *ConversationID {
 			if x == nil {
 				return nil
 			}
-			ret := make(map[string]map[MessageID]bool, len(x))
-			for k, v := range x {
-				kCopy := k
-				vCopy := (func(x map[MessageID]bool) map[MessageID]bool {
-					if x == nil {
-						return nil
-					}
-					ret := make(map[MessageID]bool, len(x))
-					for k, v := range x {
-						kCopy := k.DeepCopy()
-						vCopy := v
-						ret[kCopy] = vCopy
-					}
-					return ret
-				})(v)
-				ret[kCopy] = vCopy
-			}
-			return ret
-		})(o.Index),
-		Metadata: o.Metadata.DeepCopy(),
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.ConvID),
+		MaxNameConvs: o.MaxNameConvs,
 	}
+}
+
+type EmptyStruct struct {
+}
+
+func (o EmptyStruct) DeepCopy() EmptyStruct {
+	return EmptyStruct{}
 }
 
 type ChatSearchMatch struct {
@@ -2025,14 +2077,20 @@ func (o ChatSearchHit) DeepCopy() ChatSearchHit {
 
 type ChatSearchInboxHit struct {
 	ConvID   ConversationID  `codec:"convID" json:"convID"`
+	TeamType TeamType        `codec:"teamType" json:"teamType"`
 	ConvName string          `codec:"convName" json:"convName"`
+	Query    string          `codec:"query" json:"query"`
+	Time     gregor1.Time    `codec:"time" json:"time"`
 	Hits     []ChatSearchHit `codec:"hits" json:"hits"`
 }
 
 func (o ChatSearchInboxHit) DeepCopy() ChatSearchInboxHit {
 	return ChatSearchInboxHit{
 		ConvID:   o.ConvID.DeepCopy(),
+		TeamType: o.TeamType.DeepCopy(),
 		ConvName: o.ConvName,
+		Query:    o.Query,
+		Time:     o.Time.DeepCopy(),
 		Hits: (func(x []ChatSearchHit) []ChatSearchHit {
 			if x == nil {
 				return nil
@@ -2070,9 +2128,10 @@ func (o ChatSearchInboxResults) DeepCopy() ChatSearchInboxResults {
 }
 
 type ChatSearchInboxDone struct {
-	NumHits        int `codec:"numHits" json:"numHits"`
-	NumConvs       int `codec:"numConvs" json:"numConvs"`
-	PercentIndexed int `codec:"percentIndexed" json:"percentIndexed"`
+	NumHits        int  `codec:"numHits" json:"numHits"`
+	NumConvs       int  `codec:"numConvs" json:"numConvs"`
+	PercentIndexed int  `codec:"percentIndexed" json:"percentIndexed"`
+	Delegated      bool `codec:"delegated" json:"delegated"`
 }
 
 func (o ChatSearchInboxDone) DeepCopy() ChatSearchInboxDone {
@@ -2080,6 +2139,7 @@ func (o ChatSearchInboxDone) DeepCopy() ChatSearchInboxDone {
 		NumHits:        o.NumHits,
 		NumConvs:       o.NumConvs,
 		PercentIndexed: o.PercentIndexed,
+		Delegated:      o.Delegated,
 	}
 }
 

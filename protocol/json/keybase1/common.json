@@ -109,6 +109,12 @@
     },
     {
       "type": "record",
+      "name": "BinaryLinkID",
+      "fields": [],
+      "typedef": "bytes"
+    },
+    {
+      "type": "record",
       "name": "BinaryKID",
       "fields": [],
       "typedef": "bytes"
@@ -241,7 +247,9 @@
         "NONE_0",
         "PUBLIC_1",
         "PRIVATE_2",
-        "SEMIPRIVATE_3"
+        "SEMIPRIVATE_3",
+        "USER_PRIVATE_HIDDEN_16",
+        "TEAM_PRIVATE_HIDDEN_17"
       ]
     },
     {
@@ -792,6 +800,37 @@
         {
           "type": "int",
           "name": "width"
+        }
+      ]
+    },
+    {
+      "type": "enum",
+      "name": "OfflineAvailability",
+      "symbols": [
+        "NONE_0",
+        "BEST_EFFORT_1"
+      ]
+    },
+    {
+      "type": "record",
+      "name": "ReacjiSkinTone",
+      "fields": [],
+      "typedef": "int"
+    },
+    {
+      "type": "record",
+      "name": "UserReacjis",
+      "fields": [
+        {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "name": "topReacjis"
+        },
+        {
+          "type": "ReacjiSkinTone",
+          "name": "skinTone"
         }
       ]
     }

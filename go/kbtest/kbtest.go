@@ -72,7 +72,7 @@ func (fu *FakeUser) Login(g *libkb.GlobalContext) error {
 	uis := libkb.UIs{
 		ProvisionUI: &TestProvisionUI{},
 		LogUI:       g.UI.GetLogUI(),
-		GPGUI:       &gpgtestui{},
+		GPGUI:       &GPGTestUI{},
 		SecretUI:    fu.NewSecretUI(),
 		LoginUI:     &libkb.TestLoginUI{Username: fu.Username},
 	}
@@ -116,10 +116,11 @@ func createAndSignupFakeUser(prefix string, g *libkb.GlobalContext, skipPaper bo
 		SkipMail:                 true,
 		SkipPaper:                skipPaper,
 		GenerateRandomPassphrase: randomPW,
+		StoreSecret:              true,
 	}
 	uis := libkb.UIs{
 		LogUI:    g.UI.GetLogUI(),
-		GPGUI:    &gpgtestui{},
+		GPGUI:    &GPGTestUI{},
 		SecretUI: fu.NewSecretUI(),
 		LoginUI:  &libkb.TestLoginUI{Username: fu.Username},
 	}
@@ -146,7 +147,7 @@ func ResetAccount(tc libkb.TestContext, u *FakeUser) {
 
 func DeleteAccount(tc libkb.TestContext, u *FakeUser) {
 	m := libkb.NewMetaContextForTest(tc)
-	err := libkb.DeleteAccount(m, u.NormalizedUsername(), u.Passphrase)
+	err := libkb.DeleteAccount(m, u.NormalizedUsername(), &u.Passphrase)
 	require.NoError(tc.T, err)
 	tc.T.Logf("Account deleted for user %s", u.Username)
 	Logout(tc)
@@ -157,6 +158,47 @@ func Logout(tc libkb.TestContext) {
 	if err := tc.G.Logout(context.TODO()); err != nil {
 		tc.T.Fatalf("logout error: %s", err)
 	}
+}
+
+// summarized from engine/revoke_test.go
+func RotatePaper(tc libkb.TestContext, u *FakeUser) {
+	uis := libkb.UIs{
+		LogUI:    tc.G.UI.GetLogUI(),
+		LoginUI:  &libkb.TestLoginUI{},
+		SecretUI: &libkb.TestSecretUI{},
+	}
+	eng := engine.NewPaperKey(tc.G)
+	m := libkb.NewMetaContextForTest(tc).WithUIs(uis)
+	err := engine.RunEngine2(m, eng)
+	require.NoError(tc.T, err)
+
+	arg := libkb.NewLoadUserByNameArg(tc.G, u.Username).WithPublicKeyOptional()
+	user, err := libkb.LoadUser(arg)
+	require.NoError(tc.T, err)
+
+	activeDevices := []*libkb.Device{}
+	for _, device := range user.GetComputedKeyFamily().GetAllDevices() {
+		if device.Status != nil && *device.Status == libkb.DeviceStatusActive {
+			activeDevices = append(activeDevices, device)
+		}
+	}
+
+	var revokeDevice *libkb.Device
+	for _, device := range activeDevices {
+		if device.Type == libkb.DeviceTypePaper {
+			revokeDevice = device
+		}
+	}
+	require.NotNil(tc.T, revokeDevice, "no paper key found to revoke")
+
+	revokeEngine := engine.NewRevokeDeviceEngine(tc.G, engine.RevokeDeviceEngineArgs{ID: revokeDevice.ID})
+	uis = libkb.UIs{
+		LogUI:    tc.G.UI.GetLogUI(),
+		SecretUI: u.NewSecretUI(),
+	}
+	m = libkb.NewMetaContextForTest(tc).WithUIs(uis)
+	err = engine.RunEngine2(m, revokeEngine)
+	require.NoError(tc.T, err)
 }
 
 func AssertProvisioned(tc libkb.TestContext) error {
@@ -241,8 +283,6 @@ func ProvisionNewDeviceKex(tcX *libkb.TestContext, tcY *libkb.TestContext, userX
 	}()
 
 	wg.Wait()
-
-	return
 }
 
 type TestProvisionUI struct {
@@ -347,7 +387,7 @@ type fakeIdentifyUI struct {
 	*engine.LoopbackIdentifyUI
 }
 
-func (l *fakeIdentifyUI) Confirm(o *keybase1.IdentifyOutcome) (keybase1.ConfirmResult, error) {
+func (l *fakeIdentifyUI) Confirm(_ libkb.MetaContext, o *keybase1.IdentifyOutcome) (keybase1.ConfirmResult, error) {
 	return keybase1.ConfirmResult{IdentityConfirmed: true, RemoteConfirmed: true}, nil
 }
 
@@ -409,7 +449,7 @@ func GetPhoneVerificationCode(mctx libkb.MetaContext, phoneNumber keybase1.Phone
 		},
 	}
 	var resp getCodeResponse
-	err = mctx.G().API.GetDecode(arg, &resp)
+	err = mctx.G().API.GetDecode(mctx, arg, &resp)
 	if err != nil {
 		return "", err
 	}
@@ -424,7 +464,7 @@ func VerifyEmailAuto(mctx libkb.MetaContext, email keybase1.EmailAddress) error 
 			"email": libkb.S{Val: string(email)},
 		},
 	}
-	_, err := mctx.G().API.Post(arg)
+	_, err := mctx.G().API.Post(mctx, arg)
 	return err
 }
 

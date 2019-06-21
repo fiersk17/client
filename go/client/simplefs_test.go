@@ -1,4 +1,4 @@
-// Copyright 2015 Keybase, Inc. All rights reserved. Use of
+// Copyright 2019 Keybase, Inc. All rights reserved. Use of
 // this source code is governed by the included BSD license.
 
 package client
@@ -212,8 +212,35 @@ func (s SimpleFSMock) SimpleFSReset(_ context.Context, _ keybase1.Path) error {
 	return nil
 }
 
+func (s SimpleFSMock) SimpleFSClearConflictState(_ context.Context,
+	_ keybase1.Path) error {
+	return nil
+}
+
+func (s SimpleFSMock) SimpleFSFinishResolvingConflict(_ context.Context,
+	_ keybase1.Path) error {
+	return nil
+}
+
+func (s SimpleFSMock) SimpleFSForceStuckConflict(_ context.Context,
+	_ keybase1.Path) error {
+	return nil
+}
+
+func (s SimpleFSMock) SimpleFSListFavorites(_ context.Context) (
+	keybase1.FavoritesResult, error) {
+	return keybase1.FavoritesResult{}, nil
+}
+
 // SimpleFSGetUserQuotaUsage implements the SimpleFSInterface.
 func (s SimpleFSMock) SimpleFSGetUserQuotaUsage(ctx context.Context) (
+	keybase1.SimpleFSQuotaUsage, error) {
+	return keybase1.SimpleFSQuotaUsage{}, nil
+}
+
+// SimpleFSGetTeamQuotaUsage implements the SimpleFSInterface.
+func (s SimpleFSMock) SimpleFSGetTeamQuotaUsage(
+	_ context.Context, _ keybase1.TeamName) (
 	keybase1.SimpleFSQuotaUsage, error) {
 	return keybase1.SimpleFSQuotaUsage{}, nil
 }
@@ -228,6 +255,39 @@ func (s SimpleFSMock) SimpleFSFolderSyncConfigAndStatus(
 // SimpleFSFolderSetSyncConfig implements the SimpleFSInterface.
 func (s SimpleFSMock) SimpleFSSetFolderSyncConfig(
 	_ context.Context, _ keybase1.SimpleFSSetFolderSyncConfigArg) error {
+	return nil
+}
+
+// SimpleFSSyncConfigAndStatus implements the SimpleFSInterface.
+func (s SimpleFSMock) SimpleFSSyncConfigAndStatus(
+	_ context.Context) (keybase1.SyncConfigAndStatusRes, error) {
+	return keybase1.SyncConfigAndStatusRes{}, nil
+}
+
+// SimpleFSAreWeConnectedToMDServer implements the SimpleFSInterface.
+func (s SimpleFSMock) SimpleFSAreWeConnectedToMDServer(
+	_ context.Context) (bool, error) {
+	return true, nil
+}
+
+// SimpleFSCheckReachability implements the SimpleFSInterface.
+func (s SimpleFSMock) SimpleFSCheckReachability(
+	_ context.Context) error {
+	return nil
+}
+
+// SimpleFSSetDebugLevel implements the SimpleFSInterface.
+func (s SimpleFSMock) SimpleFSSetDebugLevel(_ context.Context, _ string) error {
+	return nil
+}
+
+// SimpleFSSettings implements the SimpleFSInterface.
+func (s SimpleFSMock) SimpleFSSettings(_ context.Context) (keybase1.FSSettings, error) {
+	return keybase1.FSSettings{}, nil
+}
+
+// SimpleFSSetNotificationThreshold implements the SimpleFSInterface.
+func (s SimpleFSMock) SimpleFSSetNotificationThreshold(_ context.Context, _ int64) error {
 	return nil
 }
 
@@ -248,6 +308,7 @@ func (s SimpleFSMock) SimpleFSSetFolderSyncConfig(
 
 func TestSimpleFSPathRemote(t *testing.T) {
 	tc := libkb.SetupTest(t, "simplefs_path", 0)
+	defer tc.Cleanup()
 
 	testPath, err := makeSimpleFSPath("/keybase/private/foobar")
 	require.NoError(tc.T, err)
@@ -267,6 +328,7 @@ func TestSimpleFSPathRemote(t *testing.T) {
 
 func TestSimpleFSPathLocal(t *testing.T) {
 	tc := libkb.SetupTest(t, "simplefs_path", 0)
+	defer tc.Cleanup()
 
 	testPath, err := makeSimpleFSPath("./foobar")
 	require.NoError(tc.T, err)
@@ -277,6 +339,7 @@ func TestSimpleFSPathLocal(t *testing.T) {
 
 func TestSimpleFSLocalSrcFile(t *testing.T) {
 	tc := libkb.SetupTest(t, "simplefs_path", 0)
+	defer tc.Cleanup()
 
 	// make a temp local dest directory + files we will clean up later
 	tempdir, err := ioutil.TempDir("", "simpleFStest")
@@ -339,6 +402,7 @@ func TestSimpleFSLocalSrcFile(t *testing.T) {
 
 func TestSimpleFSRemoteSrcFile(t *testing.T) {
 	tc := libkb.SetupTest(t, "simplefs_path", 0)
+	defer tc.Cleanup()
 
 	// make a temp local dest directory + files we will clean up later
 	tempdir, err := ioutil.TempDir("", "simpleFstest")
@@ -400,6 +464,7 @@ func TestSimpleFSRemoteSrcFile(t *testing.T) {
 
 func TestSimpleFSLocalSrcDir(t *testing.T) {
 	tc := libkb.SetupTest(t, "simplefs_path", 0)
+	defer tc.Cleanup()
 
 	// make a temp local dest directory + files we will clean up later
 	tempdir, err := ioutil.TempDir("", "simpleFStest")
@@ -467,6 +532,7 @@ func TestSimpleFSLocalSrcDir(t *testing.T) {
 
 func TestSimpleFSRemoteSrcDir(t *testing.T) {
 	tc := libkb.SetupTest(t, "simplefs_path", 0)
+	defer tc.Cleanup()
 
 	// make a temp local dest directory + files we will clean up later
 	tempdir, err := ioutil.TempDir("", "simpleFStest")
@@ -519,13 +585,13 @@ func TestSimpleFSRemoteSrcDir(t *testing.T) {
 	destPath, err = makeDestPath(
 		context.TODO(),
 		tc.G,
-		SimpleFSMock{},
+		testStatter,
 		srcPathInitial,
 		destPathInitial,
 		true,
 		tempdir)
 	require.NoError(tc.T, err, "bad path type")
-	assert.Equal(tc.T, filepath.ToSlash(tempdir), destPath.Local())
+	assert.Equal(tc.T, tempdir, destPath.Local())
 
 	pathType, err = destPath.PathType()
 	require.NoError(tc.T, err, "bad path type")
@@ -535,6 +601,7 @@ func TestSimpleFSRemoteSrcDir(t *testing.T) {
 
 func TestSimpleFSLocalExists(t *testing.T) {
 	tc := libkb.SetupTest(t, "simplefs_path", 0)
+	defer tc.Cleanup()
 
 	// make a temp local dest directory + files we will clean up later
 	tempdir, err := ioutil.TempDir("", "simpleFstest")
@@ -566,6 +633,7 @@ func TestSimpleFSPlatformGlob(t *testing.T) {
 		return
 	}
 	tc := libkb.SetupTest(t, "simplefs_path", 0)
+	defer tc.Cleanup()
 
 	// make a temp local dest directory + files we will clean up later
 	tempdir, err := ioutil.TempDir("", "simpleFstest")

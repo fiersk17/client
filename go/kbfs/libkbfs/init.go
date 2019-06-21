@@ -18,8 +18,10 @@ import (
 	"time"
 
 	"github.com/keybase/client/go/kbconst"
+	"github.com/keybase/client/go/kbfs/data"
 	"github.com/keybase/client/go/kbfs/kbfscrypto"
 	"github.com/keybase/client/go/kbfs/kbfsmd"
+	"github.com/keybase/client/go/kbfs/libkey"
 	"github.com/keybase/client/go/libkb"
 	"github.com/keybase/client/go/logger"
 	"github.com/keybase/client/go/protocol/keybase1"
@@ -43,6 +45,19 @@ const (
 	// resources.
 	InitMemoryLimitedString = "memoryLimited"
 )
+
+// CtxInitTagKey is the type used for unique context tags for KBFS init.
+type CtxInitTagKey int
+
+const (
+	// CtxInitKey is the type of the tag for unique operation IDs
+	// for KBFS init.
+	CtxInitKey CtxInitTagKey = iota
+)
+
+// CtxInitID is the display name for the unique operation
+// init ID tag.
+const CtxInitID = "KBFSINIT"
 
 // AdditionalProtocolCreator creates an additional protocol.
 type AdditionalProtocolCreator func(Context, Config) (rpc.Protocol, error)
@@ -199,7 +214,7 @@ func DefaultInitParams(ctx Context) InitParams {
 		MDServerAddr:      defaultMDServer(ctx),
 		TLFValidDuration:  tlfValidDurationDefault,
 		MetadataVersion:   defaultMetadataVersion(ctx),
-		BlockCryptVersion: kbfscrypto.EncryptionSecretbox,
+		BlockCryptVersion: kbfscrypto.EncryptionSecretboxWithKeyNonce,
 		LogFileConfig: logger.LogFileConfig{
 			MaxAge:       30 * 24 * time.Hour,
 			MaxSize:      128 * 1024 * 1024,
@@ -213,7 +228,7 @@ func DefaultInitParams(ctx Context) InitParams {
 		DiskCacheMode:                  DiskCacheModeLocal,
 		DiskBlockCacheFraction:         0.10,
 		SyncBlockCacheFraction:         1.00,
-		Mode: InitDefaultString,
+		Mode:                           InitDefaultString,
 	}
 }
 
@@ -392,12 +407,14 @@ func makeMDServer(config Config, mdserverAddr string,
 	return mdServer, nil
 }
 
-func makeKeyServer(config Config, keyserverAddr string,
-	log logger.Logger) (KeyServer, error) {
+func makeKeyServer(
+	config Config, keyserverAddr string, log logger.Logger) (
+	libkey.KeyServer, error) {
+	keyOpsConfig := keyOpsConfigWrapper{config}
 	if keyserverAddr == memoryAddr {
 		log.Debug("Using in-memory keyserver")
 		// local in-memory key server
-		return NewKeyServerMemory(config)
+		return libkey.NewKeyServerMemory(keyOpsConfig, log)
 	}
 
 	if len(keyserverAddr) == 0 {
@@ -408,12 +425,12 @@ func makeKeyServer(config Config, keyserverAddr string,
 		log.Debug("Using on-disk keyserver at %s", serverRootDir)
 		// local persistent key server
 		keyPath := filepath.Join(serverRootDir, "kbfs_key")
-		return NewKeyServerDir(config, keyPath)
+		return libkey.NewKeyServerDir(keyOpsConfig, log, keyPath)
 	}
 
 	log.Debug("Using remote keyserver %s (same as mdserver)", keyserverAddr)
 	// currently the MD server also acts as the key server.
-	keyServer, ok := config.MDServer().(KeyServer)
+	keyServer, ok := config.MDServer().(libkey.KeyServer)
 	if !ok {
 		return nil, errors.New("MD server is not a key server")
 	}
@@ -548,6 +565,7 @@ func InitWithLogPrefix(
 			case SIGINT:
 			default:
 				if interruptErr != nil {
+					log.Info("Failed to unmount before exit: %s", interruptErr)
 					os.Exit(1)
 				} else {
 					// Do not return 128 + signal since kbfsfuse is not a shell command
@@ -602,6 +620,8 @@ func doInit(
 	ctx context.Context, kbCtx Context, params InitParams,
 	keybaseServiceCn KeybaseServiceCn, log logger.Logger,
 	logPrefix string) (Config, error) {
+	ctx = CtxWithRandomIDReplayable(ctx, CtxInitKey, CtxInitID, log)
+
 	mode := InitDefault
 	switch params.Mode {
 	case InitDefaultString:
@@ -639,6 +659,12 @@ func doInit(
 			}
 			return lg
 		}, params.StorageRoot, params.DiskCacheMode, kbCtx)
+	config.SetVLogLevel(kbCtx.GetVDebugSetting())
+	if mode == InitConstrained {
+		// Until we have a way to turn on debug logging for mobile,
+		// log everything.
+		config.SetVLogLevel(libkb.VLog1String)
+	}
 
 	if params.CleanBlockCacheCapacity > 0 {
 		log.CDebugf(
@@ -655,8 +681,8 @@ func doInit(
 	config.SetBlockOps(NewBlockOpsStandard(
 		config, workers, prefetchWorkers, throttledPrefetchPeriod))
 
-	bsplitter, err := NewBlockSplitterSimple(MaxBlockSizeBytesDefault, 8*1024,
-		config.Codec())
+	bsplitter, err := data.NewBlockSplitterSimple(
+		data.MaxBlockSizeBytesDefault, 8*1024, config.Codec())
 	if err != nil {
 		return nil, err
 	}
@@ -672,7 +698,8 @@ func doInit(
 		config.SetKeyCache(keyCache)
 
 		keyBundleCache := config.KeyBundleCache()
-		keyBundleCache = NewKeyBundleCacheMeasured(keyBundleCache, registry)
+		keyBundleCache = libkey.NewKeyBundleCacheMeasured(
+			keyBundleCache, registry)
 		config.SetKeyBundleCache(keyBundleCache)
 	}
 
@@ -694,16 +721,16 @@ func doInit(
 		return nil, fmt.Errorf("problem creating service: %s", err)
 	}
 
+	// Initialize KBPKI client (needed for KBFSOps, MD Server, and Chat).
+	k := NewKBPKIClient(config, kbfsLog)
+	config.SetKBPKI(k)
+
 	// Initialize Chat client (for file edit notifications).
 	chat, err := keybaseServiceCn.NewChat(config, params, kbCtx, kbfsLog)
 	if err != nil {
 		return nil, fmt.Errorf("problem creating chat: %s", err)
 	}
 	config.SetChat(chat)
-
-	// Initialize KBPKI client (needed for KBFSOps and MD Server).
-	k := NewKBPKIClient(config, kbfsLog)
-	config.SetKBPKI(k)
 
 	kbfsOps := NewKBFSOpsStandard(kbCtx, config)
 	config.SetKBFSOps(kbfsOps)
@@ -746,7 +773,7 @@ func doInit(
 		return nil, fmt.Errorf("problem creating key server: %+v", err)
 	}
 	if registry := config.MetricsRegistry(); registry != nil {
-		keyServer = NewKeyServerMeasured(keyServer, registry)
+		keyServer = libkey.NewKeyServerMeasured(keyServer, registry)
 	}
 	config.SetKeyServer(keyServer)
 
@@ -763,6 +790,12 @@ func doInit(
 
 	config.SetDiskBlockCacheFraction(params.DiskBlockCacheFraction)
 	config.SetSyncBlockCacheFraction(params.SyncBlockCacheFraction)
+
+	err = config.EnableDiskLimiter(params.StorageRoot)
+	if err != nil {
+		log.CWarningf(ctx, "Could not enable disk limiter: %+v", err)
+		return nil, err
+	}
 
 	err = config.MakeDiskBlockCacheIfNotExists()
 	if err != nil {
@@ -808,9 +841,6 @@ func doInit(
 	if err != nil {
 		log.CWarningf(ctx,
 			"Could not initialize block metadata store: %+v", err)
-		return nil, err
-		// TODO (KBFS-3659): when we can open levelDB read-only, re-enable
-		//                   this, instead of failing the init.
 		/*
 			notification := &keybase1.FSNotification{
 				StatusCode:       keybase1.FSStatusCode_ERROR,
@@ -836,11 +866,6 @@ func doInit(
 		}
 	}
 
-	err = config.EnableDiskLimiter(params.StorageRoot)
-	if err != nil {
-		log.CWarningf(ctx, "Could not enable disk limiter: %+v", err)
-		return nil, err
-	}
 	ctx10s, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	// TODO: Don't turn on journaling if either -bserver or
@@ -862,6 +887,10 @@ func doInit(
 	log.CDebugf(ctx, "Enabling a dir op batch size of %d",
 		params.BGFlushDirOpBatchSize)
 	config.SetBGFlushDirOpBatchSize(params.BGFlushDirOpBatchSize)
+
+	if config.Mode().OldStorageRootCleaningEnabled() {
+		go cleanOldTempStorageRoots(config)
+	}
 
 	return config, nil
 }

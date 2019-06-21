@@ -130,6 +130,7 @@ func TestTeamDetailsAsImplicitAdmin(t *testing.T) {
 
 	t.Logf("loads the subteam")
 	team, err := Details(context.Background(), tcs[0].G, teamName.String()+".bbb")
+	require.NoError(t, err)
 	require.Len(t, team.Members.Owners, 0, "should be no team members in subteam")
 	require.Len(t, team.Members.Admins, 0, "should be no team members in subteam")
 	require.Len(t, team.Members.Writers, 0, "should be no team members in subteam")
@@ -253,7 +254,9 @@ func createTeam2(tc libkb.TestContext) (keybase1.TeamName, keybase1.TeamID) {
 	teamNameS := createTeam(tc)
 	teamName, err := keybase1.TeamNameFromString(teamNameS)
 	require.NoError(tc.T, err)
-	return teamName, teamName.ToPrivateTeamID()
+	id := teamName.ToPrivateTeamID()
+	tc.T.Logf("created team %s: %s", id, teamName)
+	return teamName, id
 }
 
 func createSubteam(tc *libkb.TestContext, parent keybase1.TeamName, subteamNamePart string) (keybase1.TeamName, keybase1.TeamID) {

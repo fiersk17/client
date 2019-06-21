@@ -59,10 +59,10 @@ Mute a conversation:
     {"method": "setstatus", "params": {"options": {"channel": {"name": "you,them"}, "status": "muted"}}}
 
 Search the inbox:
-    {"method": "searchinbox", "params": {"options": {"query": "hi", "sent_by": "you", "max_hits": 1000, "sent_after":"09/10/2017"}}}
+    {"method": "searchinbox", "params": {"options": {"query": "hi", "sent_by": "them", "sent_to": "you", "max_hits": 1000, "sent_after":"09/10/2017"}}}
 
 Search conversation with a regex:
-    {"method": "searchregexp", "params": {"options": {"channel": {"name": "you,them"}, "query": "a.*", "is_regex": true, "sent_by": "you", "sent_before":"09/10/2017"}}}
+    {"method": "searchregexp", "params": {"options": {"channel": {"name": "you,them"}, "query": "a.*", "is_regex": true, "sent_by": "them", "sent_to": "you", "sent_before":"09/10/2017"}}}
 
 Read a team conversation:
     {"method": "read", "params": {"options": {"channel": {"name": "treehouse", "members_type": "team", "topic_name": "general"}}}}
@@ -84,4 +84,13 @@ Join a team conversation:
 
 Leave a team conversation:
     {"method": "leave", "params": {"options": {"channel": {"name": "treehouse", "members_type": "team", "topic_name": "random"}}}}
+
+Load a flip's result:
+    {"method": "loadflip", "params": {"options": {"conversation_id": "...", "flip_conversation_id": "...", "msg_id": 72, "game_id": "..."}}}
+
+Get unfurl settings:
+    {"method": "getunfurlsettings"}
+
+Set unfurl setings (thumbnails for sent links):
+    {"method": "setunfurlsettings", "params": {"options":{"mode": "always/never/whitelisted", "whitelist":["example.com"]}}}
 `

@@ -112,9 +112,8 @@ func (hsc *HighSigChain) LoadFromServer(m MetaContext, t *MerkleTriple, selfUID 
 		Endpoint:    "sig/get_high",
 		SessionType: APISessionTypeOPTIONAL,
 		Args:        HTTPArgs{"uid": S{Val: hsc.uid.String()}},
-		MetaContext: m,
 	}
-	resp, finisher, err := m.G().API.GetResp(apiArg)
+	resp, finisher, err := m.G().API.GetResp(m, apiArg)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +161,7 @@ func (hsc *HighSigChain) LoadFromServer(m MetaContext, t *MerkleTriple, selfUID 
 }
 
 func (hsc *HighSigChain) VerifyChain(m MetaContext) (err error) {
-	defer m.CTrace("HighSigChain.VerifyChain", func() error { return err })()
+	defer m.Trace("HighSigChain.VerifyChain", func() error { return err })()
 
 	for i := len(hsc.chainLinks) - 1; i >= 0; i-- {
 		curr := hsc.chainLinks[i]

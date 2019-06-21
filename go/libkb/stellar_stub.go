@@ -21,8 +21,6 @@ func newNullStellar(g *GlobalContext) *nullStellar {
 	return &nullStellar{NewContextified(g)}
 }
 
-func (n *nullStellar) OnLogout() {}
-
 func (n *nullStellar) CreateWalletSoft(ctx context.Context) {
 	n.G().Log.CErrorf(ctx, "null stellar impl")
 }
@@ -57,4 +55,8 @@ func (n *nullStellar) HandleOobm(context.Context, gregor.OutOfBandMessage) (bool
 
 func (n *nullStellar) RemovePendingTx(MetaContext, stellar1.AccountID, stellar1.TransactionID) error {
 	return errors.New("nullStellar RemovePendingTx")
+}
+
+func (n *nullStellar) KnownCurrencyCodeInstant(context.Context, string) (bool, bool) {
+	return false, false
 }

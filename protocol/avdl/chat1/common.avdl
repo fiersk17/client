@@ -11,9 +11,11 @@
   @typedef("bytes")  record TLFID {}
   @typedef("bytes")  record Hash {}
   @typedef("uint64") @lint("ignore") record InboxVers {}
+  @typedef("uint64") @lint("ignore") record LocalConversationVers {}
   @typedef("uint64") @lint("ignore") record ConversationVers {}
   @typedef("bytes")  record OutboxID {}
   @typedef("bytes")  record TopicNameState {}
+  @typedef("bytes")  record FlipGameID {}
 
   record InboxVersInfo {
     gregor1.UID uid;
@@ -58,7 +60,8 @@
     REACTION_13,
     SENDPAYMENT_14,
     REQUESTPAYMENT_15,
-    UNFURL_16
+    UNFURL_16,
+    FLIP_17
   }
 
   @go("nostring")
@@ -155,6 +158,7 @@
     bytes previous;
     int num; // Number of items requested when argument, and number returned when result
     boolean last; // Will be true if the number of results is less than requested
+    boolean forceFirstPage; // Let downstream consumers of this Pagination know this is an initial request
   }
 
   record RateLimit {
@@ -172,6 +176,7 @@
     union { null, gregor1.Time } before;
     union { null, gregor1.Time } after;
     union { null, boolean } oneChatTypePerTLF;
+    union { null, string } topicName; // used only by local inbox cache
 
     // If left empty, default is to show unfiled and favorite
     array<ConversationStatus> status;
@@ -229,6 +234,7 @@
     TeamType teamType;
     ConversationExistence existence;
     ConversationVers version;
+    LocalConversationVers localVersion;
 
     // Finalize info for underlying TLF (only makes sense for KBFS convos)
     union { null, ConversationFinalizeInfo } finalizeInfo;
@@ -326,6 +332,7 @@
     array<MessageID> reactionIDs;
     @mpackkey("u") @jsonkey("u")
     array<MessageID> unfurlIDs;
+    array<MessageID> replies;
     gregor1.Time ctime;
     // server's view of now(), used to calculate ephemeral lifetimes
     @mpackkey("n") @jsonkey("n")
@@ -531,37 +538,46 @@
     PREPARE_5,
     SEARCHER_6,
     INDEXED_SEARCH_7,
-    KBFSFILEACTIVITY_8
+    KBFSFILEACTIVITY_8,
+    COINFLIP_9
+  }
+
+  enum ReIndexingMode {
+    NONE_0,
+    PRESEARCH_SYNC_1,
+    POSTSEARCH_SYNC_2
   }
 
   record SearchOpts {
+    boolean isRegex;
+
+    // message filters
     string sentBy;
+    string sentTo;
+    // only set to true if sentTo is the current user.
+    boolean matchMentions;
     gregor1.Time sentBefore;
     gregor1.Time sentAfter;
+
+    // search parameters
     int maxHits;
     // only used by regexp search
     int maxMessages;
     int beforeContext;
     int afterContext;
+    union { null, Pagination } initialPagination;
     // only used by in inbox search
-    boolean forceReindex;
-    int maxConvs;
+    ReIndexingMode reindexMode;
+    int maxConvsSearched;
+    int maxConvsHit;
+    union { null, ConversationID } convID;
+    // only used by conversation name search
+    int maxNameConvs;
   }
 
-  record ConversationIndexMetadata {
-    @mpackkey("s") @jsonkey("s")
-    map<MessageID, boolean> seenIDs;
-    @mpackkey("v") @jsonkey("v")
-    int version;
-  }
-
-  record ConversationIndex {
-    // search token -> msgID
-    @mpackkey("i") @jsonkey("i")
-    map<string, map<MessageID, boolean>> index;
-    @mpackkey("m") @jsonkey("m")
-    ConversationIndexMetadata metadata;
-  }
+  // The search indexer uses the EmptyStruct to implement a set using a map
+  // with a zero sized value.
+  record EmptyStruct{}
 
   record ChatSearchMatch {
     int startIndex;
@@ -578,7 +594,10 @@
 
   record ChatSearchInboxHit {
     ConversationID convID;
+    TeamType teamType;
     string convName;
+    string query;
+    gregor1.Time time;
     array<ChatSearchHit> hits;
   }
 
@@ -591,6 +610,7 @@
     int numHits;
     int numConvs;
     int percentIndexed;
+    boolean delegated;
   }
 
   record ChatSearchIndexStatus {
@@ -647,5 +667,4 @@
     AssetMetadata metadata;    // type-specific metadata
     AssetTag tag;              // for multiple previews, a tag to differentiate
   }
-
 }

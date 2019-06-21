@@ -19,28 +19,22 @@
       "followsYou": "boolean",
       "fullname": "string",
       "location": "string",
+      "registeredForAirdrop": "boolean",
       "username": "string",
-      "teamShowcase": "Array<Types._TeamShowcase>"
+      "teamShowcase": "Array<Types._TeamShowcase>",
+      "blocked": "boolean"
     },
     "updateResult": {
       "guiID": "string",
       "result": "Types.DetailsState",
-      "reason": "?string"
+      "reason": "string | null"
     },
     "closeTracker": {
       "guiID": "string"
     },
     "updateAssertion": {
-      "guiID": "string",
-      "type": "string",
-      "value": "string",
-      "sigID": "string",
-      "siteURL": "string",
-      "siteIcon": "string",
-      "proofURL": "string",
-      "state": "Types.AssertionState",
-      "metas": "Array<Types._AssertionMeta>",
-      "color": "Types.AssertionColor"
+      "assertion": "Types.Assertion",
+      "guiID": "string"
     },
     "changeFollow": {
       "guiID": "string",
@@ -55,6 +49,12 @@
       "followers": "Array<{following: boolean, followsYou: boolean, fullname: string, username: string}>"
     },
     "getProofSuggestions": {},
-    "proofSuggestionsUpdated": {"suggestions": "$ReadOnlyArray<Types.Assertion>"}
+    "proofSuggestionsUpdated": {"suggestions": "ReadonlyArray<Types.Assertion>"},
+    "showUser": {
+      "_description": "Short term until new nav, a convenience to show a card from inside the app",
+      "asTracker": "boolean",
+      "username": "string",
+      "skipNav?": "boolean"
+    }
   }
 }

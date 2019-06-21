@@ -7,28 +7,32 @@ package libkbfs
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
+	"time"
 
+	"github.com/keybase/client/go/kbfs/data"
 	"github.com/keybase/client/go/kbfs/kbfsblock"
 	billy "gopkg.in/src-d/go-billy.v4"
 )
 
 // nodeCore holds info shared among one or more nodeStandard objects.
 type nodeCore struct {
-	pathNode  *pathNode
+	pathNode  *data.PathNode
 	parent    Node
 	cache     *nodeCacheStandard
-	entryType EntryType
+	entryType data.EntryType
 	// used only when parent is nil (the object has been unlinked)
-	cachedPath path
-	cachedDe   DirEntry
+	cachedPath data.Path
+	cachedDe   data.DirEntry
+	obfuscator data.Obfuscator
 }
 
 func newNodeCore(
-	ptr BlockPointer, name string, parent Node,
-	cache *nodeCacheStandard, et EntryType) *nodeCore {
+	ptr data.BlockPointer, name string, parent Node,
+	cache *nodeCacheStandard, et data.EntryType) *nodeCore {
 	return &nodeCore{
-		pathNode: &pathNode{
+		pathNode: &data.PathNode{
 			BlockPointer: ptr,
 			Name:         name,
 		},
@@ -36,6 +40,14 @@ func newNodeCore(
 		cache:     cache,
 		entryType: et,
 	}
+}
+
+func newNodeCoreForDir(
+	ptr data.BlockPointer, name string, parent Node,
+	cache *nodeCacheStandard, obfuscator data.Obfuscator) *nodeCore {
+	nc := newNodeCore(ptr, name, parent, cache, data.Dir)
+	nc.obfuscator = obfuscator
+	return nc
 }
 
 func (c *nodeCore) ParentID() NodeID {
@@ -80,12 +92,12 @@ func (n *nodeStandard) GetID() NodeID {
 	return n.core
 }
 
-func (n *nodeStandard) GetFolderBranch() FolderBranch {
+func (n *nodeStandard) GetFolderBranch() data.FolderBranch {
 	return n.core.cache.folderBranch
 }
 
 func (n *nodeStandard) GetBasename() string {
-	if len(n.core.cachedPath.path) > 0 {
+	if len(n.core.cachedPath.Path) > 0 {
 		// Must be unlinked.
 		return ""
 	}
@@ -97,8 +109,8 @@ func (n *nodeStandard) Readonly(_ context.Context) bool {
 }
 
 func (n *nodeStandard) ShouldCreateMissedLookup(ctx context.Context, _ string) (
-	bool, context.Context, EntryType, string) {
-	return false, ctx, File, ""
+	bool, context.Context, data.EntryType, os.FileInfo, string) {
+	return false, ctx, data.File, nil, ""
 }
 
 func (n *nodeStandard) ShouldRetryOnDirRead(ctx context.Context) bool {
@@ -126,6 +138,12 @@ func (n *nodeStandard) GetFile(_ context.Context) billy.File {
 	return nil
 }
 
-func (n *nodeStandard) EntryType() EntryType {
+func (n *nodeStandard) EntryType() data.EntryType {
 	return n.core.entryType
+}
+
+func (n *nodeStandard) FillCacheDuration(d *time.Duration) {}
+
+func (n *nodeStandard) Obfuscator() data.Obfuscator {
+	return n.core.obfuscator
 }

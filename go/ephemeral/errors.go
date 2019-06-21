@@ -1,13 +1,14 @@
 package ephemeral
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"github.com/keybase/client/go/libkb"
+	"github.com/keybase/client/go/protocol/chat1"
 	"github.com/keybase/client/go/protocol/gregor1"
 	"github.com/keybase/client/go/protocol/keybase1"
+	"github.com/keybase/client/go/teams"
 )
 
 type EKType string
@@ -27,28 +28,60 @@ type EphemeralKeyError struct {
 const (
 	DefaultHumanErrMsg                          = "This exploding message is not available to you"
 	DeviceProvisionedAfterContentCreationErrMsg = "this device was created after the message was sent"
+	MemberAddedAfterContentCreationErrMsg       = "you were added to the team after this message was sent"
 	DeviceCloneErrMsg                           = "cloned devices do not support exploding messages"
 )
 
-func newEKUnboxErr(ctx context.Context, g *libkb.GlobalContext, boxType EKType, boxGeneration keybase1.EkGeneration,
+func NewNotAuthenticatedForThisDeviceError(mctx libkb.MetaContext, tlfID chat1.TLFID, contentCtime gregor1.Time) EphemeralKeyError {
+	var humanMsg string
+	memberCtime, err := memberCtime(mctx, tlfID)
+	if err != nil {
+		mctx.Debug("unable to get member ctime: %v", err)
+	} else if memberCtime != nil {
+		mctx.Debug("NotAuthenticatedForThisDeviceError: tlfID %v, memberCtime: %v, contentCtime: %v", tlfID, memberCtime.Time(), contentCtime.Time())
+		if contentCtime.Before(gregor1.Time(*memberCtime)) {
+			humanMsg = MemberAddedAfterContentCreationErrMsg
+		}
+	}
+	return newEphemeralKeyError("message not authenticated for device", humanMsg)
+}
+
+func memberCtime(mctx libkb.MetaContext, tlfID chat1.TLFID) (*keybase1.Time, error) {
+	teamID, err := keybase1.TeamIDFromString(tlfID.String())
+	if err != nil {
+		return nil, err
+	}
+	team, err := teams.Load(mctx.Ctx(), mctx.G(), keybase1.LoadTeamArg{
+		ID: keybase1.TeamID(teamID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	uv, err := mctx.G().GetMeUV(mctx.Ctx())
+	if err != nil {
+		return nil, err
+	}
+	return team.MemberCtime(mctx.Ctx(), uv), nil
+}
+
+func newEKUnboxErr(mctx libkb.MetaContext, boxType EKType, boxGeneration keybase1.EkGeneration,
 	missingType EKType, missingGeneration keybase1.EkGeneration, contentCtime *gregor1.Time) EphemeralKeyError {
 	debugMsg := fmt.Sprintf("Error unboxing %s@generation:%v missing %s@generation:%v", boxType, boxGeneration, missingType, missingGeneration)
 	var humanMsg string
-	if deviceProvisionedAfterContentCreation(ctx, g, contentCtime) {
+	if deviceProvisionedAfterContentCreation(mctx, contentCtime) {
 		humanMsg = DeviceProvisionedAfterContentCreationErrMsg
-	} else if deviceIsCloned(ctx, g) {
+	} else if deviceIsCloned(mctx) {
 		humanMsg = DeviceCloneErrMsg
 	}
 	return newEphemeralKeyError(debugMsg, humanMsg)
 }
 
-func newEKMissingBoxErr(ctx context.Context, g *libkb.GlobalContext,
-	boxType EKType, boxGeneration keybase1.EkGeneration) EphemeralKeyError {
+func newEKMissingBoxErr(mctx libkb.MetaContext, boxType EKType, boxGeneration keybase1.EkGeneration) EphemeralKeyError {
 	debugMsg := fmt.Sprintf("Missing box for %s@generation:%v", boxType, boxGeneration)
 	return newEphemeralKeyError(debugMsg, "")
 }
 
-func newEKCorruptedErr(ctx context.Context, g *libkb.GlobalContext, boxType EKType,
+func newEKCorruptedErr(mctx libkb.MetaContext, boxType EKType,
 	expectedGeneration, boxGeneration keybase1.EkGeneration) EphemeralKeyError {
 	debugMsg := fmt.Sprintf("Storage error for %s@generation:%v, got generation %v instead", boxType, boxGeneration, expectedGeneration)
 	return newEphemeralKeyError(debugMsg, "")
@@ -58,7 +91,7 @@ func humanMsgWithPrefix(humanMsg string) string {
 	if humanMsg == "" {
 		humanMsg = DefaultHumanErrMsg
 	} else if !strings.Contains(humanMsg, DefaultHumanErrMsg) {
-		humanMsg = fmt.Sprintf("%s. %s", DefaultHumanErrMsg, humanMsg)
+		humanMsg = fmt.Sprintf("%s, %s", DefaultHumanErrMsg, humanMsg)
 	}
 	return humanMsg
 }
@@ -104,23 +137,21 @@ func errFromAppStatus(e error) error {
 	return e
 }
 
-func deviceProvisionedAfterContentCreation(ctx context.Context, g *libkb.GlobalContext, contentCtime *gregor1.Time) bool {
+func deviceProvisionedAfterContentCreation(mctx libkb.MetaContext, contentCtime *gregor1.Time) bool {
 	// some callers may not specify a creation time if they aren't trying to
 	// decrypt a specific piece of content.
 	if contentCtime == nil {
 		return false
 	}
-	m := libkb.NewMetaContext(ctx, g)
-	deviceCtime, err := g.ActiveDevice.Ctime(m)
+	deviceCtime, err := mctx.ActiveDevice().Ctime(mctx)
 	if err != nil {
 		return false
 	}
 	return contentCtime.Time().Before(deviceCtime.Time())
 }
 
-func deviceIsCloned(ctx context.Context, g *libkb.GlobalContext) bool {
-	m := libkb.NewMetaContext(ctx, g)
-	cloneState, err := libkb.GetDeviceCloneState(m)
+func deviceIsCloned(mctx libkb.MetaContext) bool {
+	cloneState, err := libkb.GetDeviceCloneState(mctx)
 	if err != nil {
 		return false
 	}

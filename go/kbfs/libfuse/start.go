@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 
+	"bazil.org/fuse"
 	"github.com/keybase/client/go/kbfs/libfs"
 	"github.com/keybase/client/go/kbfs/libgit"
 	"github.com/keybase/client/go/kbfs/libkbfs"
@@ -122,7 +123,7 @@ func Start(options StartOptions, kbCtx libkbfs.Context) *libfs.Error {
 		if err != nil {
 			return libfs.InitError(err.Error())
 		}
-		info := libkb.NewServiceInfo(libkbfs.Version, libkbfs.PrereleaseBuild, options.Label, os.Getpid())
+		info := libkb.NewServiceInfo(libkb.Version, libkbfs.PrereleaseBuild, options.Label, os.Getpid())
 		err = info.WriteFile(path.Join(options.RuntimeDir, "kbfs.info"), log)
 		if err != nil {
 			return libfs.InitError(err.Error())
@@ -138,6 +139,14 @@ func Start(options StartOptions, kbCtx libkbfs.Context) *libfs.Error {
 		return libfs.InitError(err.Error())
 	}
 	defer libkbfs.Shutdown()
+
+	libfs.AddRootWrapper(config)
+
+	if options.KbfsParams.Debug {
+		fuseLog := config.MakeLogger("FUSE").CloneWithAddedDepth(1)
+		fuse.Debug = MakeFuseVDebugFn(
+			config.MakeVLogger(fuseLog), false /* superVerbose */)
+	}
 
 	// Report "startup successful" to the supervisor (currently just systemd on
 	// Linux). This isn't necessary for correctness, but it allows commands

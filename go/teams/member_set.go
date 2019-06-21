@@ -30,6 +30,24 @@ func newMemberSet() *memberSet {
 	return &memberSet{recipients: make(MemberMap)}
 }
 
+func (m MemberMap) Eq(n MemberMap) bool {
+	if m == nil && n == nil {
+		return true
+	}
+	if m == nil || n == nil {
+		return false
+	}
+	if len(m) != len(n) {
+		return false
+	}
+	for k, v := range m {
+		if n[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
 func newMemberSetChange(ctx context.Context, g *libkb.GlobalContext, req keybase1.TeamChangeReq) (*memberSet, error) {
 	set := newMemberSet()
 	if err := set.loadMembers(ctx, g, req, true /* forcePoll*/); err != nil {
@@ -135,7 +153,7 @@ func loadUPAK2(ctx context.Context, g *libkb.GlobalContext, uid keybase1.UID, fo
 }
 
 func parseSocialAssertion(m libkb.MetaContext, username string) (typ string, name string, err error) {
-	assertion, err := libkb.ParseAssertionURL(m.G().MakeAssertionContext(), username, false)
+	assertion, err := libkb.ParseAssertionURL(m.G().MakeAssertionContext(m), username, false)
 	if err != nil {
 		return "", "", err
 	}

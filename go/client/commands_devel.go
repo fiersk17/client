@@ -30,7 +30,7 @@ func getBuildSpecificCommands(cl *libcmdline.CommandLine, g *libkb.GlobalContext
 		newCmdTeamRotateKey(cl, g),
 		newCmdTeamDebug(cl, g),
 		newCmdScript(cl, g),
-		newCmdUploadAvatar(cl, g),
+		NewCmdContactLookup(cl, g),
 	}
 }
 
@@ -46,6 +46,9 @@ func getBuildSpecificChatCommands(cl *libcmdline.CommandLine, g *libkb.GlobalCon
 func getBuildSpecificAccountCommands(cl *libcmdline.CommandLine, g *libkb.GlobalContext) []cli.Command {
 	return []cli.Command{
 		NewCmdAccountReset(cl, g),
+		NewCmdAccountResetStart(cl, g),
+		NewCmdAccountResetCancel(cl, g),
+		NewCmdAccountResetTimeTravel(cl, g),
 	}
 }
 
@@ -65,6 +68,7 @@ func getBuildSpecificLogCommands(cl *libcmdline.CommandLine, g *libkb.GlobalCont
 func getBuildSpecificFSCommands(cl *libcmdline.CommandLine, g *libkb.GlobalContext) []cli.Command {
 	return []cli.Command{
 		NewCmdSimpleFSUpgrade(cl, g),
+		NewCmdSimpleFSForceConflict(cl, g),
 	}
 }
 

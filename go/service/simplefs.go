@@ -73,6 +73,18 @@ func (s *SimpleFSHandler) SimpleFSListRecursive(ctx context.Context, arg keybase
 	return cli.SimpleFSListRecursive(ctx, arg)
 }
 
+// SimpleFSFolderSetSyncConfig implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSListFavorites(ctx context.Context) (
+	keybase1.FavoritesResult, error) {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return keybase1.FavoritesResult{}, err
+	}
+	return cli.SimpleFSListFavorites(ctx)
+}
+
 // SimpleFSListRecursiveToDepth - Begin recursive list of items in directory at
 // path to a given depth.
 func (s *SimpleFSHandler) SimpleFSListRecursiveToDepth(ctx context.Context, arg keybase1.SimpleFSListRecursiveToDepthArg) error {
@@ -398,6 +410,19 @@ func (s *SimpleFSHandler) SimpleFSGetUserQuotaUsage(ctx context.Context) (
 	return cli.SimpleFSGetUserQuotaUsage(ctx)
 }
 
+// SimpleFSGetTeamQuotaUsage implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSGetTeamQuotaUsage(
+	ctx context.Context, teamName keybase1.TeamName) (
+	keybase1.SimpleFSQuotaUsage, error) {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return keybase1.SimpleFSQuotaUsage{}, err
+	}
+	return cli.SimpleFSGetTeamQuotaUsage(ctx, teamName)
+}
+
 // SimpleFSFolderSyncConfigAndStatus implements the SimpleFSInterface.
 func (s *SimpleFSHandler) SimpleFSFolderSyncConfigAndStatus(
 	ctx context.Context, path keybase1.Path) (
@@ -421,4 +446,111 @@ func (s *SimpleFSHandler) SimpleFSSetFolderSyncConfig(
 		return err
 	}
 	return cli.SimpleFSSetFolderSyncConfig(ctx, arg)
+}
+
+// SimpleFSSyncConfigAndStatus implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSSyncConfigAndStatus(
+	ctx context.Context) (keybase1.SyncConfigAndStatusRes, error) {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return keybase1.SyncConfigAndStatusRes{}, err
+	}
+	return cli.SimpleFSSyncConfigAndStatus(ctx)
+}
+
+// SimpleFSClearConflictState implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSClearConflictState(ctx context.Context,
+	path keybase1.Path) error {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return err
+	}
+	return cli.SimpleFSClearConflictState(ctx, path)
+}
+
+// SimpleFSFinishResolvingConflict implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSFinishResolvingConflict(ctx context.Context,
+	path keybase1.Path) error {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return err
+	}
+	return cli.SimpleFSFinishResolvingConflict(ctx, path)
+}
+
+// SimpleFSForceStuckConflict implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSForceStuckConflict(
+	ctx context.Context, path keybase1.Path) error {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return err
+	}
+	return cli.SimpleFSForceStuckConflict(ctx, path)
+}
+
+// SimpleFSAreWeConnectedToMDServer implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSAreWeConnectedToMDServer(
+	ctx context.Context) (bool, error) {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return false, err
+	}
+	return cli.SimpleFSAreWeConnectedToMDServer(ctx)
+}
+
+// SimpleFSCheckReachability implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSCheckReachability(ctx context.Context) error {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return err
+	}
+	return cli.SimpleFSCheckReachability(ctx)
+}
+
+// SimpleFSSetDebugLevel implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSSetDebugLevel(
+	ctx context.Context, level string) error {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return err
+	}
+	return cli.SimpleFSSetDebugLevel(ctx, level)
+}
+
+// SimpleFSSettings implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSSettings(
+	ctx context.Context) (keybase1.FSSettings, error) {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return keybase1.FSSettings{}, err
+	}
+	return cli.SimpleFSSettings(ctx)
+}
+
+// SimpleFSSetNotificationThreshold implements the SimpleFSInterface.
+func (s *SimpleFSHandler) SimpleFSSetNotificationThreshold(
+	ctx context.Context, threshold int64) error {
+	ctx, cancel := s.wrapContextWithTimeout(ctx)
+	defer cancel()
+	cli, err := s.client()
+	if err != nil {
+		return err
+	}
+	return cli.SimpleFSSetNotificationThreshold(ctx, threshold)
 }

@@ -4,11 +4,12 @@
 package keybase1
 
 import (
+	"errors"
 	"github.com/keybase/go-framed-msgpack-rpc/rpc"
 	context "golang.org/x/net/context"
 )
 
-type GetCurrentStatusRes struct {
+type CurrentStatus struct {
 	Configured     bool  `codec:"configured" json:"configured"`
 	Registered     bool  `codec:"registered" json:"registered"`
 	LoggedIn       bool  `codec:"loggedIn" json:"loggedIn"`
@@ -16,8 +17,8 @@ type GetCurrentStatusRes struct {
 	User           *User `codec:"user,omitempty" json:"user,omitempty"`
 }
 
-func (o GetCurrentStatusRes) DeepCopy() GetCurrentStatusRes {
-	return GetCurrentStatusRes{
+func (o CurrentStatus) DeepCopy() CurrentStatus {
+	return CurrentStatus{
 		Configured:     o.Configured,
 		Registered:     o.Registered,
 		LoggedIn:       o.LoggedIn,
@@ -78,6 +79,20 @@ func (o ClientDetails) DeepCopy() ClientDetails {
 	}
 }
 
+type ClientStatus struct {
+	Details              ClientDetails        `codec:"details" json:"details"`
+	ConnectionID         int                  `codec:"connectionID" json:"connectionID"`
+	NotificationChannels NotificationChannels `codec:"notificationChannels" json:"notificationChannels"`
+}
+
+func (o ClientStatus) DeepCopy() ClientStatus {
+	return ClientStatus{
+		Details:              o.Details.DeepCopy(),
+		ConnectionID:         o.ConnectionID,
+		NotificationChannels: o.NotificationChannels.DeepCopy(),
+	}
+}
+
 type PlatformInfo struct {
 	Os        string `codec:"os" json:"os"`
 	OsVersion string `codec:"osVersion" json:"osVersion"`
@@ -106,29 +121,46 @@ func (o LoadDeviceErr) DeepCopy() LoadDeviceErr {
 	}
 }
 
+type DirSizeInfo struct {
+	NumFiles  int    `codec:"numFiles" json:"numFiles"`
+	Name      string `codec:"name" json:"name"`
+	HumanSize string `codec:"humanSize" json:"humanSize"`
+}
+
+func (o DirSizeInfo) DeepCopy() DirSizeInfo {
+	return DirSizeInfo{
+		NumFiles:  o.NumFiles,
+		Name:      o.Name,
+		HumanSize: o.HumanSize,
+	}
+}
+
 type ExtendedStatus struct {
-	Standalone             bool            `codec:"standalone" json:"standalone"`
-	PassphraseStreamCached bool            `codec:"passphraseStreamCached" json:"passphraseStreamCached"`
-	TsecCached             bool            `codec:"tsecCached" json:"tsecCached"`
-	DeviceSigKeyCached     bool            `codec:"deviceSigKeyCached" json:"deviceSigKeyCached"`
-	DeviceEncKeyCached     bool            `codec:"deviceEncKeyCached" json:"deviceEncKeyCached"`
-	PaperSigKeyCached      bool            `codec:"paperSigKeyCached" json:"paperSigKeyCached"`
-	PaperEncKeyCached      bool            `codec:"paperEncKeyCached" json:"paperEncKeyCached"`
-	StoredSecret           bool            `codec:"storedSecret" json:"storedSecret"`
-	SecretPromptSkip       bool            `codec:"secretPromptSkip" json:"secretPromptSkip"`
-	RememberPassphrase     bool            `codec:"rememberPassphrase" json:"rememberPassphrase"`
-	Device                 *Device         `codec:"device,omitempty" json:"device,omitempty"`
-	DeviceErr              *LoadDeviceErr  `codec:"deviceErr,omitempty" json:"deviceErr,omitempty"`
-	LogDir                 string          `codec:"logDir" json:"logDir"`
-	Session                *SessionStatus  `codec:"session,omitempty" json:"session,omitempty"`
-	DefaultUsername        string          `codec:"defaultUsername" json:"defaultUsername"`
-	ProvisionedUsernames   []string        `codec:"provisionedUsernames" json:"provisionedUsernames"`
-	Clients                []ClientDetails `codec:"Clients" json:"Clients"`
-	DeviceEkNames          []string        `codec:"deviceEkNames" json:"deviceEkNames"`
-	PlatformInfo           PlatformInfo    `codec:"platformInfo" json:"platformInfo"`
-	DefaultDeviceID        DeviceID        `codec:"defaultDeviceID" json:"defaultDeviceID"`
-	LocalDbStats           []string        `codec:"localDbStats" json:"localDbStats"`
-	LocalChatDbStats       []string        `codec:"localChatDbStats" json:"localChatDbStats"`
+	Standalone             bool                `codec:"standalone" json:"standalone"`
+	PassphraseStreamCached bool                `codec:"passphraseStreamCached" json:"passphraseStreamCached"`
+	TsecCached             bool                `codec:"tsecCached" json:"tsecCached"`
+	DeviceSigKeyCached     bool                `codec:"deviceSigKeyCached" json:"deviceSigKeyCached"`
+	DeviceEncKeyCached     bool                `codec:"deviceEncKeyCached" json:"deviceEncKeyCached"`
+	PaperSigKeyCached      bool                `codec:"paperSigKeyCached" json:"paperSigKeyCached"`
+	PaperEncKeyCached      bool                `codec:"paperEncKeyCached" json:"paperEncKeyCached"`
+	StoredSecret           bool                `codec:"storedSecret" json:"storedSecret"`
+	SecretPromptSkip       bool                `codec:"secretPromptSkip" json:"secretPromptSkip"`
+	RememberPassphrase     bool                `codec:"rememberPassphrase" json:"rememberPassphrase"`
+	Device                 *Device             `codec:"device,omitempty" json:"device,omitempty"`
+	DeviceErr              *LoadDeviceErr      `codec:"deviceErr,omitempty" json:"deviceErr,omitempty"`
+	LogDir                 string              `codec:"logDir" json:"logDir"`
+	Session                *SessionStatus      `codec:"session,omitempty" json:"session,omitempty"`
+	DefaultUsername        string              `codec:"defaultUsername" json:"defaultUsername"`
+	ProvisionedUsernames   []string            `codec:"provisionedUsernames" json:"provisionedUsernames"`
+	ConfiguredAccounts     []ConfiguredAccount `codec:"configuredAccounts" json:"configuredAccounts"`
+	Clients                []ClientStatus      `codec:"Clients" json:"Clients"`
+	DeviceEkNames          []string            `codec:"deviceEkNames" json:"deviceEkNames"`
+	PlatformInfo           PlatformInfo        `codec:"platformInfo" json:"platformInfo"`
+	DefaultDeviceID        DeviceID            `codec:"defaultDeviceID" json:"defaultDeviceID"`
+	LocalDbStats           []string            `codec:"localDbStats" json:"localDbStats"`
+	LocalChatDbStats       []string            `codec:"localChatDbStats" json:"localChatDbStats"`
+	CacheDirSizeInfo       []DirSizeInfo       `codec:"cacheDirSizeInfo" json:"cacheDirSizeInfo"`
+	UiRouterMapping        map[string]int      `codec:"uiRouterMapping" json:"uiRouterMapping"`
 }
 
 func (o ExtendedStatus) DeepCopy() ExtendedStatus {
@@ -177,11 +209,22 @@ func (o ExtendedStatus) DeepCopy() ExtendedStatus {
 			}
 			return ret
 		})(o.ProvisionedUsernames),
-		Clients: (func(x []ClientDetails) []ClientDetails {
+		ConfiguredAccounts: (func(x []ConfiguredAccount) []ConfiguredAccount {
 			if x == nil {
 				return nil
 			}
-			ret := make([]ClientDetails, len(x))
+			ret := make([]ConfiguredAccount, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.ConfiguredAccounts),
+		Clients: (func(x []ClientStatus) []ClientStatus {
+			if x == nil {
+				return nil
+			}
+			ret := make([]ClientStatus, len(x))
 			for i, v := range x {
 				vCopy := v.DeepCopy()
 				ret[i] = vCopy
@@ -223,7 +266,158 @@ func (o ExtendedStatus) DeepCopy() ExtendedStatus {
 			}
 			return ret
 		})(o.LocalChatDbStats),
+		CacheDirSizeInfo: (func(x []DirSizeInfo) []DirSizeInfo {
+			if x == nil {
+				return nil
+			}
+			ret := make([]DirSizeInfo, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.CacheDirSizeInfo),
+		UiRouterMapping: (func(x map[string]int) map[string]int {
+			if x == nil {
+				return nil
+			}
+			ret := make(map[string]int, len(x))
+			for k, v := range x {
+				kCopy := k
+				vCopy := v
+				ret[kCopy] = vCopy
+			}
+			return ret
+		})(o.UiRouterMapping),
 	}
+}
+
+type KbClientStatus struct {
+	Version string `codec:"version" json:"version"`
+}
+
+func (o KbClientStatus) DeepCopy() KbClientStatus {
+	return KbClientStatus{
+		Version: o.Version,
+	}
+}
+
+type KbServiceStatus struct {
+	Version string `codec:"version" json:"version"`
+	Running bool   `codec:"running" json:"running"`
+	Pid     string `codec:"pid" json:"pid"`
+	Log     string `codec:"log" json:"log"`
+	EkLog   string `codec:"ekLog" json:"ekLog"`
+}
+
+func (o KbServiceStatus) DeepCopy() KbServiceStatus {
+	return KbServiceStatus{
+		Version: o.Version,
+		Running: o.Running,
+		Pid:     o.Pid,
+		Log:     o.Log,
+		EkLog:   o.EkLog,
+	}
+}
+
+type KBFSStatus struct {
+	Version          string `codec:"version" json:"version"`
+	InstalledVersion string `codec:"installedVersion" json:"installedVersion"`
+	Running          bool   `codec:"running" json:"running"`
+	Pid              string `codec:"pid" json:"pid"`
+	Log              string `codec:"log" json:"log"`
+	Mount            string `codec:"mount" json:"mount"`
+}
+
+func (o KBFSStatus) DeepCopy() KBFSStatus {
+	return KBFSStatus{
+		Version:          o.Version,
+		InstalledVersion: o.InstalledVersion,
+		Running:          o.Running,
+		Pid:              o.Pid,
+		Log:              o.Log,
+		Mount:            o.Mount,
+	}
+}
+
+type DesktopStatus struct {
+	Version string `codec:"version" json:"version"`
+	Running bool   `codec:"running" json:"running"`
+	Log     string `codec:"log" json:"log"`
+}
+
+func (o DesktopStatus) DeepCopy() DesktopStatus {
+	return DesktopStatus{
+		Version: o.Version,
+		Running: o.Running,
+		Log:     o.Log,
+	}
+}
+
+type UpdaterStatus struct {
+	Log string `codec:"log" json:"log"`
+}
+
+func (o UpdaterStatus) DeepCopy() UpdaterStatus {
+	return UpdaterStatus{
+		Log: o.Log,
+	}
+}
+
+type StartStatus struct {
+	Log string `codec:"log" json:"log"`
+}
+
+func (o StartStatus) DeepCopy() StartStatus {
+	return StartStatus{
+		Log: o.Log,
+	}
+}
+
+type GitStatus struct {
+	Log string `codec:"log" json:"log"`
+}
+
+func (o GitStatus) DeepCopy() GitStatus {
+	return GitStatus{
+		Log: o.Log,
+	}
+}
+
+type FullStatus struct {
+	Username   string          `codec:"username" json:"username"`
+	ConfigPath string          `codec:"configPath" json:"configPath"`
+	CurStatus  CurrentStatus   `codec:"curStatus" json:"curStatus"`
+	ExtStatus  ExtendedStatus  `codec:"extStatus" json:"extStatus"`
+	Client     KbClientStatus  `codec:"client" json:"client"`
+	Service    KbServiceStatus `codec:"service" json:"service"`
+	Kbfs       KBFSStatus      `codec:"kbfs" json:"kbfs"`
+	Desktop    DesktopStatus   `codec:"desktop" json:"desktop"`
+	Updater    UpdaterStatus   `codec:"updater" json:"updater"`
+	Start      StartStatus     `codec:"start" json:"start"`
+	Git        GitStatus       `codec:"git" json:"git"`
+}
+
+func (o FullStatus) DeepCopy() FullStatus {
+	return FullStatus{
+		Username:   o.Username,
+		ConfigPath: o.ConfigPath,
+		CurStatus:  o.CurStatus.DeepCopy(),
+		ExtStatus:  o.ExtStatus.DeepCopy(),
+		Client:     o.Client.DeepCopy(),
+		Service:    o.Service.DeepCopy(),
+		Kbfs:       o.Kbfs.DeepCopy(),
+		Desktop:    o.Desktop.DeepCopy(),
+		Updater:    o.Updater.DeepCopy(),
+		Start:      o.Start.DeepCopy(),
+		Git:        o.Git.DeepCopy(),
+	}
+}
+
+type LogSendID string
+
+func (o LogSendID) DeepCopy() LogSendID {
+	return o
 }
 
 type AllProvisionedUsernames struct {
@@ -421,14 +615,16 @@ func (o UpdateInfo) DeepCopy() UpdateInfo {
 }
 
 type BootstrapStatus struct {
-	Registered bool     `codec:"registered" json:"registered"`
-	LoggedIn   bool     `codec:"loggedIn" json:"loggedIn"`
-	Uid        UID      `codec:"uid" json:"uid"`
-	Username   string   `codec:"username" json:"username"`
-	DeviceID   DeviceID `codec:"deviceID" json:"deviceID"`
-	DeviceName string   `codec:"deviceName" json:"deviceName"`
-	Following  []string `codec:"following" json:"following"`
-	Followers  []string `codec:"followers" json:"followers"`
+	Registered  bool        `codec:"registered" json:"registered"`
+	LoggedIn    bool        `codec:"loggedIn" json:"loggedIn"`
+	Uid         UID         `codec:"uid" json:"uid"`
+	Username    string      `codec:"username" json:"username"`
+	DeviceID    DeviceID    `codec:"deviceID" json:"deviceID"`
+	DeviceName  string      `codec:"deviceName" json:"deviceName"`
+	Fullname    FullName    `codec:"fullname" json:"fullname"`
+	Following   []string    `codec:"following" json:"following"`
+	Followers   []string    `codec:"followers" json:"followers"`
+	UserReacjis UserReacjis `codec:"userReacjis" json:"userReacjis"`
 }
 
 func (o BootstrapStatus) DeepCopy() BootstrapStatus {
@@ -439,6 +635,7 @@ func (o BootstrapStatus) DeepCopy() BootstrapStatus {
 		Username:   o.Username,
 		DeviceID:   o.DeviceID.DeepCopy(),
 		DeviceName: o.DeviceName,
+		Fullname:   o.Fullname.DeepCopy(),
 		Following: (func(x []string) []string {
 			if x == nil {
 				return nil
@@ -461,6 +658,171 @@ func (o BootstrapStatus) DeepCopy() BootstrapStatus {
 			}
 			return ret
 		})(o.Followers),
+		UserReacjis: o.UserReacjis.DeepCopy(),
+	}
+}
+
+type UpdateInfoStatus2 int
+
+const (
+	UpdateInfoStatus2_OK        UpdateInfoStatus2 = 0
+	UpdateInfoStatus2_SUGGESTED UpdateInfoStatus2 = 1
+	UpdateInfoStatus2_CRITICAL  UpdateInfoStatus2 = 2
+)
+
+func (o UpdateInfoStatus2) DeepCopy() UpdateInfoStatus2 { return o }
+
+var UpdateInfoStatus2Map = map[string]UpdateInfoStatus2{
+	"OK":        0,
+	"SUGGESTED": 1,
+	"CRITICAL":  2,
+}
+
+var UpdateInfoStatus2RevMap = map[UpdateInfoStatus2]string{
+	0: "OK",
+	1: "SUGGESTED",
+	2: "CRITICAL",
+}
+
+func (e UpdateInfoStatus2) String() string {
+	if v, ok := UpdateInfoStatus2RevMap[e]; ok {
+		return v
+	}
+	return ""
+}
+
+type UpdateDetails struct {
+	Message string `codec:"message" json:"message"`
+}
+
+func (o UpdateDetails) DeepCopy() UpdateDetails {
+	return UpdateDetails{
+		Message: o.Message,
+	}
+}
+
+type UpdateInfo2 struct {
+	Status__    UpdateInfoStatus2 `codec:"status" json:"status"`
+	Suggested__ *UpdateDetails    `codec:"suggested,omitempty" json:"suggested,omitempty"`
+	Critical__  *UpdateDetails    `codec:"critical,omitempty" json:"critical,omitempty"`
+}
+
+func (o *UpdateInfo2) Status() (ret UpdateInfoStatus2, err error) {
+	switch o.Status__ {
+	case UpdateInfoStatus2_SUGGESTED:
+		if o.Suggested__ == nil {
+			err = errors.New("unexpected nil value for Suggested__")
+			return ret, err
+		}
+	case UpdateInfoStatus2_CRITICAL:
+		if o.Critical__ == nil {
+			err = errors.New("unexpected nil value for Critical__")
+			return ret, err
+		}
+	}
+	return o.Status__, nil
+}
+
+func (o UpdateInfo2) Suggested() (res UpdateDetails) {
+	if o.Status__ != UpdateInfoStatus2_SUGGESTED {
+		panic("wrong case accessed")
+	}
+	if o.Suggested__ == nil {
+		return
+	}
+	return *o.Suggested__
+}
+
+func (o UpdateInfo2) Critical() (res UpdateDetails) {
+	if o.Status__ != UpdateInfoStatus2_CRITICAL {
+		panic("wrong case accessed")
+	}
+	if o.Critical__ == nil {
+		return
+	}
+	return *o.Critical__
+}
+
+func NewUpdateInfo2WithOk() UpdateInfo2 {
+	return UpdateInfo2{
+		Status__: UpdateInfoStatus2_OK,
+	}
+}
+
+func NewUpdateInfo2WithSuggested(v UpdateDetails) UpdateInfo2 {
+	return UpdateInfo2{
+		Status__:    UpdateInfoStatus2_SUGGESTED,
+		Suggested__: &v,
+	}
+}
+
+func NewUpdateInfo2WithCritical(v UpdateDetails) UpdateInfo2 {
+	return UpdateInfo2{
+		Status__:   UpdateInfoStatus2_CRITICAL,
+		Critical__: &v,
+	}
+}
+
+func (o UpdateInfo2) DeepCopy() UpdateInfo2 {
+	return UpdateInfo2{
+		Status__: o.Status__.DeepCopy(),
+		Suggested__: (func(x *UpdateDetails) *UpdateDetails {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.Suggested__),
+		Critical__: (func(x *UpdateDetails) *UpdateDetails {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.Critical__),
+	}
+}
+
+type ProxyType int
+
+const (
+	ProxyType_No_Proxy     ProxyType = 0
+	ProxyType_HTTP_Connect ProxyType = 1
+	ProxyType_Socks        ProxyType = 2
+)
+
+func (o ProxyType) DeepCopy() ProxyType { return o }
+
+var ProxyTypeMap = map[string]ProxyType{
+	"No_Proxy":     0,
+	"HTTP_Connect": 1,
+	"Socks":        2,
+}
+
+var ProxyTypeRevMap = map[ProxyType]string{
+	0: "No_Proxy",
+	1: "HTTP_Connect",
+	2: "Socks",
+}
+
+func (e ProxyType) String() string {
+	if v, ok := ProxyTypeRevMap[e]; ok {
+		return v
+	}
+	return ""
+}
+
+type ProxyData struct {
+	AddressWithPort string    `codec:"addressWithPort" json:"addressWithPort"`
+	ProxyType       ProxyType `codec:"proxyType" json:"proxyType"`
+	CertPinning     bool      `codec:"certPinning" json:"certPinning"`
+}
+
+func (o ProxyData) DeepCopy() ProxyData {
+	return ProxyData{
+		AddressWithPort: o.AddressWithPort,
+		ProxyType:       o.ProxyType.DeepCopy(),
+		CertPinning:     o.CertPinning,
 	}
 }
 
@@ -468,8 +830,20 @@ type GetCurrentStatusArg struct {
 	SessionID int `codec:"sessionID" json:"sessionID"`
 }
 
-type GetExtendedStatusArg struct {
+type GetClientStatusArg struct {
 	SessionID int `codec:"sessionID" json:"sessionID"`
+}
+
+type GetFullStatusArg struct {
+	SessionID int `codec:"sessionID" json:"sessionID"`
+}
+
+type LogSendArg struct {
+	SessionID    int    `codec:"sessionID" json:"sessionID"`
+	StatusJSON   string `codec:"statusJSON" json:"statusJSON"`
+	Feedback     string `codec:"feedback" json:"feedback"`
+	SendLogs     bool   `codec:"sendLogs" json:"sendLogs"`
+	SendMaxBytes bool   `codec:"sendMaxBytes" json:"sendMaxBytes"`
 }
 
 type GetAllProvisionedUsernamesArg struct {
@@ -536,9 +910,23 @@ type SetRememberPassphraseArg struct {
 	Remember  bool `codec:"remember" json:"remember"`
 }
 
+type GetUpdateInfo2Arg struct {
+	Platform *string `codec:"platform,omitempty" json:"platform,omitempty"`
+	Version  *string `codec:"version,omitempty" json:"version,omitempty"`
+}
+
+type SetProxyDataArg struct {
+	ProxyData ProxyData `codec:"proxyData" json:"proxyData"`
+}
+
+type GetProxyDataArg struct {
+}
+
 type ConfigInterface interface {
-	GetCurrentStatus(context.Context, int) (GetCurrentStatusRes, error)
-	GetExtendedStatus(context.Context, int) (ExtendedStatus, error)
+	GetCurrentStatus(context.Context, int) (CurrentStatus, error)
+	GetClientStatus(context.Context, int) ([]ClientStatus, error)
+	GetFullStatus(context.Context, int) (*FullStatus, error)
+	LogSend(context.Context, LogSendArg) (LogSendID, error)
 	GetAllProvisionedUsernames(context.Context, int) (AllProvisionedUsernames, error)
 	GetConfig(context.Context, int) (Config, error)
 	// Change user config.
@@ -559,6 +947,11 @@ type ConfigInterface interface {
 	GetBootstrapStatus(context.Context, int) (BootstrapStatus, error)
 	GetRememberPassphrase(context.Context, int) (bool, error)
 	SetRememberPassphrase(context.Context, SetRememberPassphraseArg) error
+	// getUpdateInfo2 is to drive the redbar on mobile and desktop apps. The redbar tells you if
+	// you are critically out of date.
+	GetUpdateInfo2(context.Context, GetUpdateInfo2Arg) (UpdateInfo2, error)
+	SetProxyData(context.Context, ProxyData) error
+	GetProxyData(context.Context) (ProxyData, error)
 }
 
 func ConfigProtocol(i ConfigInterface) rpc.Protocol {
@@ -580,18 +973,48 @@ func ConfigProtocol(i ConfigInterface) rpc.Protocol {
 					return
 				},
 			},
-			"getExtendedStatus": {
+			"getClientStatus": {
 				MakeArg: func() interface{} {
-					var ret [1]GetExtendedStatusArg
+					var ret [1]GetClientStatusArg
 					return &ret
 				},
 				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
-					typedArgs, ok := args.(*[1]GetExtendedStatusArg)
+					typedArgs, ok := args.(*[1]GetClientStatusArg)
 					if !ok {
-						err = rpc.NewTypeError((*[1]GetExtendedStatusArg)(nil), args)
+						err = rpc.NewTypeError((*[1]GetClientStatusArg)(nil), args)
 						return
 					}
-					ret, err = i.GetExtendedStatus(ctx, typedArgs[0].SessionID)
+					ret, err = i.GetClientStatus(ctx, typedArgs[0].SessionID)
+					return
+				},
+			},
+			"getFullStatus": {
+				MakeArg: func() interface{} {
+					var ret [1]GetFullStatusArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]GetFullStatusArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]GetFullStatusArg)(nil), args)
+						return
+					}
+					ret, err = i.GetFullStatus(ctx, typedArgs[0].SessionID)
+					return
+				},
+			},
+			"logSend": {
+				MakeArg: func() interface{} {
+					var ret [1]LogSendArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]LogSendArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]LogSendArg)(nil), args)
+						return
+					}
+					ret, err = i.LogSend(ctx, typedArgs[0])
 					return
 				},
 			},
@@ -805,6 +1228,46 @@ func ConfigProtocol(i ConfigInterface) rpc.Protocol {
 					return
 				},
 			},
+			"getUpdateInfo2": {
+				MakeArg: func() interface{} {
+					var ret [1]GetUpdateInfo2Arg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]GetUpdateInfo2Arg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]GetUpdateInfo2Arg)(nil), args)
+						return
+					}
+					ret, err = i.GetUpdateInfo2(ctx, typedArgs[0])
+					return
+				},
+			},
+			"setProxyData": {
+				MakeArg: func() interface{} {
+					var ret [1]SetProxyDataArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SetProxyDataArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SetProxyDataArg)(nil), args)
+						return
+					}
+					err = i.SetProxyData(ctx, typedArgs[0].ProxyData)
+					return
+				},
+			},
+			"getProxyData": {
+				MakeArg: func() interface{} {
+					var ret [1]GetProxyDataArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					ret, err = i.GetProxyData(ctx)
+					return
+				},
+			},
 		},
 	}
 }
@@ -813,15 +1276,26 @@ type ConfigClient struct {
 	Cli rpc.GenericClient
 }
 
-func (c ConfigClient) GetCurrentStatus(ctx context.Context, sessionID int) (res GetCurrentStatusRes, err error) {
+func (c ConfigClient) GetCurrentStatus(ctx context.Context, sessionID int) (res CurrentStatus, err error) {
 	__arg := GetCurrentStatusArg{SessionID: sessionID}
 	err = c.Cli.Call(ctx, "keybase.1.config.getCurrentStatus", []interface{}{__arg}, &res)
 	return
 }
 
-func (c ConfigClient) GetExtendedStatus(ctx context.Context, sessionID int) (res ExtendedStatus, err error) {
-	__arg := GetExtendedStatusArg{SessionID: sessionID}
-	err = c.Cli.Call(ctx, "keybase.1.config.getExtendedStatus", []interface{}{__arg}, &res)
+func (c ConfigClient) GetClientStatus(ctx context.Context, sessionID int) (res []ClientStatus, err error) {
+	__arg := GetClientStatusArg{SessionID: sessionID}
+	err = c.Cli.Call(ctx, "keybase.1.config.getClientStatus", []interface{}{__arg}, &res)
+	return
+}
+
+func (c ConfigClient) GetFullStatus(ctx context.Context, sessionID int) (res *FullStatus, err error) {
+	__arg := GetFullStatusArg{SessionID: sessionID}
+	err = c.Cli.Call(ctx, "keybase.1.config.getFullStatus", []interface{}{__arg}, &res)
+	return
+}
+
+func (c ConfigClient) LogSend(ctx context.Context, __arg LogSendArg) (res LogSendID, err error) {
+	err = c.Cli.Call(ctx, "keybase.1.config.logSend", []interface{}{__arg}, &res)
 	return
 }
 
@@ -909,5 +1383,23 @@ func (c ConfigClient) GetRememberPassphrase(ctx context.Context, sessionID int) 
 
 func (c ConfigClient) SetRememberPassphrase(ctx context.Context, __arg SetRememberPassphraseArg) (err error) {
 	err = c.Cli.Call(ctx, "keybase.1.config.setRememberPassphrase", []interface{}{__arg}, nil)
+	return
+}
+
+// getUpdateInfo2 is to drive the redbar on mobile and desktop apps. The redbar tells you if
+// you are critically out of date.
+func (c ConfigClient) GetUpdateInfo2(ctx context.Context, __arg GetUpdateInfo2Arg) (res UpdateInfo2, err error) {
+	err = c.Cli.Call(ctx, "keybase.1.config.getUpdateInfo2", []interface{}{__arg}, &res)
+	return
+}
+
+func (c ConfigClient) SetProxyData(ctx context.Context, proxyData ProxyData) (err error) {
+	__arg := SetProxyDataArg{ProxyData: proxyData}
+	err = c.Cli.Call(ctx, "keybase.1.config.setProxyData", []interface{}{__arg}, nil)
+	return
+}
+
+func (c ConfigClient) GetProxyData(ctx context.Context) (res ProxyData, err error) {
+	err = c.Cli.Call(ctx, "keybase.1.config.getProxyData", []interface{}{GetProxyDataArg{}}, &res)
 	return
 }

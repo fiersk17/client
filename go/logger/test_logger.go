@@ -61,7 +61,7 @@ func (log *TestLogger) common(ctx context.Context, lvl logging.Level, useFatal b
 
 	if os.Getenv("KEYBASE_TEST_DUP_LOG_TO_STDOUT") != "" {
 		fmt.Printf(prepareString(ctx,
-			log.prefixCaller(log.extraDepth, lvl, fmts+"\n")), arg...)
+			log.prefixCaller(log.extraDepth, lvl, fmts))+"\n", arg...)
 	}
 
 	if ctx != nil {
@@ -170,11 +170,6 @@ func (log *TestLogger) Profile(fmts string, arg ...interface{}) {
 
 func (log *TestLogger) Configure(style string, debug bool, filename string) {
 	// no-op
-}
-
-func (log *TestLogger) RotateLogFile() error {
-	// no-op
-	return nil
 }
 
 func (log *TestLogger) CloneWithAddedDepth(depth int) Logger {

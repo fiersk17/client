@@ -19,6 +19,7 @@ protocol chatUi {
   record UnverifiedInboxUIItemMetadata {
     string channelName;
     string headline;
+    string headlineDecorated;
     string snippet;
     string snippetDecoration; // One of: "", "💣" (bomb), "💥" (exploded)
     array<string> writerNames;
@@ -38,6 +39,7 @@ protocol chatUi {
     union{ null, ConversationNotificationInfo } notifications;
     gregor1.Time time;
     ConversationVers version;
+    LocalConversationVers localVersion;
     union { null, RetentionPolicy } convRetention;
     union { null, RetentionPolicy } teamRetention;
     MessageID maxMsgID;
@@ -68,6 +70,7 @@ protocol chatUi {
     string snippetDecoration; // One of: "", "💣" (bomb), "💥" (exploded)
     string channel;
     string headline;
+    string headlineDecorated;
     keybase1.TLFVisibility visibility;
     array<string> participants;
     map<string, string> fullNames;
@@ -80,6 +83,7 @@ protocol chatUi {
     union { null, ConversationNotificationInfo } notifications;
     union { null, ConversationCreatorInfoLocal } creatorInfo;
     ConversationVers version;
+    LocalConversationVers localVersion;
     MessageID maxMsgID;
     MessageID maxVisibleMsgID;
     MessageID readMsgID;
@@ -162,6 +166,7 @@ protocol chatUi {
     union { null, string } outboxID;
     MessageBody messageBody;
     union { null, string } decoratedTextBody;
+    string bodySummary;
     string senderUsername;
     string senderDeviceName;
     string senderDeviceType;
@@ -184,6 +189,10 @@ protocol chatUi {
     union { null, UIRequestInfo } requestInfo;
     array<UIMessageUnfurlInfo> unfurls;
     boolean isCollapsed;
+    union { null, string } flipGameID;
+    boolean isDeleteable;
+    boolean isEditable;
+    union { null, UIMessage } replyTo;
   }
 
   record UIMessageOutbox {
@@ -195,6 +204,8 @@ protocol chatUi {
     gregor1.Time ctime;
     double ordinal;
     boolean isEphemeral;
+    union { null, string} flipGameID;
+    union { null, UIMessage } replyTo;
 
     // For attachments
     string filename;
@@ -221,16 +232,50 @@ protocol chatUi {
     union { null, UIPagination } pagination;
   }
 
+  record UITeamMention {
+    boolean inTeam;
+    boolean open;
+    union { null, string } description;
+    union { null, int } numMembers;
+    array<string> publicAdmins;
+    union { null, string } convID;
+  }
+
   enum UITextDecorationTyp {
     PAYMENT_0,
     ATMENTION_1,
-    CHANNELNAMEMENTION_2
+    CHANNELNAMEMENTION_2,
+    MAYBEMENTION_3,
+    LINK_4,
+    MAILTO_5
+  }
+
+  enum UIMaybeMentionStatus {
+    UNKNOWN_0,
+    USER_1,
+    TEAM_2,
+    NOTHING_3
+  }
+
+  record UILinkDecoration {
+    string display;
+    string url;
+  }
+
+  variant UIMaybeMentionInfo switch (UIMaybeMentionStatus status) {
+    case UNKNOWN: void;
+    case USER: void;
+    case TEAM: UITeamMention;
+    case NOTHING: void;
   }
 
   variant UITextDecoration switch (UITextDecorationTyp typ) {
     case PAYMENT: TextPayment;
     case ATMENTION: string;
     case CHANNELNAMEMENTION: UIChannelNameMention;
+    case MAYBEMENTION: MaybeMention;
+    case LINK: UILinkDecoration;
+    case MAILTO: UILinkDecoration;
   }
 
   void chatAttachmentDownloadStart(int sessionID);
@@ -247,9 +292,21 @@ protocol chatUi {
   void chatSearchHit(int sessionID, ChatSearchHit searchHit);
   void chatSearchDone(int sessionID, int numHits);
 
+  record UIChatSearchConvHit {
+    string convID;
+    TeamType teamType;
+    string name;
+    gregor1.Time mtime;
+  }
+  record UIChatSearchConvHits {
+    array<UIChatSearchConvHit> hits;
+    boolean unreadMatches;
+  }
+  void chatSearchInboxStart(int sessionID);
   void chatSearchInboxHit(int sessionID, ChatSearchInboxHit searchHit);
   void chatSearchInboxDone(int sessionID, ChatSearchInboxDone res);
   void chatSearchIndexStatus(int sessionID, ChatSearchIndexStatus status);
+  void chatSearchConvHits(int sessionID, UIChatSearchConvHits hits);
 
   boolean chatConfirmChannelDelete(int sessionID, string channel);
 
@@ -268,8 +325,106 @@ protocol chatUi {
   }
   void chatStellarShowConfirm(int sessionID);
   boolean chatStellarDataConfirm(int sessionID, UIChatPaymentSummary summary);
-  boolean chatStellarDataError(int sessionID, string message);
+  boolean chatStellarDataError(int sessionID, keybase1.Status error);
   void chatStellarDone(int sessionID, boolean canceled);
 
+ record GiphySearchResult {
+    string targetUrl;
+    string previewUrl;
+    int previewWidth;
+    int previewHeight;
+    boolean previewIsVideo;
+  }
+  record GiphySearchResults {
+    array<GiphySearchResult> results;
+    string galleryUrl;
+  }
+  void chatGiphySearchResults(int sessionID, string convID, GiphySearchResults results);
+  void chatGiphyToggleResultWindow(int sessionID, string convID, boolean show, boolean clearInput);
+
   void chatShowManageChannels(int sessionID, string teamname);
+
+  enum UICoinFlipPhase {
+    COMMITMENT_0,
+    REVEALS_1,
+    COMPLETE_2,
+    ERROR_3
+  }
+  record UICoinFlipErrorParticipant {
+    string user;
+    string device;
+  }
+  record UICoinFlipAbsenteeError {
+    array<UICoinFlipErrorParticipant> absentees;
+  }
+  enum UICoinFlipErrorTyp {
+    GENERIC_0,
+    ABSENTEE_1,
+    TIMEOUT_2,
+    ABORTED_3,
+    DUPREG_4,
+    DUPCOMMITCOMPLETE_5,
+    DUPREVEAL_6,
+    COMMITMISMATCH_7
+  }
+  variant UICoinFlipError switch (UICoinFlipErrorTyp typ) {
+  case GENERIC: string;
+  case ABSENTEE: UICoinFlipAbsenteeError;
+  case TIMEOUT: void;
+  case ABORTED: void;
+  case DUPREG: UICoinFlipErrorParticipant;
+  case DUPCOMMITCOMPLETE: UICoinFlipErrorParticipant;
+  case DUPREVEAL: UICoinFlipErrorParticipant;
+  case COMMITMISMATCH: UICoinFlipErrorParticipant;
+  }
+  enum UICoinFlipResultTyp {
+    NUMBER_0,
+    SHUFFLE_1,
+    DECK_2,
+    HANDS_3,
+    COIN_4
+  }
+  record UICoinFlipHand {
+    string target;
+    array<int> hand;
+  }
+  variant UICoinFlipResult switch (UICoinFlipResultTyp typ) {
+    case NUMBER: string;
+    case SHUFFLE: array<string>;
+    case DECK: array<int>;
+    case HANDS: array<UICoinFlipHand>;
+    case COIN: bool; // heads?
+  }
+  record UICoinFlipParticipant {
+    string uid;
+    string deviceID;
+    string username;
+    string deviceName;
+    string commitment;
+    union { null, string } reveal;
+  }
+  record UICoinFlipStatus {
+    string gameID;
+    UICoinFlipPhase phase;
+    string progressText;
+    string resultText;
+    string commitmentVisualization;
+    string revealVisualization;
+    array<UICoinFlipParticipant> participants;
+    union { null, UICoinFlipError } errorInfo;
+    union { null, UICoinFlipResult } resultInfo;
+  }
+  void chatCoinFlipStatus(int sessionID, array<UICoinFlipStatus> statuses);
+
+  record UICommandMarkdown {
+    string body;
+    union { null, string} title;
+  }
+  void chatCommandMarkdown(int sessionID, string convID, union { null, UICommandMarkdown } md);
+
+  void chatMaybeMentionUpdate(int sessionID, string teamName, string channel, UIMaybeMentionInfo info);
+
+  void chatLoadGalleryHit(int sessionID, UIMessage message);
+
+  Coordinate chatGetCoordinate(int sessionID);
 }

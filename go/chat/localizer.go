@@ -17,6 +17,7 @@ import (
 	"github.com/keybase/client/go/protocol/chat1"
 	"github.com/keybase/client/go/protocol/gregor1"
 	"github.com/keybase/client/go/protocol/keybase1"
+	"github.com/keybase/client/go/teams"
 	"github.com/keybase/client/go/uidmap"
 	"golang.org/x/sync/errgroup"
 )
@@ -24,22 +25,6 @@ import (
 type conversationLocalizer interface {
 	Localize(ctx context.Context, uid gregor1.UID, inbox types.Inbox, maxLocalize *int) ([]chat1.ConversationLocal, error)
 	Name() string
-}
-
-type localizerCancelableKeyTyp int
-
-var localizerCancelableKey localizerCancelableKeyTyp
-
-func makeLocalizerCancelableContext(ctx context.Context) context.Context {
-	return context.WithValue(ctx, localizerCancelableKey, true)
-}
-
-func isLocalizerCancelableContext(ctx context.Context) bool {
-	val := ctx.Value(localizerCancelableKey)
-	if _, ok := val.(bool); ok {
-		return true
-	}
-	return false
 }
 
 type baseLocalizer struct {
@@ -101,7 +86,10 @@ func (b *blockingLocalizer) Localize(ctx context.Context, uid gregor1.UID, inbox
 	defer b.Trace(ctx, func() error { return err }, "Localize")()
 	inbox = b.filterSelfFinalized(ctx, inbox)
 	convs := b.getConvs(inbox, maxLocalize)
-	b.baseLocalizer.pipeline.queue(ctx, uid, convs, b.localizeCb)
+	if err := b.baseLocalizer.pipeline.queue(ctx, uid, convs, b.localizeCb); err != nil {
+		b.Debug(ctx, "Localize: failed to queue: %s", err)
+		return res, err
+	}
 
 	res = make([]chat1.ConversationLocal, len(convs))
 	indexMap := make(map[string]int)
@@ -166,11 +154,13 @@ func (b *nonBlockingLocalizer) Localize(ctx context.Context, uid gregor1.UID, in
 		InboxRes: &filteredInbox,
 	}
 	// Spawn off localization into its own goroutine and use cb to communicate with outside world
-	bctx := BackgroundContext(ctx, b.G())
-	go func() {
-		b.Debug(bctx, "Localize: starting background localization: convs: %d", len(inbox.ConvsUnverified))
-		b.baseLocalizer.pipeline.queue(bctx, uid, b.getConvs(inbox, maxLocalize), b.localizeCb)
-	}()
+	go func(ctx context.Context) {
+		b.Debug(ctx, "Localize: starting background localization: convs: %d", len(inbox.ConvsUnverified))
+		if err := b.baseLocalizer.pipeline.queue(ctx, uid, b.getConvs(inbox, maxLocalize), b.localizeCb); err != nil {
+			b.Debug(ctx, "Localize: failed to queue: %s", err)
+			close(b.localizeCb)
+		}
+	}(globals.BackgroundChatCtx(ctx, b.G()))
 	return nil, nil
 }
 
@@ -196,7 +186,7 @@ func (l *localizerPipelineJob) retry(g *globals.Context) (res *localizerPipeline
 	l.Lock()
 	defer l.Unlock()
 	res = new(localizerPipelineJob)
-	res.ctx, res.cancelFn = context.WithCancel(BackgroundContext(l.ctx, g))
+	res.ctx, res.cancelFn = context.WithCancel(globals.BackgroundChatCtx(l.ctx, g))
 	res.retCh = l.retCh
 	res.uid = l.uid
 	res.completed = l.completed
@@ -251,7 +241,7 @@ func (l *localizerPipelineJob) complete(convID chat1.ConversationID) {
 func newLocalizerPipelineJob(ctx context.Context, g *globals.Context, uid gregor1.UID,
 	convs []chat1.Conversation, retCh chan types.AsyncInboxResult) *localizerPipelineJob {
 	return &localizerPipelineJob{
-		ctx:     BackgroundContext(ctx, g),
+		ctx:     globals.BackgroundChatCtx(ctx, g),
 		retCh:   retCh,
 		uid:     uid,
 		pending: convs,
@@ -300,16 +290,20 @@ func (s *localizerPipeline) Disconnected() {
 }
 
 func (s *localizerPipeline) queue(ctx context.Context, uid gregor1.UID, convs []chat1.Conversation,
-	retCh chan types.AsyncInboxResult) {
+	retCh chan types.AsyncInboxResult) error {
 	defer s.Trace(ctx, func() error { return nil }, "queue")()
 	s.Lock()
 	defer s.Unlock()
+	if !s.started {
+		return errors.New("localizer not running")
+	}
 	job := newLocalizerPipelineJob(ctx, s.G(), uid, convs, retCh)
-	job.ctx, job.cancelFn = context.WithCancel(BackgroundContext(ctx, s.G()))
-	if isLocalizerCancelableContext(job.ctx) {
+	job.ctx, job.cancelFn = context.WithCancel(globals.BackgroundChatCtx(ctx, s.G()))
+	if globals.IsLocalizerCancelableCtx(job.ctx) {
 		s.Debug(job.ctx, "queue: adding cancellable job")
 	}
 	s.jobQueue <- job
+	return nil
 }
 
 func (s *localizerPipeline) clearQueue() {
@@ -317,9 +311,9 @@ func (s *localizerPipeline) clearQueue() {
 }
 
 func (s *localizerPipeline) start(ctx context.Context) {
+	defer s.Trace(ctx, func() error { return nil }, "start")()
 	s.Lock()
 	defer s.Unlock()
-	s.Debug(ctx, "start")
 	if s.started {
 		close(s.stopCh)
 		s.stopCh = make(chan struct{})
@@ -330,9 +324,9 @@ func (s *localizerPipeline) start(ctx context.Context) {
 }
 
 func (s *localizerPipeline) stop(ctx context.Context) chan struct{} {
+	defer s.Trace(ctx, func() error { return nil }, "stop")()
 	s.Lock()
 	defer s.Unlock()
-	s.Debug(ctx, "stop")
 	ch := make(chan struct{})
 	if s.started {
 		close(s.stopCh)
@@ -366,7 +360,7 @@ func (s *localizerPipeline) registerJobPull(ctx context.Context) (string, chan s
 	defer s.Unlock()
 	id := libkb.RandStringB64(3)
 	ch := make(chan struct{}, 1)
-	if isLocalizerCancelableContext(ctx) {
+	if globals.IsLocalizerCancelableCtx(ctx) {
 		s.cancelChs[id] = ch
 	}
 	return id, ch
@@ -414,7 +408,7 @@ func (s *localizerPipeline) localizeJobPulled(job *localizerPipelineJob, stopCh 
 	s.Debug(job.ctx, "localizeJobPulled: pulling job: pending: %d completed: %d", job.numPending(),
 		job.numCompleted())
 	waitCh := make(chan struct{})
-	if !isLocalizerCancelableContext(job.ctx) {
+	if !globals.IsLocalizerCancelableCtx(job.ctx) {
 		close(waitCh)
 	} else {
 		s.Debug(job.ctx, "localizeJobPulled: waiting for resume")
@@ -597,33 +591,71 @@ func (s *localizerPipeline) getMessagesOffline(ctx context.Context, convID chat1
 	return foundMsgs, chat1.ConversationErrorType_NONE, nil
 }
 
-func (s *localizerPipeline) getMinWriterRoleInfoLocal(ctx context.Context, info *chat1.ConversationMinWriterRoleInfo) *chat1.ConversationMinWriterRoleInfoLocal {
-	if info == nil {
-		return nil
+func (s *localizerPipeline) getMinWriterRoleInfoLocal(ctx context.Context, uid gregor1.UID,
+	conv chat1.Conversation) (*chat1.ConversationMinWriterRoleInfoLocal, error) {
+	if conv.ConvSettings == nil {
+		return nil, nil
 	}
-	username := ""
+	info := conv.ConvSettings.MinWriterRoleInfo
+	if info == nil {
+		return nil, nil
+	}
+
+	// determine if the current user can write.
+	teamID, err := keybase1.TeamIDFromString(conv.Metadata.IdTriple.Tlfid.String())
+	if err != nil {
+		return nil, err
+	}
+	extG := s.G().ExternalG()
+	team, err := teams.Load(ctx, extG, keybase1.LoadTeamArg{
+		ID:     teamID,
+		Public: conv.Metadata.Visibility == keybase1.TLFVisibility_PUBLIC,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	upak, _, err := s.G().GetUPAKLoader().LoadV2(
+		libkb.NewLoadUserByUIDArg(ctx, extG, keybase1.UID(uid.String())))
+	if err != nil {
+		return nil, err
+	}
+
+	uv := upak.Current.ToUserVersion()
+	role, err := team.MemberRole(ctx, uv)
+	if err != nil {
+		return nil, err
+	}
+
+	// get the changed by username
 	name, err := s.G().GetUPAKLoader().LookupUsername(ctx, keybase1.UID(info.Uid.String()))
-	if err == nil {
-		username = name.String()
+	if err != nil {
+		return nil, err
 	}
 	return &chat1.ConversationMinWriterRoleInfoLocal{
-		Role:     info.Role,
-		Username: username,
-	}
+		Role:        info.Role,
+		ChangedBy:   name.String(),
+		CannotWrite: !role.IsOrAbove(info.Role),
+	}, nil
 }
 
-func (s *localizerPipeline) getConvSettingsLocal(ctx context.Context, conv chat1.Conversation) (res *chat1.ConversationSettingsLocal) {
+func (s *localizerPipeline) getConvSettingsLocal(ctx context.Context, uid gregor1.UID,
+	conv chat1.Conversation) (*chat1.ConversationSettingsLocal, error) {
 	settings := conv.ConvSettings
 	if settings == nil {
-		return nil
+		return nil, nil
 	}
-	res = &chat1.ConversationSettingsLocal{}
-	res.MinWriterRoleInfo = s.getMinWriterRoleInfoLocal(ctx, settings.MinWriterRoleInfo)
-	return res
-
+	res := &chat1.ConversationSettingsLocal{}
+	minWriterRoleInfo, err := s.getMinWriterRoleInfoLocal(ctx, uid, conv)
+	if err != nil {
+		return nil, err
+	}
+	res.MinWriterRoleInfo = minWriterRoleInfo
+	return res, nil
 }
 
-func (s *localizerPipeline) getResetUserNames(ctx context.Context, uidMapper libkb.UIDMapper,
+// returns an incomplete list in case of error
+func (s *localizerPipeline) getResetUsernamesMetadata(ctx context.Context, uidMapper libkb.UIDMapper,
 	conv chat1.Conversation) (res []string) {
 	if len(conv.Metadata.ResetList) == 0 {
 		return res
@@ -635,13 +667,48 @@ func (s *localizerPipeline) getResetUserNames(ctx context.Context, uidMapper lib
 	}
 	rows, err := uidMapper.MapUIDsToUsernamePackages(ctx, s.G(), kuids, 0, 0, false)
 	if err != nil {
-		s.Debug(ctx, "getResetUserNames: failed to run uid mapper: %s", err)
+		s.Debug(ctx, "getResetUsernamesMetadata: failed to run uid mapper: %s", err)
 		return res
 	}
 	for _, row := range rows {
 		res = append(res, row.NormalizedUsername.String())
 	}
+
 	return res
+}
+
+// returns an incomplete list in case of error
+func (s *localizerPipeline) getResetUsernamesPegboard(ctx context.Context, uidMapper libkb.UIDMapper,
+	teamIDasTLFID chat1.TLFID, public bool) (res []string, err error) {
+	// NOTE: If this is too slow, it could be cached on local metadata.
+	teamID, err := keybase1.TeamIDFromString(teamIDasTLFID.String())
+	if err != nil {
+		return nil, err
+	}
+	team, err := teams.Load(ctx, s.G().ExternalG(), keybase1.LoadTeamArg{
+		ID:     teamID,
+		Public: public,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var resetUIDs []keybase1.UID
+	for _, uv := range team.AllUserVersions(ctx) {
+		err = s.G().Pegboard.CheckUV(s.MetaContext(ctx), uv)
+		if err != nil {
+			// Turn peg failures into reset usernames.
+			s.Debug(ctx, "pegboard rejected %v: %v", uv, err)
+			resetUIDs = append(resetUIDs, uv.Uid)
+		}
+	}
+	rows, err := uidMapper.MapUIDsToUsernamePackages(ctx, s.G(), resetUIDs, 0, 0, false)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		res = append(res, row.NormalizedUsername.String())
+	}
+	return res, nil
 }
 
 func (s *localizerPipeline) localizeConversation(ctx context.Context, uid gregor1.UID,
@@ -669,6 +736,7 @@ func (s *localizerPipeline) localizeConversation(ctx context.Context, uid gregor
 		MemberStatus: conversationRemote.ReaderInfo.Status,
 		TeamType:     conversationRemote.Metadata.TeamType,
 		Version:      conversationRemote.Metadata.Version,
+		LocalVersion: conversationRemote.Metadata.LocalVersion,
 	}
 	conversationLocal.Info.FinalizeInfo = conversationRemote.Metadata.FinalizeInfo
 	for _, super := range conversationRemote.Metadata.Supersedes {
@@ -700,7 +768,13 @@ func (s *localizerPipeline) localizeConversation(ctx context.Context, uid gregor
 	conversationLocal.Expunge = conversationRemote.Expunge
 	conversationLocal.ConvRetention = conversationRemote.ConvRetention
 	conversationLocal.TeamRetention = conversationRemote.TeamRetention
-	conversationLocal.ConvSettings = s.getConvSettingsLocal(ctx, conversationRemote)
+	convSettings, err := s.getConvSettingsLocal(ctx, uid, conversationRemote)
+	if err != nil {
+		conversationLocal.Error = chat1.NewConversationErrorLocal(
+			err.Error(), conversationRemote, unverifiedTLFName, chat1.ConversationErrorType_TRANSIENT, nil)
+		return conversationLocal
+	}
+	conversationLocal.ConvSettings = convSettings
 
 	if len(conversationRemote.MaxMsgSummaries) == 0 {
 		errMsg := "conversation has an empty MaxMsgSummaries field"
@@ -870,7 +944,7 @@ func (s *localizerPipeline) localizeConversation(ctx context.Context, uid gregor
 		for _, uid := range conversationRemote.Metadata.AllList {
 			kuids = append(kuids, keybase1.UID(uid.String()))
 		}
-		conversationLocal.Info.ResetNames = s.getResetUserNames(ctx, umapper, conversationRemote)
+		conversationLocal.Info.ResetNames = s.getResetUsernamesMetadata(ctx, umapper, conversationRemote)
 		rows, err := umapper.MapUIDsToUsernamePackages(ctx, s.G(), kuids, time.Hour*24,
 			10*time.Second, true)
 		if err != nil {
@@ -886,7 +960,16 @@ func (s *localizerPipeline) localizeConversation(ctx context.Context, uid gregor
 				conversationLocal.Info.Participants[j].Username
 		})
 	case chat1.ConversationMembersType_IMPTEAMNATIVE, chat1.ConversationMembersType_IMPTEAMUPGRADE:
-		conversationLocal.Info.ResetNames = s.getResetUserNames(ctx, umapper, conversationRemote)
+		resetUsernamesPegboard, err := s.getResetUsernamesPegboard(ctx, umapper, info.ID,
+			conversationLocal.Info.Visibility == keybase1.TLFVisibility_PUBLIC)
+		if err != nil {
+			s.Debug(ctx, "getResetUsernamesPegboard error: %v", err)
+			resetUsernamesPegboard = nil
+		}
+		conversationLocal.Info.ResetNames = utils.DedupStringLists(
+			s.getResetUsernamesMetadata(ctx, umapper, conversationRemote),
+			resetUsernamesPegboard,
+		)
 		fallthrough
 	case chat1.ConversationMembersType_KBFS:
 		conversationLocal.Info.Participants, err = utils.ReorderParticipants(

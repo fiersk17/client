@@ -8,14 +8,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"io"
 	"net/http"
 	"path"
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru"
+	"github.com/keybase/client/go/kbfs/data"
 	"github.com/keybase/client/go/kbfs/env"
 	"github.com/keybase/client/go/kbfs/libfs"
 	"github.com/keybase/client/go/kbfs/libkbfs"
@@ -93,7 +93,7 @@ func (s *Server) getHTTPFileSystem(ctx context.Context, requestPath string) (
 	toStrip string, fs http.FileSystem, err error) {
 	fields := strings.Split(requestPath, "/")
 	if len(fields) < 2 {
-		return "", nil, errors.New("bad path")
+		return "", libfs.NewRootFS(s.config).ToHTTPFileSystem(ctx), nil
 	}
 
 	tlfType, err := tlf.ParseTlfTypeFromPath(fields[0])
@@ -112,13 +112,13 @@ func (s *Server) getHTTPFileSystem(ctx context.Context, requestPath string) (
 	}
 
 	tlfHandle, err := libkbfs.GetHandleFromFolderNameAndType(ctx,
-		s.config.KBPKI(), s.config.MDOps(), fields[1], tlfType)
+		s.config.KBPKI(), s.config.MDOps(), s.config, fields[1], tlfType)
 	if err != nil {
 		return "", nil, err
 	}
 
 	tlfFS, err := libfs.NewFS(ctx,
-		s.config, tlfHandle, libkbfs.MasterBranch, "", "",
+		s.config, tlfHandle, data.MasterBranch, "", "",
 		keybase1.MDPriorityNormal)
 	if err != nil {
 		return "", nil, err
@@ -184,7 +184,7 @@ func (s *Server) restart() (err error) {
 }
 
 func (s *Server) monitorAppState(ctx context.Context) {
-	state := keybase1.AppState_FOREGROUND
+	state := keybase1.MobileAppState_FOREGROUND
 	for {
 		select {
 		case <-ctx.Done():
@@ -199,7 +199,7 @@ func (s *Server) monitorAppState(ctx context.Context) {
 			// there are other possible states too, and potentially more in the
 			// future. So, we just restart the server under FOREGROUND instead
 			// of trying to listen on all state updates.
-			if state != keybase1.AppState_FOREGROUND {
+			if state != keybase1.MobileAppState_FOREGROUND {
 				continue
 			}
 			if err := s.restart(); err != nil {

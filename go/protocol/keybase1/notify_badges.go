@@ -36,6 +36,20 @@ func (o TeamMemberOutReset) DeepCopy() TeamMemberOutReset {
 	}
 }
 
+type DeletedTeamInfo struct {
+	TeamName  string        `codec:"teamName" json:"teamName"`
+	DeletedBy string        `codec:"deletedBy" json:"deletedBy"`
+	Id        gregor1.MsgID `codec:"id" json:"id"`
+}
+
+func (o DeletedTeamInfo) DeepCopy() DeletedTeamInfo {
+	return DeletedTeamInfo{
+		TeamName:  o.TeamName,
+		DeletedBy: o.DeletedBy,
+		Id:        o.Id.DeepCopy(),
+	}
+}
+
 type WalletAccountInfo struct {
 	AccountID string `codec:"accountID" json:"accountID"`
 	NumUnread int    `codec:"numUnread" json:"numUnread"`
@@ -45,6 +59,18 @@ func (o WalletAccountInfo) DeepCopy() WalletAccountInfo {
 	return WalletAccountInfo{
 		AccountID: o.AccountID,
 		NumUnread: o.NumUnread,
+	}
+}
+
+type ResetState struct {
+	EndTime Time `codec:"endTime" json:"end_time"`
+	Active  bool `codec:"active" json:"active"`
+}
+
+func (o ResetState) DeepCopy() ResetState {
+	return ResetState{
+		EndTime: o.EndTime.DeepCopy(),
+		Active:  o.Active,
 	}
 }
 
@@ -59,9 +85,11 @@ type BadgeState struct {
 	Conversations             []BadgeConversationInfo `codec:"conversations" json:"conversations"`
 	NewGitRepoGlobalUniqueIDs []string                `codec:"newGitRepoGlobalUniqueIDs" json:"newGitRepoGlobalUniqueIDs"`
 	NewTeamNames              []string                `codec:"newTeamNames" json:"newTeamNames"`
+	DeletedTeams              []DeletedTeamInfo       `codec:"deletedTeams" json:"deletedTeams"`
 	NewTeamAccessRequests     []string                `codec:"newTeamAccessRequests" json:"newTeamAccessRequests"`
 	TeamsWithResetUsers       []TeamMemberOutReset    `codec:"teamsWithResetUsers" json:"teamsWithResetUsers"`
 	UnreadWalletAccounts      []WalletAccountInfo     `codec:"unreadWalletAccounts" json:"unreadWalletAccounts"`
+	ResetState                ResetState              `codec:"resetState" json:"resetState"`
 }
 
 func (o BadgeState) DeepCopy() BadgeState {
@@ -126,6 +154,17 @@ func (o BadgeState) DeepCopy() BadgeState {
 			}
 			return ret
 		})(o.NewTeamNames),
+		DeletedTeams: (func(x []DeletedTeamInfo) []DeletedTeamInfo {
+			if x == nil {
+				return nil
+			}
+			ret := make([]DeletedTeamInfo, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.DeletedTeams),
 		NewTeamAccessRequests: (func(x []string) []string {
 			if x == nil {
 				return nil
@@ -159,6 +198,7 @@ func (o BadgeState) DeepCopy() BadgeState {
 			}
 			return ret
 		})(o.UnreadWalletAccounts),
+		ResetState: o.ResetState.DeepCopy(),
 	}
 }
 

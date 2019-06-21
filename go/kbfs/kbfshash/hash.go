@@ -55,6 +55,13 @@ const (
 	SHA256Hash HashType = 1
 	// SHA256HashV2 is the type of a SHA256 hash over V2-encrypted data.
 	SHA256HashV2 HashType = 2
+
+	// MaxHashType is the highest-supported hash type.
+	MaxHashType HashType = SHA256HashV2
+
+	// TemporaryHashType is a hash type to be used for random
+	// byte-strings that can be used in place of real hashes.
+	TemporaryHashType HashType = 0xff
 )
 
 // MaxDefaultHash is the maximum value of RawDefaultHash

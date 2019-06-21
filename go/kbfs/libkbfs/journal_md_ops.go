@@ -11,11 +11,10 @@ import (
 	"github.com/keybase/client/go/kbfs/kbfsblock"
 	"github.com/keybase/client/go/kbfs/kbfscrypto"
 	"github.com/keybase/client/go/kbfs/kbfsmd"
+	"github.com/keybase/client/go/kbfs/tlf"
+	"github.com/keybase/client/go/kbfs/tlfhandle"
 	"github.com/keybase/client/go/protocol/keybase1"
 	"github.com/pkg/errors"
-
-	"github.com/keybase/client/go/kbfs/tlf"
-
 	"golang.org/x/net/context"
 )
 
@@ -46,7 +45,7 @@ var _ MDOps = journalMDOps{}
 // full-fledged RMD.  The MD is assumed to have been read from the
 // journal.
 func (j journalMDOps) convertImmutableBareRMDToIRMD(ctx context.Context,
-	ibrmd ImmutableBareRootMetadata, handle *TlfHandle,
+	ibrmd ImmutableBareRootMetadata, handle *tlfhandle.Handle,
 	uid keybase1.UID, key kbfscrypto.VerifyingKey) (
 	ImmutableRootMetadata, error) {
 	// TODO: Avoid having to do this type assertion.
@@ -60,8 +59,8 @@ func (j journalMDOps) convertImmutableBareRMDToIRMD(ctx context.Context,
 	config := j.jManager.config
 	pmd, err := decryptMDPrivateData(ctx, config.Codec(), config.Crypto(),
 		config.BlockCache(), config.BlockOps(), config.KeyManager(),
-		config.KBPKI(), config.Mode(), uid, rmd.GetSerializedPrivateMetadata(),
-		rmd, rmd, j.jManager.log)
+		config.KBPKI(), config, config.Mode(), uid,
+		rmd.GetSerializedPrivateMetadata(), rmd, rmd, j.jManager.log)
 	if err != nil {
 		return ImmutableRootMetadata{}, err
 	}
@@ -79,7 +78,7 @@ func (j journalMDOps) convertImmutableBareRMDToIRMD(ctx context.Context,
 // skipped.
 func (j journalMDOps) getHeadFromJournal(
 	ctx context.Context, id tlf.ID, bid kbfsmd.BranchID, mStatus kbfsmd.MergeStatus,
-	handle *TlfHandle) (
+	handle *tlfhandle.Handle) (
 	ImmutableRootMetadata, error) {
 	tlfJournal, ok := j.jManager.getTLFJournal(id, handle)
 	if !ok {
@@ -128,24 +127,28 @@ func (j journalMDOps) getHeadFromJournal(
 	}
 
 	if handle == nil {
-		handle, err = MakeTlfHandle(
+		handle, err = tlfhandle.MakeHandleWithTlfID(
 			ctx, headBareHandle, id.Type(), j.jManager.config.KBPKI(),
-			j.jManager.config.KBPKI(), constIDGetter{id})
+			j.jManager.config.KBPKI(), id,
+			j.jManager.config.OfflineAvailabilityForID(id))
 		if err != nil {
 			return ImmutableRootMetadata{}, err
 		}
+		handle.SetTlfID(id)
 	} else {
 		// Check for mutual handle resolution.
-		headHandle, err := MakeTlfHandle(
+		headHandle, err := tlfhandle.MakeHandleWithTlfID(
 			ctx, headBareHandle, id.Type(), j.jManager.config.KBPKI(),
-			j.jManager.config.KBPKI(), constIDGetter{id})
+			j.jManager.config.KBPKI(), id,
+			j.jManager.config.OfflineAvailabilityForID(id))
 		if err != nil {
 			return ImmutableRootMetadata{}, err
 		}
 
 		if err := headHandle.MutuallyResolvesTo(ctx, j.jManager.config.Codec(),
-			j.jManager.config.KBPKI(), j.jManager.config.MDOps(), *handle,
-			head.RevisionNumber(), head.TlfID(), j.jManager.log); err != nil {
+			j.jManager.config.KBPKI(), j.jManager.config.MDOps(),
+			j.jManager.config, *handle, head.RevisionNumber(), head.TlfID(),
+			j.jManager.log); err != nil {
 			return ImmutableRootMetadata{}, err
 		}
 	}
@@ -199,12 +202,14 @@ func (j journalMDOps) getRangeFromJournal(
 	if err != nil {
 		return nil, err
 	}
-	handle, err := MakeTlfHandle(
+	handle, err := tlfhandle.MakeHandleWithTlfID(
 		ctx, bareHandle, id.Type(), j.jManager.config.KBPKI(),
-		j.jManager.config.KBPKI(), constIDGetter{id})
+		j.jManager.config.KBPKI(), id,
+		j.jManager.config.OfflineAvailabilityForID(id))
 	if err != nil {
 		return nil, err
 	}
+	handle.SetTlfID(id)
 
 	irmds := make([]ImmutableRootMetadata, 0, len(ibrmds))
 
@@ -229,14 +234,23 @@ func (j journalMDOps) getRangeFromJournal(
 
 // GetIDForHandle implements the MDOps interface for journalMDOps.
 func (j journalMDOps) GetIDForHandle(
-	ctx context.Context, handle *TlfHandle) (id tlf.ID, err error) {
-	id, err = j.MDOps.GetIDForHandle(ctx, handle)
-	if err != nil {
-		return tlf.NullID, err
-	}
+	ctx context.Context, handle *tlfhandle.Handle) (id tlf.ID, err error) {
+	id = handle.TlfID()
 	if id == tlf.NullID {
-		return id, nil
+		id, err = j.MDOps.GetIDForHandle(ctx, handle)
+		if err != nil || id == tlf.NullID {
+			return tlf.NullID, err
+		}
 	}
+
+	// If this handle is for a local conflict, use the fake TLF ID
+	// that was assigned to it instead.
+	newID, ok := j.jManager.getConflictIDForHandle(id, handle)
+	if ok {
+		id = newID
+		handle.SetTlfID(id)
+	}
+
 	// Create the journal if needed, while we have access to `handle`.
 	_, _ = j.jManager.getTLFJournal(id, handle)
 	return id, nil

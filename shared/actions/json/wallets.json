@@ -98,6 +98,10 @@
         "error": "string"
       }
     },
+    "externalPartnersReceived": {
+      "_description": "Update our list of external tools and partners",
+      "externalPartners": "I.List<Types.PartnerUrl>"
+    },
     "exitFailedPayment": {
       "_description": "Close the send form and show the user their transactions so they can review."
     },
@@ -112,6 +116,9 @@
     "loadAccounts": {
       "_description": "Refresh our list of accounts",
       "reason": "'initial-load' | 'open-send-req-form'"
+    },
+    "loadExternalPartners": {
+      "_description": "Refresh our list of external tools and partner links"
     },
     "loadInflationDestination": {
       "_description": "Refresh inflation destination and options",
@@ -201,12 +208,12 @@
     },
     "loadDisplayCurrency": {
       "_description": "Load display currency for an account",
-      "accountID": "?Types.AccountID",
+      "accountID": "Types.AccountID | null",
       "setBuildingCurrency?": "boolean"
     },
     "displayCurrencyReceived": {
       "_description": "Update display currency for a certain account",
-      "accountID": "?Types.AccountID",
+      "accountID": "Types.AccountID | null",
       "currency": "Types.Currency",
       "setBuildingCurrency?": "boolean"
     },
@@ -232,7 +239,7 @@
     "paymentsReceived": {
       "_description": "Update our store of payments data",
       "accountID": "Types.AccountID",
-      "paymentCursor": "?StellarRPCTypes.PageCursor",
+      "paymentCursor": "StellarRPCTypes.PageCursor | null",
       "oldestUnread": "Types.PaymentID",
       "payments": "Array<Types.PaymentResult>",
       "pending": "Array<Types.PaymentResult>"
@@ -245,7 +252,7 @@
     "recentPaymentsReceived": {
       "_description": "Received a fresh first page of recent payments",
       "accountID": "Types.AccountID",
-      "paymentCursor": "?StellarRPCTypes.PageCursor",
+      "paymentCursor": "StellarRPCTypes.PageCursor | null",
       "oldestUnread": "Types.PaymentID",
       "payments": "Array<Types.PaymentResult>"
     },
@@ -255,7 +262,7 @@
       "reviewID": "number",
       "seqno": "number",
       "nextButton": "string",
-      "banners?": "?Array<StellarRPCTypes.SendBannerLocal>"
+      "banners?": "Array<StellarRPCTypes.SendBannerLocal> | null"
     },
     "secretKeyReceived": {
       "_description": "Update our store with an exported secret key",
@@ -269,8 +276,13 @@
     "selectAccount": {
       "_description": "Select an account. Optionally navigate to the account page.",
       "accountID": "Types.AccountID",
-      "reason": "'user-selected' | 'auto-selected' | 'from-chat'",
+      "reason": "'user-selected' | 'auto-selected' | 'from-chat' | 'show-transaction'",
       "show?": "boolean"
+    },
+    "showTransaction": {
+      "_description": "Navigate to the details page for the given transaction.",
+      "accountID": "Types.AccountID",
+      "paymentID": "Types.PaymentID"
     },
     "buildPayment": {
       "_description": "Send a potential payment to the service for validation"
@@ -400,6 +412,19 @@
       "_description": "Change mobile only mode for Stellar account.",
       "accountID": "Types.AccountID",
       "enabled": "boolean"
-    }
+    },
+    "changeAirdrop": {
+      "_description": "Turn participation in airdrop on/off",
+      "accept": "boolean"
+    },
+    "hideAirdropBanner": {},
+    "updateAirdropBannerState": {"show": "boolean"},
+    "updateAirdropState": {},
+    "updatedAirdropState": {
+      "airdropQualifications": "Array<Types.AirdropQualification>",
+      "airdropState": "Types.AirdropState"
+    },
+    "updateAirdropDetails": {},
+    "updatedAirdropDetails": {"details": "Types.AirdropDetails"}
   }
 }

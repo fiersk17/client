@@ -15,12 +15,12 @@ type Headline struct {
 func NewHeadline(g *globals.Context) *Headline {
 	return &Headline{
 		baseCommand: newBaseCommand(g, "headline", "<description>",
-			"Set the team channel topic", "topic"),
+			"Set the team channel topic", false, "topic"),
 	}
 }
 
 func (s *Headline) Execute(ctx context.Context, uid gregor1.UID, convID chat1.ConversationID,
-	tlfName, text string) (err error) {
+	tlfName, text string, replyTo *chat1.MessageID) (err error) {
 	defer s.Trace(ctx, func() error { return err }, "Execute")()
 	if !s.Match(ctx, text) {
 		return ErrInvalidCommand

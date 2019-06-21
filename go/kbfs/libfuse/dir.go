@@ -17,10 +17,15 @@ import (
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
+	"github.com/keybase/client/go/kbfs/data"
+	"github.com/keybase/client/go/kbfs/idutil"
+	"github.com/keybase/client/go/kbfs/libcontext"
 	"github.com/keybase/client/go/kbfs/libfs"
 	"github.com/keybase/client/go/kbfs/libkbfs"
 	"github.com/keybase/client/go/kbfs/sysutils"
 	"github.com/keybase/client/go/kbfs/tlf"
+	"github.com/keybase/client/go/kbfs/tlfhandle"
+	"github.com/keybase/client/go/libkb"
 	"golang.org/x/net/context"
 )
 
@@ -31,11 +36,11 @@ type Folder struct {
 	list *FolderList
 
 	handleMu       sync.RWMutex
-	h              *libkbfs.TlfHandle
+	h              *tlfhandle.Handle
 	hPreferredName tlf.PreferredName
 
 	folderBranchMu sync.Mutex
-	folderBranch   libkbfs.FolderBranch
+	folderBranch   data.FolderBranch
 
 	// Protects the nodes map.
 	nodesMu sync.Mutex
@@ -58,7 +63,7 @@ type Folder struct {
 	quarantine bool
 }
 
-func newFolder(ctx context.Context, fl *FolderList, h *libkbfs.TlfHandle,
+func newFolder(ctx context.Context, fl *FolderList, h *tlfhandle.Handle,
 	hPreferredName tlf.PreferredName) *Folder {
 	f := &Folder{
 		fs:             fl.fs,
@@ -80,7 +85,7 @@ func (f *Folder) name() tlf.CanonicalName {
 func (f *Folder) processError(ctx context.Context,
 	mode libkbfs.ErrorModeType, err error) error {
 	if err == nil {
-		f.fs.errLog.CDebugf(ctx, "Request complete")
+		f.fs.errVlog.CLogf(ctx, libkb.VLog1, "Request complete")
 		return nil
 	}
 
@@ -94,13 +99,13 @@ func (f *Folder) processError(ctx context.Context,
 	return filterError(err)
 }
 
-func (f *Folder) setFolderBranch(folderBranch libkbfs.FolderBranch) error {
+func (f *Folder) setFolderBranch(folderBranch data.FolderBranch) error {
 	f.folderBranchMu.Lock()
 	defer f.folderBranchMu.Unlock()
 
 	// TODO unregister all at unmount
 	err := f.list.fs.config.Notifier().RegisterForChanges(
-		[]libkbfs.FolderBranch{folderBranch}, f)
+		[]data.FolderBranch{folderBranch}, f)
 	if err != nil {
 		return err
 	}
@@ -111,20 +116,20 @@ func (f *Folder) setFolderBranch(folderBranch libkbfs.FolderBranch) error {
 func (f *Folder) unsetFolderBranch(ctx context.Context) {
 	f.folderBranchMu.Lock()
 	defer f.folderBranchMu.Unlock()
-	if f.folderBranch == (libkbfs.FolderBranch{}) {
+	if f.folderBranch == (data.FolderBranch{}) {
 		// Wasn't set.
 		return
 	}
 
-	err := f.list.fs.config.Notifier().UnregisterFromChanges([]libkbfs.FolderBranch{f.folderBranch}, f)
+	err := f.list.fs.config.Notifier().UnregisterFromChanges([]data.FolderBranch{f.folderBranch}, f)
 	if err != nil {
 		f.fs.log.Info("cannot unregister change notifier for folder %q: %v",
 			f.name(), err)
 	}
-	f.folderBranch = libkbfs.FolderBranch{}
+	f.folderBranch = data.FolderBranch{}
 }
 
-func (f *Folder) getFolderBranch() libkbfs.FolderBranch {
+func (f *Folder) getFolderBranch() data.FolderBranch {
 	f.folderBranchMu.Lock()
 	defer f.folderBranchMu.Unlock()
 	return f.folderBranch
@@ -137,8 +142,8 @@ func (f *Folder) forgetNode(node libkbfs.Node) {
 
 	delete(f.nodes, node.GetID())
 	if len(f.nodes) == 0 {
-		ctx := libkbfs.BackgroundContextWithCancellationDelayer()
-		defer libkbfs.CleanupCancellationDelayer(ctx)
+		ctx := libcontext.BackgroundContextWithCancellationDelayer()
+		defer libcontext.CleanupCancellationDelayer(ctx)
 		f.unsetFolderBranch(ctx)
 		f.list.forgetFolder(string(f.name()))
 	}
@@ -146,11 +151,11 @@ func (f *Folder) forgetNode(node libkbfs.Node) {
 
 var _ libkbfs.Observer = (*Folder)(nil)
 
-func (f *Folder) resolve(ctx context.Context) (*libkbfs.TlfHandle, error) {
+func (f *Folder) resolve(ctx context.Context) (*tlfhandle.Handle, error) {
 	if f.h.TlfID() == tlf.NullID {
 		// If the handle doesn't have a TLF ID yet, fetch it now.
-		handle, err := libkbfs.ParseTlfHandlePreferred(
-			ctx, f.fs.config.KBPKI(), f.fs.config.MDOps(),
+		handle, err := tlfhandle.ParseHandlePreferred(
+			ctx, f.fs.config.KBPKI(), f.fs.config.MDOps(), f.fs.config,
 			string(f.hPreferredName), f.h.Type())
 		if err != nil {
 			return nil, err
@@ -165,7 +170,7 @@ func (f *Folder) resolve(ctx context.Context) (*libkbfs.TlfHandle, error) {
 	// updates yet for this folder, we might have missed a name
 	// change.
 	handle, err := f.h.ResolveAgain(
-		ctx, f.fs.config.KBPKI(), f.fs.config.MDOps())
+		ctx, f.fs.config.KBPKI(), f.fs.config.MDOps(), f.fs.config)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +316,7 @@ func (f *Folder) batchChangesInvalidate(ctx context.Context,
 // Note that newHandle may be nil. Then the handle in the folder is used.
 // This is used on e.g. logout/login.
 func (f *Folder) TlfHandleChange(ctx context.Context,
-	newHandle *libkbfs.TlfHandle) {
+	newHandle *tlfhandle.Handle) {
 	f.fs.log.CDebugf(ctx, "TlfHandleChange called on %q",
 		canonicalNameIfNotNil(newHandle))
 	// Handle in the background because we shouldn't lock during the
@@ -321,7 +326,7 @@ func (f *Folder) TlfHandleChange(ctx context.Context,
 	})
 }
 
-func canonicalNameIfNotNil(h *libkbfs.TlfHandle) string {
+func canonicalNameIfNotNil(h *tlfhandle.Handle) string {
 	if h == nil {
 		return "(nil)"
 	}
@@ -329,8 +334,8 @@ func canonicalNameIfNotNil(h *libkbfs.TlfHandle) string {
 }
 
 func (f *Folder) tlfHandleChangeInvalidate(ctx context.Context,
-	newHandle *libkbfs.TlfHandle) {
-	session, err := libkbfs.GetCurrentSessionIfPossible(
+	newHandle *tlfhandle.Handle) {
+	session, err := idutil.GetCurrentSessionIfPossible(
 		ctx, f.fs.config.KBPKI(), f.list.tlfType == tlf.Public)
 	// Here we get an error, but there is little that can be done.
 	// session will be empty in the error case in which case we will default to the
@@ -359,16 +364,18 @@ func (f *Folder) writePermMode(ctx context.Context,
 	node libkbfs.Node, original os.FileMode) (os.FileMode, error) {
 	f.handleMu.RLock()
 	defer f.handleMu.RUnlock()
-	return libfs.WritePermMode(ctx, node, original, f.fs.config.KBPKI(), f.h)
+	return libfs.WritePermMode(
+		ctx, node, original, f.fs.config.KBPKI(), f.fs.config, f.h)
 }
 
 // fillAttrWithUIDAndWritePerm sets attributes based on the entry info, and
 // pops in correct UID and write permissions. It only handles fields common to
 // all entryinfo types.
 func (f *Folder) fillAttrWithUIDAndWritePerm(
-	ctx context.Context, node libkbfs.Node, ei *libkbfs.EntryInfo,
+	ctx context.Context, node libkbfs.Node, ei *data.EntryInfo,
 	a *fuse.Attr) (err error) {
 	a.Valid = 1 * time.Minute
+	node.FillCacheDuration(&a.Valid)
 
 	a.Size = ei.Size
 	a.Blocks = getNumBlocksFromSize(ei.Size)
@@ -387,7 +394,7 @@ func (f *Folder) fillAttrWithUIDAndWritePerm(
 func (f *Folder) isWriter(ctx context.Context) (bool, error) {
 	f.handleMu.RLock()
 	defer f.handleMu.RUnlock()
-	return libfs.IsWriter(ctx, f.fs.config.KBPKI(), f.h)
+	return libfs.IsWriter(ctx, f.fs.config.KBPKI(), f.fs.config, f.h)
 }
 
 func (f *Folder) access(ctx context.Context, r *fuse.AccessRequest) error {
@@ -485,11 +492,11 @@ func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) (err error) {
 		ctx, "Dir.Attr", d.node.GetBasename())
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir Attr")
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Dir Attr")
 	defer func() { err = d.folder.processError(ctx, libkbfs.ReadMode, err) }()
 
 	// This fits in situation 1 as described in libkbfs/delayed_cancellation.go
-	err = libkbfs.EnableDelayedCancellationWithGracePeriod(
+	err = libcontext.EnableDelayedCancellationWithGracePeriod(
 		ctx, d.folder.fs.config.DelayedCancellationGracePeriod())
 	if err != nil {
 		return err
@@ -536,11 +543,11 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 		fmt.Sprintf("%s %s", d.node.GetBasename(), req.Name))
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir Lookup %s", req.Name)
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Dir Lookup %s", req.Name)
 	defer func() { err = d.folder.processError(ctx, libkbfs.ReadMode, err) }()
 
 	// This fits in situation 1 as described in libkbfs/delayed_cancellation.go
-	err = libkbfs.EnableDelayedCancellationWithGracePeriod(
+	err = libcontext.EnableDelayedCancellationWithGracePeriod(
 		ctx, d.folder.fs.config.DelayedCancellationGracePeriod())
 	if err != nil {
 		return nil, err
@@ -561,7 +568,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 
 	newNode, de, err := d.folder.fs.config.KBFSOps().Lookup(ctx, d.node, req.Name)
 	if err != nil {
-		if _, ok := err.(libkbfs.NoSuchNameError); ok {
+		if _, ok := err.(idutil.NoSuchNameError); ok {
 			return nil, fuse.ENOENT
 		}
 		return nil, err
@@ -578,23 +585,25 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 		if n, ok := d.folder.nodes[newNode.GetID()]; ok {
 			return n, nil
 		}
+
+		newNode.FillCacheDuration(&resp.EntryValid)
 	}
 
 	switch de.Type {
 	default:
 		return nil, fmt.Errorf("unhandled entry type: %v", de.Type)
 
-	case libkbfs.File, libkbfs.Exec:
+	case data.File, data.Exec:
 		child := d.makeFile(newNode)
 		d.folder.nodes[newNode.GetID()] = child
 		return child, nil
 
-	case libkbfs.Dir:
+	case data.Dir:
 		child := newDir(d.folder, newNode)
 		d.folder.nodes[newNode.GetID()] = child
 		return child, nil
 
-	case libkbfs.Sym:
+	case data.Sym:
 		// Give each symlink instance a unique inode.  We don't get
 		// enough information about remote renames of syminks to be
 		// able to attach a constant inode to a given symlink.
@@ -619,7 +628,7 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 		fmt.Sprintf("%s %s", d.node.GetBasename(), req.Name))
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir Create %s", req.Name)
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Dir Create %s", req.Name)
 	defer func() { err = d.folder.processError(ctx, libkbfs.WriteMode, err) }()
 
 	isExec := (req.Mode.Perm() & 0100) != 0
@@ -655,11 +664,11 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (
 		fmt.Sprintf("%s %s", d.node.GetBasename(), req.Name))
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir Mkdir %s", req.Name)
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Dir Mkdir %s", req.Name)
 	defer func() { err = d.folder.processError(ctx, libkbfs.WriteMode, err) }()
 
 	// This fits in situation 1 as described in libkbfs/delayed_cancellation.go
-	err = libkbfs.EnableDelayedCancellationWithGracePeriod(
+	err = libcontext.EnableDelayedCancellationWithGracePeriod(
 		ctx, d.folder.fs.config.DelayedCancellationGracePeriod())
 	if err != nil {
 		return nil, err
@@ -686,12 +695,12 @@ func (d *Dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (
 			req.NewName, req.Target))
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir Symlink %s -> %s",
-		req.NewName, req.Target)
+	d.folder.fs.vlog.CLogf(
+		ctx, libkb.VLog1, "Dir Symlink %s -> %s", req.NewName, req.Target)
 	defer func() { err = d.folder.processError(ctx, libkbfs.WriteMode, err) }()
 
 	// This fits in situation 1 as described in libkbfs/delayed_cancellation.go
-	err = libkbfs.EnableDelayedCancellationWithGracePeriod(
+	err = libcontext.EnableDelayedCancellationWithGracePeriod(
 		ctx, d.folder.fs.config.DelayedCancellationGracePeriod())
 	if err != nil {
 		return nil, err
@@ -718,8 +727,8 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest,
 			req.OldName, req.NewName))
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir Rename %s -> %s",
-		req.OldName, req.NewName)
+	d.folder.fs.vlog.CLogf(
+		ctx, libkb.VLog1, "Dir Rename %s -> %s", req.OldName, req.NewName)
 	defer func() { err = d.folder.processError(ctx, libkbfs.WriteMode, err) }()
 
 	var realNewDir *Dir
@@ -770,11 +779,11 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) (err error) {
 		fmt.Sprintf("%s %s", d.node.GetBasename(), req.Name))
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir Remove %s", req.Name)
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Dir Remove %s", req.Name)
 	defer func() { err = d.folder.processError(ctx, libkbfs.WriteMode, err) }()
 
 	// This fits in situation 1 as described in libkbfs/delayed_cancellation.go
-	err = libkbfs.EnableDelayedCancellationWithGracePeriod(
+	err = libcontext.EnableDelayedCancellationWithGracePeriod(
 		ctx, d.folder.fs.config.DelayedCancellationGracePeriod())
 	if err != nil {
 		return err
@@ -801,7 +810,7 @@ func (d *Dir) ReadDirAll(ctx context.Context) (res []fuse.Dirent, err error) {
 		ctx, "Dir.ReadDirAll", d.node.GetBasename())
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir ReadDirAll")
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Dir ReadDirAll")
 	defer func() { err = d.folder.processError(ctx, libkbfs.ReadMode, err) }()
 
 	children, err := d.folder.fs.config.KBFSOps().GetDirChildren(ctx, d.node)
@@ -820,16 +829,16 @@ func (d *Dir) ReadDirAll(ctx context.Context) (res []fuse.Dirent, err error) {
 			// it anywhere, so it's safe.
 		}
 		switch ei.Type {
-		case libkbfs.File, libkbfs.Exec:
+		case data.File, data.Exec:
 			fde.Type = fuse.DT_File
-		case libkbfs.Dir:
+		case data.Dir:
 			fde.Type = fuse.DT_Dir
-		case libkbfs.Sym:
+		case data.Sym:
 			fde.Type = fuse.DT_Link
 		}
 		res = append(res, fde)
 	}
-	d.folder.fs.log.CDebugf(ctx, "Returning %d entries", len(res))
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Returning %d entries", len(res))
 	return res, nil
 }
 
@@ -845,7 +854,7 @@ func (d *Dir) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.
 		fmt.Sprintf("%s %s", d.node.GetBasename(), valid))
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir SetAttr %s", valid)
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Dir SetAttr %s", valid)
 	defer func() { err = d.folder.processError(ctx, libkbfs.WriteMode, err) }()
 
 	if valid.Mode() {
@@ -854,8 +863,9 @@ func (d *Dir) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.
 		// applications like unzip.  Instead ignore it, print a debug
 		// message, and advertise this behavior on the
 		// "understand_kbfs" doc online.
-		d.folder.fs.log.CDebugf(ctx, "Ignoring unsupported attempt to set "+
-			"the mode on a directory")
+		d.folder.fs.vlog.CLogf(
+			ctx, libkb.VLog1, "Ignoring unsupported attempt to set "+
+				"the mode on a directory")
 		valid &^= fuse.SetattrMode
 	}
 
@@ -880,8 +890,9 @@ func (d *Dir) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.
 		// some programs like mv.  Instead ignore it, print a debug
 		// message, and advertise this behavior on the
 		// "understand_kbfs" doc online.
-		d.folder.fs.log.CDebugf(ctx, "Ignoring unsupported attempt to set "+
-			"the UID/GID on a directory")
+		d.folder.fs.vlog.CLogf(
+			ctx, libkb.VLog1, "Ignoring unsupported attempt to set "+
+				"the UID/GID on a directory")
 		valid &^= fuse.SetattrUid | fuse.SetattrGid
 	}
 
@@ -902,11 +913,11 @@ func (d *Dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) (err error) {
 		ctx, "Dir.Fsync", d.node.GetBasename())
 	defer func() { d.folder.fs.config.MaybeFinishTrace(ctx, err) }()
 
-	d.folder.fs.log.CDebugf(ctx, "Dir Fsync")
+	d.folder.fs.vlog.CLogf(ctx, libkb.VLog1, "Dir Fsync")
 	defer func() { err = d.folder.processError(ctx, libkbfs.WriteMode, err) }()
 
 	// This fits in situation 1 as described in libkbfs/delayed_cancellation.go
-	err = libkbfs.EnableDelayedCancellationWithGracePeriod(
+	err = libcontext.EnableDelayedCancellationWithGracePeriod(
 		ctx, d.folder.fs.config.DelayedCancellationGracePeriod())
 	if err != nil {
 		return err
@@ -917,6 +928,6 @@ func (d *Dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) (err error) {
 
 // isNoSuchNameError checks for libkbfs.NoSuchNameError.
 func isNoSuchNameError(err error) bool {
-	_, ok := err.(libkbfs.NoSuchNameError)
+	_, ok := err.(idutil.NoSuchNameError)
 	return ok
 }

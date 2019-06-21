@@ -13,6 +13,7 @@ import (
 	"github.com/keybase/client/go/protocol/chat1"
 	"github.com/keybase/client/go/protocol/gregor1"
 	"golang.org/x/net/context"
+	"golang.org/x/sync/errgroup"
 )
 
 type LocalStorageEngine interface {
@@ -41,6 +42,7 @@ type Client struct {
 	incomingClient func() gregor1.IncomingInterface
 	outboxSendCh   chan struct{}
 	stopCh         chan struct{}
+	eg             errgroup.Group
 	createSm       func() gregor.StateMachine
 
 	// testing events
@@ -61,7 +63,7 @@ func NewClient(user gregor.UID, device gregor.DeviceID, createSm func() gregor.S
 		incomingClient: incomingClient,
 		createSm:       createSm,
 	}
-	go c.outboxSendLoop()
+	c.eg.Go(c.outboxSendLoop)
 	return c
 }
 
@@ -159,8 +161,14 @@ func (c *Client) Restore(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) Stop() {
+func (c *Client) Stop() chan struct{} {
+	ch := make(chan struct{})
 	close(c.stopCh)
+	go func() {
+		c.eg.Wait()
+		close(ch)
+	}()
+	return ch
 }
 
 type ErrHashMismatch struct{}
@@ -455,9 +463,7 @@ func (c *Client) StateMachineState(ctx context.Context, t gregor.TimeOrOffset,
 }
 
 func (c *Client) outboxSend() {
-	c.Log.Debug("outboxSend: running")
 	ctx := context.Background()
-	var newOutbox []gregor.Message
 	msgs, err := c.Sm.Outbox(ctx, c.User)
 	if err != nil {
 		c.Log.Debug("outboxSend: failed to get outbox messages: %s", err)
@@ -475,34 +481,31 @@ func (c *Client) outboxSend() {
 	for index = 0; index < len(msgs); index++ {
 		m := msgs[index]
 		// Look for a message that we already have in our state and skip
-		if ibm := m.ToInBandMessage(); ibm != nil {
+		ibm := m.ToInBandMessage()
+		if ibm != nil {
 			if _, ok := st.GetItem(ibm.Metadata().MsgID()); ok {
 				c.Log.Debug("outboxSend: skipping message already in state: %s", ibm.Metadata().MsgID())
 				continue
 			}
+		} else {
+			c.Log.Debug("outboxSend: not an inband message, skipping")
+			continue
 		}
 		if err := c.incomingClient().ConsumeMessage(ctx, m.(gregor1.Message)); err != nil {
 			c.Log.Debug("outboxSend: failed to consume message: %s", err)
 			break
 		}
+		c.Sm.RemoveFromOutbox(ctx, c.User, ibm.Metadata().MsgID())
 		if c.TestingEvents != nil {
 			c.TestingEvents.OutboxSend <- m.(gregor1.Message)
 		}
 	}
-	for i := index; i < len(msgs); i++ {
-		newOutbox = append(newOutbox, msgs[i])
-	}
-	c.Log.Debug("outboxSend: adding back: %d outbox items", len(newOutbox))
-	if err := c.Sm.InitOutbox(ctx, c.User, newOutbox); err != nil {
-		c.Log.Debug("outboxSend: failed to init outbox with new items: %s", err)
-	}
 	if err := c.Save(ctx); err != nil {
 		c.Log.Debug("outboxSend: failed to save state: %s", err)
 	}
-
 }
 
-func (c *Client) outboxSendLoop() {
+func (c *Client) outboxSendLoop() error {
 	deadline := c.clock.Now().Add(time.Minute)
 	for {
 		var now time.Time
@@ -512,7 +515,7 @@ func (c *Client) outboxSendLoop() {
 		case <-c.outboxSendCh:
 			c.outboxSend()
 		case <-c.stopCh:
-			return
+			return nil
 		}
 		deadline = now.Add(time.Minute)
 	}

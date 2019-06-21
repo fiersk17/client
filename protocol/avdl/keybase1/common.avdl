@@ -55,6 +55,9 @@ protocol Common {
   @typedef("string")
   record LinkID {}
 
+  @typedef("bytes")
+  record BinaryLinkID {}
+
   // But sometimes we need binary kids...
   @typedef("bytes")
   record BinaryKID {}
@@ -115,7 +118,9 @@ protocol Common {
     NONE_0,
     PUBLIC_1,
     PRIVATE_2,
-    SEMIPRIVATE_3
+    SEMIPRIVATE_3,
+    USER_PRIVATE_HIDDEN_16,
+    TEAM_PRIVATE_HIDDEN_17
   }
 
   fixed Bytes32(32);
@@ -357,4 +362,17 @@ protocol Common {
     int width;
   }
 
+  enum OfflineAvailability {
+    NONE_0,
+    BEST_EFFORT_1
+  }
+
+  // Primarily used in chat but defined here to avoid a circular import
+  @typedef("int") record ReacjiSkinTone {}
+  record UserReacjis {
+    // sorted array of frequently used reacjis
+    array<string> topReacjis;
+    // user preference for default reacji skin tone
+    ReacjiSkinTone skinTone;
+  }
 }

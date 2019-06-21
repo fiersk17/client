@@ -226,6 +226,9 @@ func (s *testDeviceSet) cleanup() {
 			od.service.Stop(0)
 			od.stop()
 		}
+		for _, cl := range od.clones {
+			cl.Cleanup()
+		}
 	}
 }
 
@@ -381,6 +384,18 @@ func (r *testProvisionUI) GetPassphrase(context.Context, keybase1.GetPassphraseA
 	ret.Passphrase = r.backupKey.secret
 	return ret, nil
 }
+func (r *testProvisionUI) PromptResetAccount(_ context.Context, arg keybase1.PromptResetAccountArg) (bool, error) {
+	return false, nil
+}
+func (r *testProvisionUI) DisplayResetProgress(_ context.Context, arg keybase1.DisplayResetProgressArg) error {
+	return nil
+}
+func (r *testProvisionUI) ExplainDeviceRecovery(_ context.Context, arg keybase1.ExplainDeviceRecoveryArg) error {
+	return nil
+}
+func (r *testProvisionUI) PromptPassphraseRecovery(_ context.Context, arg keybase1.PromptPassphraseRecoveryArg) (bool, error) {
+	return false, nil
+}
 
 func (s *testDeviceSet) findNewKIDs(newList []keybase1.KID) []keybase1.KID {
 	var ret []keybase1.KID
@@ -533,6 +548,7 @@ func (d *testDevice) keyTLF(tlf *fakeTLF, uid keybase1.UID, writers []tlfUser, r
 	if err != nil {
 		d.t.Fatalf("error marshalling: %s", err)
 	}
+	mctx := libkb.NewMetaContextTODO(g)
 	apiArg := libkb.APIArg{
 		Endpoint: "test/fake_generic_tlf",
 		Args: libkb.HTTPArgs{
@@ -540,7 +556,7 @@ func (d *testDevice) keyTLF(tlf *fakeTLF, uid keybase1.UID, writers []tlfUser, r
 		},
 		SessionType: libkb.APISessionTypeREQUIRED,
 	}
-	_, err = g.API.Post(apiArg)
+	_, err = g.API.Post(mctx, apiArg)
 	if err != nil {
 		d.t.Fatalf("post error: %s", err)
 	}

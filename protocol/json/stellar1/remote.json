@@ -144,6 +144,122 @@
       ]
     },
     {
+      "type": "record",
+      "name": "PathPaymentPost",
+      "fields": [
+        {
+          "type": "keybase1.DeviceID",
+          "name": "fromDeviceID"
+        },
+        {
+          "type": [
+            null,
+            "keybase1.UserVersion"
+          ],
+          "name": "to"
+        },
+        {
+          "type": "string",
+          "name": "noteB64"
+        },
+        {
+          "type": "string",
+          "name": "signedTransaction"
+        },
+        {
+          "type": "boolean",
+          "name": "quickReturn"
+        },
+        {
+          "type": [
+            null,
+            "ChatConversationID"
+          ],
+          "name": "chatConversationID"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "DirectOp",
+      "fields": [
+        {
+          "type": "string",
+          "name": "noteB64"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "RelayOp",
+      "fields": [
+        {
+          "type": "string",
+          "name": "toAssertion"
+        },
+        {
+          "type": "AccountID",
+          "name": "relayAccount"
+        },
+        {
+          "type": "keybase1.TeamID",
+          "name": "teamID"
+        },
+        {
+          "type": "string",
+          "name": "boxB64"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "PaymentOp",
+      "fields": [
+        {
+          "type": [
+            null,
+            "keybase1.UserVersion"
+          ],
+          "name": "to"
+        },
+        {
+          "type": [
+            null,
+            "DirectOp"
+          ],
+          "name": "direct"
+        },
+        {
+          "type": [
+            null,
+            "RelayOp"
+          ],
+          "name": "relay"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "PaymentMultiPost",
+      "fields": [
+        {
+          "type": "keybase1.DeviceID",
+          "name": "fromDeviceID"
+        },
+        {
+          "type": "string",
+          "name": "signedTransaction"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "PaymentOp"
+          },
+          "name": "operations"
+        }
+      ]
+    },
+    {
       "type": "enum",
       "name": "PaymentSummaryType",
       "symbols": [
@@ -219,6 +335,44 @@
         {
           "type": "boolean",
           "name": "unread"
+        },
+        {
+          "type": "boolean",
+          "name": "isInflation"
+        },
+        {
+          "type": [
+            null,
+            "string"
+          ],
+          "name": "inflationSource"
+        },
+        {
+          "type": "string",
+          "name": "sourceAmountMax"
+        },
+        {
+          "type": "string",
+          "name": "sourceAmountActual"
+        },
+        {
+          "type": "Asset",
+          "name": "sourceAsset"
+        },
+        {
+          "type": "boolean",
+          "name": "isAdvanced"
+        },
+        {
+          "type": "string",
+          "name": "summaryAdvanced"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "name": "operations"
         }
       ]
     },
@@ -330,6 +484,18 @@
         {
           "type": "boolean",
           "name": "fromAirdrop"
+        },
+        {
+          "type": "string",
+          "name": "sourceAmountMax"
+        },
+        {
+          "type": "string",
+          "name": "sourceAmountActual"
+        },
+        {
+          "type": "Asset",
+          "name": "sourceAsset"
         }
       ]
     },
@@ -485,6 +651,10 @@
           "type": "string",
           "name": "externalTxURL",
           "lint": "ignore"
+        },
+        {
+          "type": "string",
+          "name": "feeCharged"
         }
       ]
     },
@@ -570,6 +740,16 @@
             "TransactionID"
           ],
           "name": "oldestUnread"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "SubmitMultiRes",
+      "fields": [
+        {
+          "type": "TransactionID",
+          "name": "txID"
         }
       ]
     },
@@ -700,6 +880,63 @@
           "jsonkey": "timeout"
         }
       ]
+    },
+    {
+      "type": "record",
+      "name": "NetworkOptions",
+      "fields": [
+        {
+          "type": "uint64",
+          "name": "baseFee"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "DetailsPlusPayments",
+      "fields": [
+        {
+          "type": "AccountDetails",
+          "name": "details"
+        },
+        {
+          "type": "PaymentsPage",
+          "name": "recentPayments"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "PaymentSummary"
+          },
+          "name": "pendingPayments"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "PaymentPathQuery",
+      "fields": [
+        {
+          "type": "AccountID",
+          "name": "source"
+        },
+        {
+          "type": "AccountID",
+          "name": "destination"
+        },
+        {
+          "type": "Asset",
+          "name": "sourceAsset"
+        },
+        {
+          "type": "Asset",
+          "name": "destinationAsset"
+        },
+        {
+          "type": "string",
+          "name": "amount"
+        }
+      ]
     }
   ],
   "messages": {
@@ -728,6 +965,14 @@
         {
           "name": "accountID",
           "type": "AccountID"
+        },
+        {
+          "name": "includeMulti",
+          "type": "boolean"
+        },
+        {
+          "name": "includeAdvanced",
+          "type": "boolean"
         }
       ],
       "response": "AccountDetails"
@@ -755,6 +1000,14 @@
         },
         {
           "name": "skipPending",
+          "type": "boolean"
+        },
+        {
+          "name": "includeMulti",
+          "type": "boolean"
+        },
+        {
+          "name": "includeAdvanced",
           "type": "boolean"
         }
       ],
@@ -866,6 +1119,32 @@
       ],
       "response": "RelayClaimResult"
     },
+    "submitPathPayment": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        },
+        {
+          "name": "payment",
+          "type": "PathPaymentPost"
+        }
+      ],
+      "response": "PaymentResult"
+    },
+    "submitMultiPayment": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        },
+        {
+          "name": "payment",
+          "type": "PaymentMultiPost"
+        }
+      ],
+      "response": "SubmitMultiRes"
+    },
     "acquireAutoClaimLock": {
       "request": [
         {
@@ -968,6 +1247,112 @@
     "ping": {
       "request": [],
       "response": "string"
+    },
+    "networkOptions": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        }
+      ],
+      "response": "NetworkOptions"
+    },
+    "detailsPlusPayments": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        },
+        {
+          "name": "accountID",
+          "type": "AccountID"
+        },
+        {
+          "name": "includeAdvanced",
+          "type": "boolean"
+        }
+      ],
+      "response": "DetailsPlusPayments"
+    },
+    "assetSearch": {
+      "request": [
+        {
+          "name": "assetCode",
+          "type": "string"
+        },
+        {
+          "name": "issuerAccountID",
+          "type": "string"
+        }
+      ],
+      "response": {
+        "type": "array",
+        "items": "Asset"
+      }
+    },
+    "fuzzyAssetSearch": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        },
+        {
+          "name": "searchString",
+          "type": "string"
+        }
+      ],
+      "response": {
+        "type": "array",
+        "items": "Asset"
+      }
+    },
+    "listPopularAssets": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        }
+      ],
+      "response": "AssetListResult"
+    },
+    "changeTrustline": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        },
+        {
+          "name": "signedTransaction",
+          "type": "string"
+        }
+      ],
+      "response": null
+    },
+    "findPaymentPath": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        },
+        {
+          "name": "query",
+          "type": "PaymentPathQuery"
+        }
+      ],
+      "response": "PaymentPath"
+    },
+    "postAnyTransaction": {
+      "request": [
+        {
+          "name": "caller",
+          "type": "keybase1.UserVersion"
+        },
+        {
+          "name": "signedTransaction",
+          "type": "string"
+        }
+      ],
+      "response": null
     }
   },
   "namespace": "stellar.1"

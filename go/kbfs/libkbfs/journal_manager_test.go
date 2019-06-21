@@ -15,7 +15,9 @@ import (
 	"github.com/keybase/client/go/kbfs/kbfsblock"
 	"github.com/keybase/client/go/kbfs/kbfscrypto"
 	"github.com/keybase/client/go/kbfs/kbfsmd"
+	"github.com/keybase/client/go/kbfs/test/clocktest"
 	"github.com/keybase/client/go/kbfs/tlf"
+	"github.com/keybase/client/go/kbfs/tlfhandle"
 	kbname "github.com/keybase/client/go/kbun"
 	"github.com/keybase/client/go/protocol/keybase1"
 	"github.com/pkg/errors"
@@ -77,7 +79,7 @@ func setupJournalManagerTest(t *testing.T) (
 }
 
 func teardownJournalManagerTest(
-	t *testing.T, tempdir string, ctx context.Context,
+	ctx context.Context, t *testing.T, tempdir string,
 	cancel context.CancelFunc, config Config) {
 	CheckConfigAndShutdown(ctx, t, config)
 	cancel()
@@ -144,7 +146,7 @@ func (qbs *quotaBlockServer) GetTeamQuotaInfo(
 func TestJournalManagerOverQuotaError(t *testing.T) {
 	tempdir, ctx, cancel, config, quotaUsage, jManager :=
 		setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	name := kbname.NormalizedUsername("t1")
 	subname := kbname.NormalizedUsername("t1.sub")
@@ -160,7 +162,7 @@ func TestJournalManagerOverQuotaError(t *testing.T) {
 	qbs := &quotaBlockServer{BlockServer: config.BlockServer()}
 	config.SetBlockServer(qbs)
 
-	clock := newTestClockNow()
+	clock := clocktest.NewTestClockNow()
 	config.SetClock(clock)
 
 	// Set initial quota usage and refresh quotaUsage's cache.
@@ -177,22 +179,22 @@ func TestJournalManagerOverQuotaError(t *testing.T) {
 	err = jManager.Enable(ctx, tlfID1, nil, TLFJournalBackgroundWorkPaused)
 	require.NoError(t, err)
 	tlfID2 := tlf.FakeID(2, tlf.SingleTeam)
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "t1", tlf.SingleTeam)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "t1", tlf.SingleTeam)
 	require.NoError(t, err)
 	err = jManager.Enable(ctx, tlfID2, h, TLFJournalBackgroundWorkPaused)
 	require.NoError(t, err)
 	tlfID3 := tlf.FakeID(2, tlf.SingleTeam)
-	h, err = ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "t1.sub", tlf.SingleTeam)
+	h, err = tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "t1.sub", tlf.SingleTeam)
 	require.NoError(t, err)
 	err = jManager.Enable(ctx, tlfID3, h, TLFJournalBackgroundWorkPaused)
 	require.NoError(t, err)
 
 	blockServer := config.BlockServer()
 
-	h, err = ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user1,test_user2",
+	h, err = tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user1,test_user2",
 		tlf.Private)
 	require.NoError(t, err)
 	id1 := h.ResolvedWriters()[0]
@@ -201,7 +203,8 @@ func TestJournalManagerOverQuotaError(t *testing.T) {
 
 	bCtx := kbfsblock.MakeFirstContext(id1, keybase1.BlockType_DATA)
 	data := []byte{1, 2, 3, 4}
-	bID, err := kbfsblock.MakePermanentID(data, kbfscrypto.EncryptionSecretbox)
+	bID, err := kbfsblock.MakePermanentID(
+		data, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -276,12 +279,12 @@ func (c tlfJournalConfigWithDiskLimitTimeout) diskLimitTimeout() time.Duration {
 func TestJournalManagerOverDiskLimitError(t *testing.T) {
 	tempdir, ctx, cancel, config, quotaUsage, jManager :=
 		setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	qbs := &quotaBlockServer{BlockServer: config.BlockServer()}
 	config.SetBlockServer(qbs)
 
-	clock := newTestClockNow()
+	clock := clocktest.NewTestClockNow()
 	config.SetClock(clock)
 
 	// Set initial quota usage and refresh quotaUsage's cache.
@@ -310,8 +313,8 @@ func TestJournalManagerOverDiskLimitError(t *testing.T) {
 
 	blockServer := config.BlockServer()
 
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user1,test_user2",
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user1,test_user2",
 		tlf.Private)
 	require.NoError(t, err)
 	id1 := h.ResolvedWriters()[0]
@@ -320,7 +323,8 @@ func TestJournalManagerOverDiskLimitError(t *testing.T) {
 
 	bCtx := kbfsblock.MakeFirstContext(id1, keybase1.BlockType_DATA)
 	data := []byte{1, 2, 3, 4}
-	bID, err := kbfsblock.MakePermanentID(data, kbfscrypto.EncryptionSecretbox)
+	bID, err := kbfsblock.MakePermanentID(
+		data, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -368,7 +372,7 @@ func TestJournalManagerOverDiskLimitError(t *testing.T) {
 
 func TestJournalManagerRestart(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	// Use a shutdown-only BlockServer so that it errors if the
 	// journal tries to access it.
@@ -381,8 +385,8 @@ func TestJournalManagerRestart(t *testing.T) {
 	blockServer := config.BlockServer()
 	mdOps := config.MDOps()
 
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user1", tlf.Private)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user1", tlf.Private)
 	require.NoError(t, err)
 	id := h.ResolvedWriters()[0]
 
@@ -390,7 +394,8 @@ func TestJournalManagerRestart(t *testing.T) {
 
 	bCtx := kbfsblock.MakeFirstContext(id, keybase1.BlockType_DATA)
 	data := []byte{1, 2, 3, 4}
-	bID, err := kbfsblock.MakePermanentID(data, kbfscrypto.EncryptionSecretbox)
+	bID, err := kbfsblock.MakePermanentID(
+		data, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -442,7 +447,7 @@ func TestJournalManagerRestart(t *testing.T) {
 
 func TestJournalManagerLogOutLogIn(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	// Use a shutdown-only BlockServer so that it errors if the
 	// journal tries to access it.
@@ -455,8 +460,8 @@ func TestJournalManagerLogOutLogIn(t *testing.T) {
 	blockServer := config.BlockServer()
 	mdOps := config.MDOps()
 
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user1", tlf.Private)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user1", tlf.Private)
 	require.NoError(t, err)
 	id := h.ResolvedWriters()[0]
 
@@ -464,7 +469,8 @@ func TestJournalManagerLogOutLogIn(t *testing.T) {
 
 	bCtx := kbfsblock.MakeFirstContext(id, keybase1.BlockType_DATA)
 	data := []byte{1, 2, 3, 4}
-	bID, err := kbfsblock.MakePermanentID(data, kbfscrypto.EncryptionSecretbox)
+	bID, err := kbfsblock.MakePermanentID(
+		data, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -522,7 +528,7 @@ func TestJournalManagerLogOutLogIn(t *testing.T) {
 
 func TestJournalManagerLogOutDirtyOp(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	tlfID := tlf.FakeID(2, tlf.Private)
 	err := jManager.Enable(ctx, tlfID, nil, TLFJournalBackgroundWorkPaused)
@@ -551,7 +557,7 @@ func TestJournalManagerLogOutDirtyOp(t *testing.T) {
 
 func TestJournalManagerMultiUser(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	// Use a shutdown-only BlockServer so that it errors if the
 	// journal tries to access it.
@@ -564,8 +570,8 @@ func TestJournalManagerMultiUser(t *testing.T) {
 	blockServer := config.BlockServer()
 	mdOps := config.MDOps()
 
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user1,test_user2",
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user1,test_user2",
 		tlf.Private)
 	require.NoError(t, err)
 	id1 := h.ResolvedWriters()[0]
@@ -576,7 +582,7 @@ func TestJournalManagerMultiUser(t *testing.T) {
 	bCtx1 := kbfsblock.MakeFirstContext(id1, keybase1.BlockType_DATA)
 	data1 := []byte{1, 2, 3, 4}
 	bID1, err := kbfsblock.MakePermanentID(
-		data1, kbfscrypto.EncryptionSecretbox)
+		data1, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf1, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -605,7 +611,7 @@ func TestJournalManagerMultiUser(t *testing.T) {
 	serviceLoggedOut(ctx, config)
 
 	service := config.KeybaseService().(*KeybaseDaemonLocal)
-	service.setCurrentUID(id2.AsUserOrBust())
+	service.SetCurrentUID(id2.AsUserOrBust())
 	SwitchDeviceForLocalUserOrBust(t, config, 0)
 
 	session, err = config.KBPKI().GetCurrentSession(ctx)
@@ -631,7 +637,7 @@ func TestJournalManagerMultiUser(t *testing.T) {
 	bCtx2 := kbfsblock.MakeFirstContext(id2, keybase1.BlockType_DATA)
 	data2 := []byte{1, 2, 3, 4, 5}
 	bID2, err := kbfsblock.MakePermanentID(
-		data2, kbfscrypto.EncryptionSecretbox)
+		data2, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf2, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -670,7 +676,7 @@ func TestJournalManagerMultiUser(t *testing.T) {
 
 	// Log in user 1.
 
-	service.setCurrentUID(id1.AsUserOrBust())
+	service.SetCurrentUID(id1.AsUserOrBust())
 	SwitchDeviceForLocalUserOrBust(t, config, 0)
 
 	session, err = config.KBPKI().GetCurrentSession(ctx)
@@ -697,7 +703,7 @@ func TestJournalManagerMultiUser(t *testing.T) {
 
 	serviceLoggedOut(ctx, config)
 
-	service.setCurrentUID(id2.AsUserOrBust())
+	service.SetCurrentUID(id2.AsUserOrBust())
 	SwitchDeviceForLocalUserOrBust(t, config, 0)
 
 	session, err = config.KBPKI().GetCurrentSession(ctx)
@@ -723,7 +729,7 @@ func TestJournalManagerMultiUser(t *testing.T) {
 
 func TestJournalManagerEnableAuto(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	err := jManager.EnableAuto(ctx)
 	require.NoError(t, err)
@@ -734,17 +740,18 @@ func TestJournalManagerEnableAuto(t *testing.T) {
 	require.Len(t, tlfIDs, 0)
 
 	blockServer := config.BlockServer()
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user1", tlf.Private)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user1", tlf.Private)
 	require.NoError(t, err)
 	id := h.ResolvedWriters()[0]
-	tlfID := h.tlfID
+	tlfID := h.TlfID()
 
 	jManager.PauseBackgroundWork(ctx, tlfID)
 
 	bCtx := kbfsblock.MakeFirstContext(id, keybase1.BlockType_DATA)
 	data := []byte{1, 2, 3, 4}
-	bID, err := kbfsblock.MakePermanentID(data, kbfscrypto.EncryptionSecretbox)
+	bID, err := kbfsblock.MakePermanentID(
+		data, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -781,7 +788,7 @@ func TestJournalManagerEnableAuto(t *testing.T) {
 
 func TestJournalManagerReaderTLFs(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	err := jManager.EnableAuto(ctx)
 	require.NoError(t, err)
@@ -794,8 +801,8 @@ func TestJournalManagerReaderTLFs(t *testing.T) {
 	// This will end up calling journalMDOps.GetIDForHandle, which
 	// initializes the journal if possible.  In this case for a
 	// public, unwritable folder, it shouldn't.
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user2", tlf.Public)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user2", tlf.Public)
 	require.NoError(t, err)
 
 	status, tlfIDs = jManager.Status(ctx)
@@ -804,8 +811,8 @@ func TestJournalManagerReaderTLFs(t *testing.T) {
 	require.Len(t, tlfIDs, 0)
 
 	// Neither should a private, reader folder.
-	h, err = ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user2#test_user1",
+	h, err = tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user2#test_user1",
 		tlf.Private)
 	require.NoError(t, err)
 
@@ -822,8 +829,9 @@ func TestJournalManagerReaderTLFs(t *testing.T) {
 		t, config, id, h.FirstResolvedWriter().AsUserOrBust())
 	AddTeamReaderForTestOrBust(
 		t, config, id, h.ResolvedReaders()[0].AsUserOrBust())
-	h, err = ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), string(teamName), tlf.SingleTeam)
+	h, err = tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, string(teamName),
+		tlf.SingleTeam)
 	require.NoError(t, err)
 
 	status, tlfIDs = jManager.Status(ctx)
@@ -832,8 +840,8 @@ func TestJournalManagerReaderTLFs(t *testing.T) {
 	require.Len(t, tlfIDs, 0)
 
 	// But accessing our own should make one.
-	h, err = ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user1", tlf.Public)
+	h, err = tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user1", tlf.Public)
 	require.NoError(t, err)
 
 	status, tlfIDs = jManager.Status(ctx)
@@ -844,7 +852,7 @@ func TestJournalManagerReaderTLFs(t *testing.T) {
 
 func TestJournalManagerNukeEmptyJournalsOnRestart(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	err := jManager.EnableAuto(ctx)
 	require.NoError(t, err)
@@ -855,16 +863,17 @@ func TestJournalManagerNukeEmptyJournalsOnRestart(t *testing.T) {
 	require.Len(t, tlfIDs, 0)
 
 	blockServer := config.BlockServer()
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), "test_user1", tlf.Private)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, "test_user1", tlf.Private)
 	require.NoError(t, err)
 	id := h.ResolvedWriters()[0]
-	tlfID := h.tlfID
+	tlfID := h.TlfID()
 
 	// Access a TLF, which should create a journal automatically.
 	bCtx := kbfsblock.MakeFirstContext(id, keybase1.BlockType_DATA)
 	data := []byte{1, 2, 3, 4}
-	bID, err := kbfsblock.MakePermanentID(data, kbfscrypto.EncryptionSecretbox)
+	bID, err := kbfsblock.MakePermanentID(
+		data, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -905,7 +914,7 @@ func TestJournalManagerNukeEmptyJournalsOnRestart(t *testing.T) {
 
 func TestJournalManagerTeamTLFWithRestart(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	name := kbname.NormalizedUsername("t1")
 	teamInfos := AddEmptyTeamsForTestOrBust(t, config, name)
@@ -918,8 +927,8 @@ func TestJournalManagerTeamTLFWithRestart(t *testing.T) {
 	// journal tries to access it.
 	jManager.delegateBlockServer = shutdownOnlyBlockServer{}
 
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), config.MDOps(), string(name), tlf.SingleTeam)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), config.MDOps(), nil, string(name), tlf.SingleTeam)
 	require.NoError(t, err)
 
 	tlfID := tlf.FakeID(2, tlf.SingleTeam)
@@ -934,7 +943,8 @@ func TestJournalManagerTeamTLFWithRestart(t *testing.T) {
 	bCtx := kbfsblock.MakeFirstContext(
 		id.AsUserOrTeam(), keybase1.BlockType_DATA)
 	data := []byte{1, 2, 3, 4}
-	bID, err := kbfsblock.MakePermanentID(data, kbfscrypto.EncryptionSecretbox)
+	bID, err := kbfsblock.MakePermanentID(
+		data, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 	serverHalf, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()
 	require.NoError(t, err)
@@ -987,7 +997,7 @@ func TestJournalManagerTeamTLFWithRestart(t *testing.T) {
 
 func TestJournalQuotaStatus(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 
 	// Set initial quota usage and refresh quotaUsage's cache.
 	qbs := &quotaBlockServer{BlockServer: config.BlockServer()}
@@ -1006,7 +1016,7 @@ func TestJournalQuotaStatus(t *testing.T) {
 
 func TestJournalQuotaStatusForGitBlocks(t *testing.T) {
 	tempdir, ctx, cancel, config, _, jManager := setupJournalManagerTest(t)
-	defer teardownJournalManagerTest(t, tempdir, ctx, cancel, config)
+	defer teardownJournalManagerTest(ctx, t, tempdir, cancel, config)
 	config.SetDefaultBlockType(keybase1.BlockType_GIT)
 
 	// Set initial quota usage and refresh quotaUsage's cache.

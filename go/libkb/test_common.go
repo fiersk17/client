@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/keybase/client/go/gregor"
 	"github.com/keybase/client/go/logger"
@@ -96,10 +97,16 @@ type TestContext struct {
 	PrevGlobal *GlobalContext
 	Tp         *TestParameters
 	// TODO: Rename this to TB.
-	T TestingTB
+	T         TestingTB
+	eg        *errgroup.Group
+	cleanupCh chan struct{}
 }
 
 func (tc *TestContext) Cleanup() {
+	// stop the background logger
+	close(tc.cleanupCh)
+	tc.eg.Wait()
+
 	tc.G.Log.Debug("global context shutdown:")
 	tc.G.Shutdown()
 	if len(tc.Tp.Home) > 0 {
@@ -190,12 +197,16 @@ func (tc TestContext) ClearAllStoredSecrets() error {
 	return nil
 }
 
+func (tc TestContext) MetaContext() MetaContext { return NewMetaContextForTest(tc) }
+
 var setupTestMu sync.Mutex
 
 func setupTestContext(tb TestingTB, name string, tcPrev *TestContext) (tc TestContext, err error) {
 	setupTestMu.Lock()
 	defer setupTestMu.Unlock()
-	tc.Tp = &TestParameters{}
+	tc.Tp = &TestParameters{
+		SecretStorePrimingDisabled: true,
+	}
 
 	g := NewGlobalContext()
 
@@ -273,6 +284,26 @@ func setupTestContext(tb TestingTB, name string, tcPrev *TestContext) (tc TestCo
 	g.SetUIDMapper(NewTestUIDMapper(g.GetUPAKLoader()))
 	tc.G = g
 	tc.T = tb
+
+	// Periodically log in the background until `Cleanup` is called. Tests that
+	// forget to call this will panic because of logging after the test
+	// completes.
+	cleanupCh := make(chan struct{})
+	tc.cleanupCh = cleanupCh
+	tc.eg = &errgroup.Group{}
+	tc.eg.Go(func() error {
+		log := g.Log.CloneWithAddedDepth(1)
+		log.Debug("TestContext bg loop starting up")
+		for {
+			select {
+			case <-cleanupCh:
+				log.Debug("TestContext bg loop shutting down")
+				return nil
+			case <-time.After(time.Second):
+				log.Debug("TestContext bg loop not cleaned up yet")
+			}
+		}
+	})
 
 	return
 }
@@ -430,6 +461,8 @@ type TestLoginUI struct {
 	Username                 string
 	RevokeBackup             bool
 	CalledGetEmailOrUsername int
+	ResetAccount             bool
+	PassphraseRecovery       bool
 }
 
 func (t *TestLoginUI) GetEmailOrUsername(_ context.Context, _ int) (string, error) {
@@ -449,6 +482,22 @@ func (t *TestLoginUI) DisplayPrimaryPaperKey(_ context.Context, arg keybase1.Dis
 	return nil
 }
 
+func (t *TestLoginUI) PromptResetAccount(_ context.Context, arg keybase1.PromptResetAccountArg) (bool, error) {
+	return t.ResetAccount, nil
+}
+
+func (t *TestLoginUI) DisplayResetProgress(_ context.Context, arg keybase1.DisplayResetProgressArg) error {
+	return nil
+}
+
+func (t *TestLoginUI) ExplainDeviceRecovery(_ context.Context, arg keybase1.ExplainDeviceRecoveryArg) error {
+	return nil
+}
+
+func (t *TestLoginUI) PromptPassphraseRecovery(_ context.Context, arg keybase1.PromptPassphraseRecoveryArg) (bool, error) {
+	return t.PassphraseRecovery, nil
+}
+
 type TestLoginCancelUI struct {
 	TestLoginUI
 }
@@ -465,6 +514,11 @@ var _ GregorState = (*FakeGregorState)(nil)
 
 func (f *FakeGregorState) State(_ context.Context) (gregor.State, error) {
 	return gregor1.State{}, nil
+}
+
+func (f *FakeGregorState) UpdateCategory(ctx context.Context, cat string, body []byte,
+	dtime gregor1.TimeOrOffset) (gregor1.MsgID, error) {
+	return gregor1.MsgID{}, nil
 }
 
 func (f *FakeGregorState) InjectItem(ctx context.Context, cat string, body []byte, dtime gregor1.TimeOrOffset) (gregor1.MsgID, error) {
@@ -502,6 +556,13 @@ func (t TestUIDMapper) CheckUIDAgainstUsername(uid keybase1.UID, un NormalizedUs
 	return true
 }
 
+func (t TestUIDMapper) MapHardcodedUsernameToUID(un NormalizedUsername) keybase1.UID {
+	if un.String() == "max" {
+		return keybase1.UID("dbb165b7879fe7b1174df73bed0b9500")
+	}
+	return keybase1.UID("")
+}
+
 func (t TestUIDMapper) InformOfEldestSeqno(ctx context.Context, g UIDMapperContext, uv keybase1.UserVersion) (bool, error) {
 	return true, nil
 }
@@ -520,6 +581,12 @@ func (t TestUIDMapper) MapUIDsToUsernamePackages(ctx context.Context, g UIDMappe
 
 func (t TestUIDMapper) SetTestingNoCachingMode(enabled bool) {
 
+}
+
+func (t TestUIDMapper) MapUIDsToUsernamePackagesOffline(ctx context.Context, g UIDMapperContext, uids []keybase1.UID, fullNameFreshness time.Duration) ([]UsernamePackage, error) {
+	// Just call MapUIDsToUsernamePackages. TestUIDMapper does not respect
+	// freshness, network budget, nor forceNetwork arguments.
+	return t.MapUIDsToUsernamePackages(ctx, g, uids, fullNameFreshness, 0, true)
 }
 
 func NewMetaContextForTest(tc TestContext) MetaContext {
@@ -559,4 +626,51 @@ func ModifyFeatureForTest(m MetaContext, feature Feature, on bool, cacheSec int)
 
 func AddEnvironmentFeatureForTest(tc TestContext, feature Feature) {
 	tc.Tp.EnvironmentFeatureFlags = append(tc.Tp.EnvironmentFeatureFlags, feature)
+}
+
+// newSecretStoreLockedForTests is a simple function to create
+// SecretStoreLocked for the purposes of unit tests outside of libkb package
+// which need finer control over how secret store is configured.
+//
+// Omitting dataDir argument will create memory-only secret store, similar to
+// how disabling "remember passphrase" would work.
+func newSecretStoreLockedForTests(m MetaContext, dataDir string) *SecretStoreLocked {
+	var disk SecretStoreAll
+	mem := NewSecretStoreMem()
+	if dataDir != "" {
+		disk = NewSecretStoreFile(dataDir)
+	}
+
+	return &SecretStoreLocked{
+		mem:  mem,
+		disk: disk,
+	}
+}
+
+func ReplaceSecretStoreForTests(tc TestContext, dataDir string) {
+	g := tc.G
+	g.secretStoreMu.Lock()
+	g.secretStore = newSecretStoreLockedForTests(NewMetaContextForTest(tc), dataDir)
+	g.secretStoreMu.Unlock()
+}
+
+func CreateReadOnlySecretStoreDir(tc TestContext) (string, func()) {
+	td, err := ioutil.TempDir("", "ss")
+	require.NoError(tc.T, err)
+
+	// Change mode of test dir to read-only so secret store on this dir can
+	// fail.
+	fi, err := os.Stat(td)
+	require.NoError(tc.T, err)
+	oldMode := fi.Mode()
+	os.Chmod(td, 0400)
+
+	cleanup := func() {
+		os.Chmod(td, oldMode)
+		if err := os.RemoveAll(td); err != nil {
+			tc.T.Log(err)
+		}
+	}
+
+	return td, cleanup
 }

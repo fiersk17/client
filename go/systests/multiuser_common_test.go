@@ -68,6 +68,9 @@ func (u *smuUser) cleanup() {
 			d.service.Stop(0)
 			d.stop()
 		}
+		for _, cl := range d.clones {
+			cl.Cleanup()
+		}
 	}
 }
 
@@ -129,7 +132,7 @@ func (t smuTerminalUI) PromptPasswordMaybeScripted(libkb.PromptDescriptor, strin
 func (t smuTerminalUI) PromptYesNo(libkb.PromptDescriptor, string, libkb.PromptDefault) (bool, error) {
 	return false, nil
 }
-func (t smuTerminalUI) Tablify(headings []string, rowfunc func() []string) { return }
+func (t smuTerminalUI) Tablify(headings []string, rowfunc func() []string) {}
 func (t smuTerminalUI) TerminalSize() (width int, height int)              { return }
 
 type signupInfoSecretUI struct {
@@ -163,6 +166,18 @@ func (s usernameLoginUI) DisplayPaperKeyPhrase(contextOld.Context, keybase1.Disp
 func (s usernameLoginUI) DisplayPrimaryPaperKey(contextOld.Context, keybase1.DisplayPrimaryPaperKeyArg) error {
 	return nil
 }
+func (s usernameLoginUI) PromptResetAccount(_ context.Context, arg keybase1.PromptResetAccountArg) (bool, error) {
+	return false, nil
+}
+func (s usernameLoginUI) DisplayResetProgress(_ context.Context, arg keybase1.DisplayResetProgressArg) error {
+	return nil
+}
+func (s usernameLoginUI) ExplainDeviceRecovery(_ context.Context, arg keybase1.ExplainDeviceRecoveryArg) error {
+	return nil
+}
+func (s usernameLoginUI) PromptPassphraseRecovery(_ context.Context, arg keybase1.PromptPassphraseRecoveryArg) (bool, error) {
+	return false, nil
+}
 
 func (d *smuDeviceWrapper) popClone() *libkb.TestContext {
 	if len(d.clones) == 0 {
@@ -190,7 +205,6 @@ func (smc *smuContext) setupDeviceHelper(u *smuUser, puk bool) *smuDeviceWrapper
 	tctx := setupTest(smc.t, u.usernamePrefix)
 	tctx.Tp.DisableUpgradePerUserKey = !puk
 	tctx.G.SetClock(smc.fakeClock)
-	installInsecureTriplesec(tctx.G)
 	ret := &smuDeviceWrapper{ctx: smc, tctx: tctx}
 	u.devices = append(u.devices, ret)
 	if u.primary == nil {
@@ -359,6 +373,7 @@ func (u *smuUser) perUserKeyUpgrade() error {
 }
 
 type smuTeam struct {
+	ID   keybase1.TeamID
 	name string
 }
 
@@ -399,7 +414,8 @@ func (u *smuUser) getTeamsClient() keybase1.TeamsClient {
 	return keybase1.TeamsClient{Cli: u.primaryDevice().rpcClient()}
 }
 
-func (u *smuUser) pollForMembershipUpdate(team smuTeam, kg keybase1.PerTeamKeyGeneration, poller func(d keybase1.TeamDetails) bool) keybase1.TeamDetails {
+func (u *smuUser) pollForMembershipUpdate(team smuTeam, keyGen keybase1.PerTeamKeyGeneration,
+	poller func(d keybase1.TeamDetails) bool) keybase1.TeamDetails {
 	wait := 100 * time.Millisecond
 	var totalWait time.Duration
 	i := 0
@@ -411,8 +427,8 @@ func (u *smuUser) pollForMembershipUpdate(team smuTeam, kg keybase1.PerTeamKeyGe
 		}
 		// If the caller specified a "poller" that means we should keep polling until
 		// the predicate turns true
-		if details.KeyGeneration == kg && (poller == nil || poller(details)) {
-			u.ctx.log.Debug("found key generation %d", kg)
+		if details.KeyGeneration == keyGen && (poller == nil || poller(details)) {
+			u.ctx.log.Debug("found key generation %d", keyGen)
 			return details
 		}
 		if i == 9 {
@@ -425,7 +441,7 @@ func (u *smuUser) pollForMembershipUpdate(team smuTeam, kg keybase1.PerTeamKeyGe
 		totalWait += wait
 		wait = wait * 2
 	}
-	u.ctx.t.Fatalf("Failed to find the needed key generation (%d) after %s of waiting (%d iterations)", kg, totalWait, i)
+	u.ctx.t.Fatalf("Failed to find the needed key generation (%d) after %s of waiting (%d iterations)", keyGen, totalWait, i)
 	return keybase1.TeamDetails{}
 }
 
@@ -451,27 +467,30 @@ func (u *smuUser) pollForTeamSeqnoLink(team smuTeam, toSeqno keybase1.Seqno) {
 }
 
 func (u *smuUser) createTeam(writers []*smuUser) smuTeam {
+	return u.createTeam2(nil, writers, nil, nil)
+}
+
+func (u *smuUser) createTeam2(readers, writers, admins, owners []*smuUser) smuTeam {
 	name := u.username + "t"
 	nameK1, err := keybase1.TeamNameFromString(name)
-	if err != nil {
-		u.ctx.t.Fatal(err)
-	}
+	require.NoError(u.ctx.t, err)
 	cli := u.getTeamsClient()
-	_, err = cli.TeamCreate(context.TODO(), keybase1.TeamCreateArg{Name: nameK1.String()})
-	if err != nil {
-		u.ctx.t.Fatal(err)
-	}
-	for _, w := range writers {
-		_, err = cli.TeamAddMember(context.TODO(), keybase1.TeamAddMemberArg{
-			Name:     name,
-			Username: w.username,
-			Role:     keybase1.TeamRole_WRITER,
-		})
-		if err != nil {
-			u.ctx.t.Fatal(err)
+	x, err := cli.TeamCreate(context.TODO(), keybase1.TeamCreateArg{Name: nameK1.String()})
+	require.NoError(u.ctx.t, err)
+	lists := [][]*smuUser{readers, writers, admins, owners}
+	roles := []keybase1.TeamRole{keybase1.TeamRole_READER,
+		keybase1.TeamRole_WRITER, keybase1.TeamRole_ADMIN, keybase1.TeamRole_OWNER}
+	for i, list := range lists {
+		for _, u2 := range list {
+			_, err = cli.TeamAddMember(context.TODO(), keybase1.TeamAddMemberArg{
+				Name:     name,
+				Username: u2.username,
+				Role:     roles[i],
+			})
+			require.NoError(u.ctx.t, err)
 		}
 	}
-	return smuTeam{name: name}
+	return smuTeam{ID: x.TeamID, name: name}
 }
 
 func (u *smuUser) lookupImplicitTeam(create bool, displayName string, public bool) smuImplicitTeam {
@@ -532,6 +551,15 @@ func (u *smuUser) addOwner(team smuTeam, w *smuUser) {
 	u.addTeamMember(team, w, keybase1.TeamRole_OWNER)
 }
 
+func (u *smuUser) editMember(team *smuTeam, username string, role keybase1.TeamRole) {
+	err := u.getTeamsClient().TeamEditMember(context.TODO(), keybase1.TeamEditMemberArg{
+		Name:     team.name,
+		Username: username,
+		Role:     role,
+	})
+	require.NoError(u.ctx.t, err)
+}
+
 func (u *smuUser) reAddUserAfterReset(team smuImplicitTeam, w *smuUser) {
 	cli := u.getTeamsClient()
 	err := cli.TeamReAddMemberAfterReset(context.TODO(), keybase1.TeamReAddMemberAfterResetArg{
@@ -579,6 +607,10 @@ func (u *smuUser) userVersion() keybase1.UserVersion {
 	uv, err := u.primaryDevice().userClient().MeUserVersion(context.Background(), keybase1.MeUserVersionArg{ForcePoll: true})
 	require.NoError(u.ctx.t, err)
 	return uv
+}
+
+func (u *smuUser) MetaContext() libkb.MetaContext {
+	return libkb.NewMetaContextForTest(*u.primaryDevice().tctx)
 }
 
 func (u *smuUser) getPrimaryGlobalContext() *libkb.GlobalContext {
@@ -671,6 +703,12 @@ func (u *smuUser) assertMemberInactive(team smuTeam, user *smuUser) {
 	active, err := u.isMemberActive(team, user)
 	require.NoError(u.ctx.t, err, "assertMemberInactive error: %s", err)
 	require.False(u.ctx.t, active, "user %s is active (expected inactive)", user.username)
+}
+
+func (u *smuUser) assertMemberMissing(team smuTeam, user *smuUser) {
+	_, err := u.teamMemberDetails(team, user)
+	require.Error(user.ctx.t, err, "member should not be found")
+	require.Equal(user.ctx.t, libkb.NotFoundError{}, err, "member should not be found")
 }
 
 func (u *smuUser) uid() keybase1.UID {

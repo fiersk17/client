@@ -19,8 +19,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/keybase/client/go/kbfs/data"
 	"github.com/keybase/client/go/kbfs/ioutil"
 	"github.com/keybase/client/go/kbfs/kbfsmd"
+	"github.com/keybase/client/go/kbfs/libcontext"
 	"github.com/keybase/client/go/kbfs/libfs"
 	"github.com/keybase/client/go/kbfs/libkbfs"
 	"github.com/keybase/client/go/kbfs/tlf"
@@ -499,6 +501,49 @@ func (*fsEngine) TogglePrefetch(user User, enable bool) error {
 		[]byte("1"), 0644)
 }
 
+// ForceConflict implements the Engine interface.
+func (*fsEngine) ForceConflict(user User, tlfName string, t tlf.Type) error {
+	u := user.(*fsUser)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx, err := libcontext.NewContextWithCancellationDelayer(
+		libcontext.NewContextReplayable(
+			ctx, func(ctx context.Context) context.Context { return ctx }))
+	if err != nil {
+		return err
+	}
+
+	root, err := getRootNode(ctx, u.config, tlfName, t)
+	if err != nil {
+		return err
+	}
+
+	return u.config.KBFSOps().ForceStuckConflictForTesting(
+		ctx, root.GetFolderBranch().Tlf)
+}
+
+// ClearConflicts implements the Engine interface.
+func (*fsEngine) ClearConflicts(user User, tlfName string, t tlf.Type) error {
+	u := user.(*fsUser)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx, err := libcontext.NewContextWithCancellationDelayer(
+		libcontext.NewContextReplayable(
+			ctx, func(ctx context.Context) context.Context { return ctx }))
+	if err != nil {
+		return err
+	}
+
+	root, err := getRootNode(ctx, u.config, tlfName, t)
+	if err != nil {
+		return err
+	}
+
+	return u.config.KBFSOps().ClearConflictView(ctx, root.GetFolderBranch().Tlf)
+}
+
 // Shutdown is called by the test harness when it is done with the
 // given user.
 func (e *fsEngine) Shutdown(user User) error {
@@ -597,12 +642,12 @@ func (*fsEngine) GetMtime(u User, file Node) (mtime time.Time, err error) {
 }
 
 type prevRevisions struct {
-	PrevRevisions libkbfs.PrevRevisions
+	PrevRevisions data.PrevRevisions
 }
 
 // GetPrevRevisions implements the Engine interface.
 func (*fsEngine) GetPrevRevisions(u User, file Node) (
-	revs libkbfs.PrevRevisions, err error) {
+	revs data.PrevRevisions, err error) {
 	n := file.(fsNode)
 	d, f := filepath.Split(n.path)
 	fullPath := filepath.Join(d, libfs.FileInfoPrefix+f)
@@ -624,8 +669,8 @@ func (e *fsEngine) SyncAll(
 	u := user.(*fsUser)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ctx, err = libkbfs.NewContextWithCancellationDelayer(
-		libkbfs.NewContextReplayable(
+	ctx, err = libcontext.NewContextWithCancellationDelayer(
+		libcontext.NewContextReplayable(
 			ctx, func(ctx context.Context) context.Context { return ctx }))
 	if err != nil {
 		return err

@@ -23,7 +23,6 @@ import (
 	"github.com/keybase/go-crypto/openpgp"
 	pgpErrors "github.com/keybase/go-crypto/openpgp/errors"
 	"github.com/keybase/go-framed-msgpack-rpc/rpc"
-	pkgErrors "github.com/pkg/errors"
 	"golang.org/x/net/context"
 )
 
@@ -95,19 +94,19 @@ func ExportRemoteProof(p RemoteProofChainLink) keybase1.RemoteProof {
 	}
 }
 
-func (is IdentifyState) ExportToUncheckedIdentity(g *GlobalContext) *keybase1.Identity {
-	return is.res.ExportToUncheckedIdentity(g)
+func (is IdentifyState) ExportToUncheckedIdentity(mctx MetaContext) *keybase1.Identity {
+	return is.res.ExportToUncheckedIdentity(mctx)
 }
 
-func (ir IdentifyOutcome) ExportToUncheckedIdentity(g *GlobalContext) *keybase1.Identity {
+func (ir IdentifyOutcome) ExportToUncheckedIdentity(mctx MetaContext) *keybase1.Identity {
 	tmp := keybase1.Identity{
-		Status: ExportErrorAsStatus(g, ir.Error),
+		Status: ExportErrorAsStatus(mctx.G(), ir.Error),
 	}
 	if ir.TrackUsed != nil {
 		tmp.WhenLastTracked = keybase1.ToTime(ir.TrackUsed.GetCTime())
 	}
 
-	pc := ir.ProofChecksSorted()
+	pc := ir.ProofChecksSorted(mctx)
 	tmp.Proofs = make([]keybase1.IdentifyRow, len(pc))
 	for j, p := range pc {
 		tmp.Proofs[j] = p.ExportToIdentifyRow(j)
@@ -176,7 +175,7 @@ func ExportErrorAsStatus(g *GlobalContext, e error) (ret *keybase1.Status) {
 	// Before checking to see if an error implements ExportableError, peel off
 	// any wrappers from the `errors` package (KBFS uses these). This is a
 	// no-op for other types.
-	e = pkgErrors.Cause(e)
+	e = HumanError(e)
 	if ee, ok := e.(ExportableError); ok {
 		tmp := ee.ToStatus()
 		return &tmp
@@ -264,6 +263,8 @@ func ImportStatusAsError(g *GlobalContext, s *keybase1.Status) error {
 		return NoSessionError{}
 	case SCKeyCorrupted:
 		return KeyCorruptedError{s.Desc}
+	case SCOffline:
+		return OfflineError{}
 	case SCKeyInUse:
 		var fp *PGPFingerprint
 		if len(s.Desc) > 0 {
@@ -467,6 +468,18 @@ func ImportStatusAsError(g *GlobalContext, s *keybase1.Status) error {
 		return ChatInternalError{}
 	case SCChatStalePreviousState:
 		return ChatStalePreviousStateError{}
+	case SCChatEphemeralRetentionPolicyViolatedError:
+		var maxAge gregor1.DurationSec
+		for _, field := range s.Fields {
+			switch field.Key {
+			case "MaxAge":
+				dur, err := time.ParseDuration(field.Value)
+				if err == nil {
+					maxAge = gregor1.ToDurationSec(dur)
+				}
+			}
+		}
+		return ChatEphemeralRetentionPolicyViolatedError{maxAge}
 	case SCChatConvExists:
 		var convID chat1.ConversationID
 		for _, field := range s.Fields {
@@ -741,6 +754,8 @@ func ImportStatusAsError(g *GlobalContext, s *keybase1.Status) error {
 			}
 		}
 		return NewFeatureFlagError(s.Desc, feature)
+	case SCNoPaperKeys:
+		return NoPaperKeysError{}
 	default:
 		ase := AppStatusError{
 			Code:   s.Code,
@@ -890,20 +905,6 @@ func (c CryptocurrencyChainLink) Export() (ret keybase1.Cryptocurrency) {
 
 //=============================================================================
 
-func (c CurrentStatus) Export() (ret keybase1.GetCurrentStatusRes) {
-	ret.Configured = c.Configured
-	ret.Registered = c.Registered
-	ret.LoggedIn = c.LoggedIn
-	ret.SessionIsValid = c.SessionIsValid
-	if c.User != nil {
-		ret.User = c.User.Export()
-	}
-	// ret.ServerUri = G.Env.GetServerUri();
-	return
-}
-
-//=============================================================================
-
 func (p PassphraseError) ToStatus() (s keybase1.Status) {
 	s.Code = SCBadLoginPassword
 	s.Name = "BAD_LOGIN_PASSWORD"
@@ -989,6 +990,14 @@ func (c KeyCorruptedError) ToStatus() (s keybase1.Status) {
 		s.Desc = c.Msg
 	}
 	return
+}
+
+//=============================================================================
+
+func (e OfflineError) ToStatus() (s keybase1.Status) {
+	s.Code = SCOffline
+	s.Name = "OFFLINE"
+	return s
 }
 
 //=============================================================================
@@ -1456,10 +1465,11 @@ func (u *User) ExportToUPKV2AllIncarnations() (*keybase1.UserPlusKeysV2AllIncarn
 	// Then assemble the current version. This one gets a couple extra fields, Uvv and RemoteTracks.
 	current := u.GetComputedKeyInfos().exportUPKV2Incarnation(uid, name, u.GetCurrentEldestSeqno(), kf, status, nil)
 	current.RemoteTracks = make(map[keybase1.UID]keybase1.RemoteTrack)
-	if u.IDTable() != nil {
-		for _, track := range u.IDTable().GetTrackList() {
+	if tab := u.IDTable(); tab != nil {
+		for _, track := range tab.GetTrackList() {
 			current.RemoteTracks[track.whomUID] = track.Export()
 		}
+		current.Unstubbed = !tab.HasStubs()
 	}
 	if accountID := u.StellarAccountID(); accountID != nil {
 		tmp := accountID.String()
@@ -1521,7 +1531,6 @@ func (a PGPGenArg) ExportTo(ret *keybase1.PGPKeyGenArg) {
 	ret.PrimaryBits = a.PrimaryBits
 	ret.SubkeyBits = a.SubkeyBits
 	ret.CreateUids = keybase1.PGPCreateUids{Ids: a.Ids.Export()}
-	return
 }
 
 //=============================================================================
@@ -1530,39 +1539,35 @@ func ImportKeyGenArg(a keybase1.PGPKeyGenArg) (ret PGPGenArg) {
 	ret.PrimaryBits = a.PrimaryBits
 	ret.SubkeyBits = a.SubkeyBits
 	ret.Ids = ImportPGPIdentities(a.CreateUids.Ids)
-	return
+	return ret
 }
 
 //=============================================================================
 
-func (t Tracker) Export() keybase1.Tracker { return keybase1.Tracker(t) }
-
-//=============================================================================
-
-func (e BadInvitationCodeError) ToStatus(s keybase1.Status) {
+func (e BadInvitationCodeError) ToStatus() (s keybase1.Status) {
 	s.Code = SCBadInvitationCode
 	s.Name = "BAD_INVITATION_CODE"
-	return
+	return s
 }
 
 //=============================================================================
 
-func (e StreamExistsError) ToStatus(s keybase1.Status) {
+func (e StreamExistsError) ToStatus() (s keybase1.Status) {
 	s.Code = SCStreamExists
 	s.Name = "STREAM_EXISTS"
-	return
+	return s
 }
 
-func (e StreamNotFoundError) ToStatus(s keybase1.Status) {
+func (e StreamNotFoundError) ToStatus() (s keybase1.Status) {
 	s.Code = SCStreamNotFound
 	s.Name = "SC_STREAM_NOT_FOUND"
-	return
+	return s
 }
 
-func (e StreamWrongKindError) ToStatus(s keybase1.Status) {
+func (e StreamWrongKindError) ToStatus() (s keybase1.Status) {
 	s.Code = SCStreamWrongKind
 	s.Name = "STREAM_WRONG_KIND"
-	return
+	return s
 }
 
 //=============================================================================
@@ -1570,7 +1575,7 @@ func (e StreamWrongKindError) ToStatus(s keybase1.Status) {
 func (u NoSecretKeyError) ToStatus() (s keybase1.Status) {
 	s.Code = SCKeyNoSecret
 	s.Name = "KEY_NO_SECRET"
-	return
+	return s
 }
 
 //=============================================================================
@@ -1579,7 +1584,7 @@ func (u LoginRequiredError) ToStatus() (s keybase1.Status) {
 	s.Code = SCLoginRequired
 	s.Name = "LOGIN_REQUIRED"
 	s.Desc = u.Context
-	return
+	return s
 }
 
 //=============================================================================
@@ -1587,7 +1592,7 @@ func (u LoginRequiredError) ToStatus() (s keybase1.Status) {
 func (u NoSessionError) ToStatus() (s keybase1.Status) {
 	s.Code = SCNoSession
 	s.Name = "NO_SESSION"
-	return
+	return s
 }
 
 //=============================================================================
@@ -1596,35 +1601,35 @@ func (e APINetError) ToStatus() (s keybase1.Status) {
 	s.Code = SCAPINetworkError
 	s.Name = "API_NETWORK_ERROR"
 	s.Desc = e.Error()
-	return
+	return s
 }
 
 func (e ProofNotFoundForServiceError) ToStatus() (s keybase1.Status) {
 	s.Code = SCProofError
 	s.Name = "PROOF_ERROR"
 	s.Desc = e.Error()
-	return
+	return s
 }
 
 func (e ProofNotFoundForUsernameError) ToStatus() (s keybase1.Status) {
 	s.Code = SCProofError
 	s.Name = "PROOF_ERROR"
 	s.Desc = e.Error()
-	return
+	return s
 }
 
 func (e NoDecryptionKeyError) ToStatus() (s keybase1.Status) {
 	s.Code = SCDecryptionKeyNotFound
 	s.Name = "KEY_NOT_FOUND_DECRYPTION"
 	s.Desc = e.Msg
-	return
+	return s
 }
 
 func (e NoKeyError) ToStatus() (s keybase1.Status) {
 	s.Code = SCKeyNotFound
 	s.Name = "KEY_NOT_FOUND"
 	s.Desc = e.Msg
-	return
+	return s
 }
 
 func (e NoSyncedPGPKeyError) ToStatus() keybase1.Status {
@@ -1990,10 +1995,15 @@ func (e ChatStalePreviousStateError) ToStatus() keybase1.Status {
 }
 
 func (e ChatEphemeralRetentionPolicyViolatedError) ToStatus() keybase1.Status {
+	kv := keybase1.StringKVPair{
+		Key:   "MaxAge",
+		Value: e.MaxAge.ToDuration().String(),
+	}
 	return keybase1.Status{
-		Code: SCChatEphemeralRetentionPolicyViolatedError,
-		Name: "SC_CHAT_EPHEMERAL_RETENTION_POLICY_VIOLATED",
-		Desc: e.Error(),
+		Code:   SCChatEphemeralRetentionPolicyViolatedError,
+		Name:   "SC_CHAT_EPHEMERAL_RETENTION_POLICY_VIOLATED",
+		Desc:   e.Error(),
+		Fields: []keybase1.StringKVPair{kv},
 	}
 }
 
@@ -2381,4 +2391,18 @@ func (e FeatureFlagError) ToStatus() (ret keybase1.Status) {
 	ret.Desc = e.msg
 	ret.Fields = []keybase1.StringKVPair{keybase1.StringKVPair{Key: "feature", Value: string(e.feature)}}
 	return ret
+}
+
+func (e BadUsernameError) ToStatus() (ret keybase1.Status) {
+	ret.Code = SCBadUsername
+	ret.Name = "BAD_USERNAME"
+	ret.Desc = e.Error()
+	return ret
+}
+
+func (e NoPaperKeysError) ToStatus() (ret keybase1.Status) {
+	ret.Code = SCNoPaperKeys
+	ret.Name = "NO_PAPER_KEYS"
+	ret.Desc = e.Error()
+	return
 }

@@ -35,10 +35,13 @@ func NewSource(g *globals.Context) *Source {
 const (
 	cmdCollapse int = iota
 	cmdExpand
+	cmdFlip
+	cmdGiphy
 	cmdHeadline
 	cmdHide
 	cmdJoin
 	cmdLeave
+	cmdLocation
 	cmdMe
 	cmdMsg
 	cmdMute
@@ -50,10 +53,13 @@ func (s *Source) allCommands() (res map[int]types.ConversationCommand) {
 	res = make(map[int]types.ConversationCommand)
 	res[cmdCollapse] = NewCollapse(s.G())
 	res[cmdExpand] = NewExpand(s.G())
+	res[cmdFlip] = NewFlip(s.G())
+	res[cmdGiphy] = NewGiphy(s.G())
 	res[cmdHeadline] = NewHeadline(s.G())
 	res[cmdHide] = NewHide(s.G())
 	res[cmdJoin] = NewJoin(s.G())
 	res[cmdLeave] = NewLeave(s.G())
+	res[cmdLocation] = NewLocation(s.G())
 	res[cmdMe] = NewMe(s.G())
 	res[cmdMsg] = NewMsg(s.G())
 	res[cmdMute] = NewMute(s.G())
@@ -67,6 +73,9 @@ func (s *Source) makeBuiltins() {
 	common := []types.ConversationCommand{
 		cmds[cmdCollapse],
 		cmds[cmdExpand],
+		cmds[cmdFlip],
+		cmds[cmdGiphy],
+		cmds[cmdHeadline],
 		cmds[cmdHide],
 		cmds[cmdMe],
 		cmds[cmdMsg],
@@ -74,15 +83,16 @@ func (s *Source) makeBuiltins() {
 		cmds[cmdShrug],
 		cmds[cmdUnhide],
 	}
+	if s.G().IsMobileAppType() && s.isAdmin() {
+		common = append(common, cmds[cmdLocation])
+	}
 	s.builtins = make(map[chat1.ConversationBuiltinCommandTyp][]types.ConversationCommand)
 	s.builtins[chat1.ConversationBuiltinCommandTyp_ADHOC] = common
 	s.builtins[chat1.ConversationBuiltinCommandTyp_BIGTEAM] = append([]types.ConversationCommand{
-		cmds[cmdHeadline],
 		cmds[cmdJoin],
 		cmds[cmdLeave],
 	}, common...)
 	s.builtins[chat1.ConversationBuiltinCommandTyp_BIGTEAMGENERAL] = append([]types.ConversationCommand{
-		cmds[cmdHeadline],
 		cmds[cmdJoin],
 	}, common...)
 	s.builtins[chat1.ConversationBuiltinCommandTyp_SMALLTEAM] = append([]types.ConversationCommand{
@@ -135,7 +145,7 @@ func (s *Source) ListCommands(ctx context.Context, uid gregor1.UID, conv types.C
 }
 
 func (s *Source) AttemptBuiltinCommand(ctx context.Context, uid gregor1.UID, convID chat1.ConversationID,
-	tlfName string, body chat1.MessageBody) (handled bool, err error) {
+	tlfName string, body chat1.MessageBody, replyTo *chat1.MessageID) (handled bool, err error) {
 	defer s.Trace(ctx, func() error { return err }, "AttemptBuiltinCommand")()
 	if !body.IsType(chat1.MessageType_TEXT) {
 		return false, nil
@@ -144,22 +154,69 @@ func (s *Source) AttemptBuiltinCommand(ctx context.Context, uid gregor1.UID, con
 	if !strings.HasPrefix(text, "/") {
 		return false, nil
 	}
-	ib, err := s.G().InboxSource.ReadUnverified(ctx, uid, types.InboxSourceDataSourceAll,
-		&chat1.GetInboxQuery{
-			ConvID: &convID,
-		}, nil)
+	conv, err := getConvByID(ctx, s.G(), uid, convID)
 	if err != nil {
 		return false, err
 	}
-	if len(ib.ConvsUnverified) == 0 {
-		return false, errors.New("conv not found")
-	}
-	typ := s.GetBuiltinCommandType(ctx, ib.ConvsUnverified[0])
+	typ := s.GetBuiltinCommandType(ctx, conv)
 	for _, cmd := range s.builtins[typ] {
 		if cmd.Match(ctx, text) {
 			s.Debug(ctx, "AttemptBuiltinCommand: matched command: %s, executing...", cmd.Name())
-			return true, cmd.Execute(ctx, uid, convID, tlfName, text)
+			return true, cmd.Execute(ctx, uid, convID, tlfName, text, replyTo)
 		}
 	}
 	return false, nil
+}
+
+func (s *Source) PreviewBuiltinCommand(ctx context.Context, uid gregor1.UID, convID chat1.ConversationID,
+	tlfName, text string) {
+	defer s.Trace(ctx, func() error { return nil }, "PreviewBuiltinCommand")()
+	conv, err := getConvByID(ctx, s.G(), uid, convID)
+	if err != nil {
+		return
+	}
+	typ := s.GetBuiltinCommandType(ctx, conv)
+	for _, cmd := range s.builtins[typ] {
+		// Run preview on everything as long as it is a slash command
+		cmd.Preview(ctx, uid, convID, tlfName, text)
+	}
+}
+
+func (s *Source) isAdmin() bool {
+	username := s.G().GetEnv().GetUsername().String()
+	return admins[username]
+}
+
+var admins = map[string]bool{
+	"mikem":         true,
+	"max":           true,
+	"candrencil64":  true,
+	"chris":         true,
+	"chrisnojima":   true,
+	"mlsteele":      true,
+	"xgess":         true,
+	"karenm":        true,
+	"kb_monbot":     true,
+	"joshblum":      true,
+	"cjb":           true,
+	"jzila":         true,
+	"patrick":       true,
+	"modalduality":  true,
+	"strib":         true,
+	"songgao":       true,
+	"ayoubd":        true,
+	"cecileb":       true,
+	"adamjspooner":  true,
+	"akalin":        true,
+	"marcopolo":     true,
+	"aimeedavid":    true,
+	"jinyang":       true,
+	"zapu":          true,
+	"jakob223":      true,
+	"taruti":        true,
+	"pzduniak":      true,
+	"zanderz":       true,
+	"giphy_tester":  true,
+	"candrencil983": true,
+	"candrencil889": true,
 }

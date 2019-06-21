@@ -568,15 +568,9 @@ func TestMemberDetailsResetAndDeletedUser(t *testing.T) {
 	details, err = Details(context.TODO(), tc.G, name)
 	require.NoError(t, err)
 
-	require.Len(t, details.Members.Admins, 2)
-	for _, admin := range details.Members.Admins {
-		switch admin.Username {
-		case otherA.Username: // only reset
-			require.Equal(t, admin.Status, keybase1.TeamMemberStatus_RESET)
-		case otherB.Username: // deleted
-			require.Equal(t, admin.Status, keybase1.TeamMemberStatus_DELETED)
-		}
-	}
+	require.Len(t, details.Members.Admins, 1)
+	require.Equal(t, otherA.Username, details.Members.Admins[0].Username)
+	require.Equal(t, keybase1.TeamMemberStatus_RESET, details.Members.Admins[0].Status)
 }
 
 func TestMemberAddEmail(t *testing.T) {
@@ -891,6 +885,7 @@ func TestLeaveAsReader(t *testing.T) {
 		ID:          teamID,
 		ForceRepoll: true,
 	})
+	require.NoError(t, err)
 
 	t.Logf("U0 loads the team from scratch")
 	_, err = Load(context.Background(), tcs[0].G, keybase1.LoadTeamArg{
@@ -963,7 +958,7 @@ func assertRole2(tc libkb.TestContext, teamID keybase1.TeamID, username string, 
 func assertInvite(tc libkb.TestContext, name, username, typ string, role keybase1.TeamRole) {
 	tc.T.Logf("looking for invite for %s/%s w/ role %s in team %s", username, typ, role, name)
 	iname := keybase1.TeamInviteName(username)
-	itype, err := keybase1.TeamInviteTypeFromString(typ, true)
+	itype, err := TeamInviteTypeFromString(tc.MetaContext(), typ)
 	if err != nil {
 		tc.T.Fatal(err)
 	}
@@ -975,7 +970,7 @@ func assertInvite(tc libkb.TestContext, name, username, typ string, role keybase
 
 func assertNoInvite(tc libkb.TestContext, name, username, typ string) {
 	iname := keybase1.TeamInviteName(username)
-	itype, err := keybase1.TeamInviteTypeFromString(typ, true)
+	itype, err := TeamInviteTypeFromString(tc.MetaContext(), typ)
 	if err != nil {
 		tc.T.Fatal(err)
 	}

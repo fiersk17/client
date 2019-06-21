@@ -808,6 +808,126 @@ func (o SweepRes) DeepCopy() SweepRes {
 	}
 }
 
+type ServerNowRes struct {
+	RateLimit *RateLimit   `codec:"rateLimit,omitempty" json:"rateLimit,omitempty"`
+	Now       gregor1.Time `codec:"now" json:"now"`
+}
+
+func (o ServerNowRes) DeepCopy() ServerNowRes {
+	return ServerNowRes{
+		RateLimit: (func(x *RateLimit) *RateLimit {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.RateLimit),
+		Now: o.Now.DeepCopy(),
+	}
+}
+
+type ExternalAPIKeyTyp int
+
+const (
+	ExternalAPIKeyTyp_GOOGLEMAPS ExternalAPIKeyTyp = 0
+	ExternalAPIKeyTyp_GIPHY      ExternalAPIKeyTyp = 1
+)
+
+func (o ExternalAPIKeyTyp) DeepCopy() ExternalAPIKeyTyp { return o }
+
+var ExternalAPIKeyTypMap = map[string]ExternalAPIKeyTyp{
+	"GOOGLEMAPS": 0,
+	"GIPHY":      1,
+}
+
+var ExternalAPIKeyTypRevMap = map[ExternalAPIKeyTyp]string{
+	0: "GOOGLEMAPS",
+	1: "GIPHY",
+}
+
+func (e ExternalAPIKeyTyp) String() string {
+	if v, ok := ExternalAPIKeyTypRevMap[e]; ok {
+		return v
+	}
+	return ""
+}
+
+type ExternalAPIKey struct {
+	Typ__        ExternalAPIKeyTyp `codec:"typ" json:"typ"`
+	Googlemaps__ *string           `codec:"googlemaps,omitempty" json:"googlemaps,omitempty"`
+	Giphy__      *string           `codec:"giphy,omitempty" json:"giphy,omitempty"`
+}
+
+func (o *ExternalAPIKey) Typ() (ret ExternalAPIKeyTyp, err error) {
+	switch o.Typ__ {
+	case ExternalAPIKeyTyp_GOOGLEMAPS:
+		if o.Googlemaps__ == nil {
+			err = errors.New("unexpected nil value for Googlemaps__")
+			return ret, err
+		}
+	case ExternalAPIKeyTyp_GIPHY:
+		if o.Giphy__ == nil {
+			err = errors.New("unexpected nil value for Giphy__")
+			return ret, err
+		}
+	}
+	return o.Typ__, nil
+}
+
+func (o ExternalAPIKey) Googlemaps() (res string) {
+	if o.Typ__ != ExternalAPIKeyTyp_GOOGLEMAPS {
+		panic("wrong case accessed")
+	}
+	if o.Googlemaps__ == nil {
+		return
+	}
+	return *o.Googlemaps__
+}
+
+func (o ExternalAPIKey) Giphy() (res string) {
+	if o.Typ__ != ExternalAPIKeyTyp_GIPHY {
+		panic("wrong case accessed")
+	}
+	if o.Giphy__ == nil {
+		return
+	}
+	return *o.Giphy__
+}
+
+func NewExternalAPIKeyWithGooglemaps(v string) ExternalAPIKey {
+	return ExternalAPIKey{
+		Typ__:        ExternalAPIKeyTyp_GOOGLEMAPS,
+		Googlemaps__: &v,
+	}
+}
+
+func NewExternalAPIKeyWithGiphy(v string) ExternalAPIKey {
+	return ExternalAPIKey{
+		Typ__:   ExternalAPIKeyTyp_GIPHY,
+		Giphy__: &v,
+	}
+}
+
+func (o ExternalAPIKey) DeepCopy() ExternalAPIKey {
+	return ExternalAPIKey{
+		Typ__: o.Typ__.DeepCopy(),
+		Googlemaps__: (func(x *string) *string {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x)
+			return &tmp
+		})(o.Googlemaps__),
+		Giphy__: (func(x *string) *string {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x)
+			return &tmp
+		})(o.Giphy__),
+	}
+}
+
 type GetInboxRemoteArg struct {
 	Vers       InboxVers      `codec:"vers" json:"vers"`
 	Query      *GetInboxQuery `codec:"query,omitempty" json:"query,omitempty"`
@@ -833,11 +953,12 @@ type GetPublicConversationsArg struct {
 }
 
 type PostRemoteArg struct {
-	ConversationID ConversationID  `codec:"conversationID" json:"conversationID"`
-	MessageBoxed   MessageBoxed    `codec:"messageBoxed" json:"messageBoxed"`
-	AtMentions     []gregor1.UID   `codec:"atMentions" json:"atMentions"`
-	ChannelMention ChannelMention  `codec:"channelMention" json:"channelMention"`
-	TopicNameState *TopicNameState `codec:"topicNameState,omitempty" json:"topicNameState,omitempty"`
+	ConversationID ConversationID            `codec:"conversationID" json:"conversationID"`
+	MessageBoxed   MessageBoxed              `codec:"messageBoxed" json:"messageBoxed"`
+	AtMentions     []gregor1.UID             `codec:"atMentions" json:"atMentions"`
+	ChannelMention ChannelMention            `codec:"channelMention" json:"channelMention"`
+	TopicNameState *TopicNameState           `codec:"topicNameState,omitempty" json:"topicNameState,omitempty"`
+	JoinMentionsAs *ConversationMemberStatus `codec:"joinMentionsAs,omitempty" json:"joinMentionsAs,omitempty"`
 }
 
 type NewConversationRemoteArg struct {
@@ -845,10 +966,11 @@ type NewConversationRemoteArg struct {
 }
 
 type NewConversationRemote2Arg struct {
-	IdTriple       ConversationIDTriple    `codec:"idTriple" json:"idTriple"`
-	TLFMessage     MessageBoxed            `codec:"TLFMessage" json:"TLFMessage"`
-	MembersType    ConversationMembersType `codec:"membersType" json:"membersType"`
-	TopicNameState *TopicNameState         `codec:"topicNameState,omitempty" json:"topicNameState,omitempty"`
+	IdTriple         ConversationIDTriple    `codec:"idTriple" json:"idTriple"`
+	TLFMessage       MessageBoxed            `codec:"TLFMessage" json:"TLFMessage"`
+	MembersType      ConversationMembersType `codec:"membersType" json:"membersType"`
+	TopicNameState   *TopicNameState         `codec:"topicNameState,omitempty" json:"topicNameState,omitempty"`
+	MemberSourceConv *ConversationID         `codec:"memberSourceConv,omitempty" json:"memberSourceConv,omitempty"`
 }
 
 type GetMessagesRemoteArg struct {
@@ -1014,6 +1136,13 @@ type BroadcastGregorMessageToConvArg struct {
 	Msg    gregor1.Message `codec:"msg" json:"msg"`
 }
 
+type ServerNowArg struct {
+}
+
+type GetExternalAPIKeysArg struct {
+	Typs []ExternalAPIKeyTyp `codec:"typs" json:"typs"`
+}
+
 type RemoteInterface interface {
 	GetInboxRemote(context.Context, GetInboxRemoteArg) (GetInboxRemoteRes, error)
 	GetThreadRemote(context.Context, GetThreadRemoteArg) (GetThreadRemoteRes, error)
@@ -1053,6 +1182,8 @@ type RemoteInterface interface {
 	RegisterSharePost(context.Context, RegisterSharePostArg) error
 	FailSharePost(context.Context, FailSharePostArg) error
 	BroadcastGregorMessageToConv(context.Context, BroadcastGregorMessageToConvArg) error
+	ServerNow(context.Context) (ServerNowRes, error)
+	GetExternalAPIKeys(context.Context, []ExternalAPIKeyTyp) ([]ExternalAPIKey, error)
 }
 
 func RemoteProtocol(i RemoteInterface) rpc.Protocol {
@@ -1624,6 +1755,31 @@ func RemoteProtocol(i RemoteInterface) rpc.Protocol {
 					return
 				},
 			},
+			"serverNow": {
+				MakeArg: func() interface{} {
+					var ret [1]ServerNowArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					ret, err = i.ServerNow(ctx)
+					return
+				},
+			},
+			"getExternalAPIKeys": {
+				MakeArg: func() interface{} {
+					var ret [1]GetExternalAPIKeysArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]GetExternalAPIKeysArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]GetExternalAPIKeysArg)(nil), args)
+						return
+					}
+					ret, err = i.GetExternalAPIKeys(ctx, typedArgs[0].Typs)
+					return
+				},
+			},
 		},
 	}
 }
@@ -1831,5 +1987,16 @@ func (c RemoteClient) FailSharePost(ctx context.Context, __arg FailSharePostArg)
 
 func (c RemoteClient) BroadcastGregorMessageToConv(ctx context.Context, __arg BroadcastGregorMessageToConvArg) (err error) {
 	err = c.Cli.CallCompressed(ctx, "chat.1.remote.broadcastGregorMessageToConv", []interface{}{__arg}, nil, rpc.CompressionGzip)
+	return
+}
+
+func (c RemoteClient) ServerNow(ctx context.Context) (res ServerNowRes, err error) {
+	err = c.Cli.CallCompressed(ctx, "chat.1.remote.serverNow", []interface{}{ServerNowArg{}}, &res, rpc.CompressionGzip)
+	return
+}
+
+func (c RemoteClient) GetExternalAPIKeys(ctx context.Context, typs []ExternalAPIKeyTyp) (res []ExternalAPIKey, err error) {
+	__arg := GetExternalAPIKeysArg{Typs: typs}
+	err = c.Cli.CallCompressed(ctx, "chat.1.remote.getExternalAPIKeys", []interface{}{__arg}, &res, rpc.CompressionGzip)
 	return
 }

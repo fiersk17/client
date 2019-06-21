@@ -371,13 +371,13 @@ func (k *KeybaseDaemonRPC) OnDoCommandError(err error, wait time.Duration) {
 }
 
 // OnDisconnected implements the ConnectionHandler interface.
-func (k *KeybaseDaemonRPC) OnDisconnected(_ context.Context,
+func (k *KeybaseDaemonRPC) OnDisconnected(ctx context.Context,
 	status rpc.DisconnectStatus) {
 	if status == rpc.StartingNonFirstConnection {
 		k.log.Warning("KeybaseDaemonRPC is disconnected")
 	}
 
-	k.clearCaches()
+	k.ClearCaches(ctx)
 
 	k.lock.Lock()
 	defer k.lock.Unlock()
@@ -465,6 +465,7 @@ func newNotifyServiceHandler(config Config, log logger.Logger) keybase1.NotifySe
 func (k *KeybaseDaemonRPC) FavoritesChanged(ctx context.Context,
 	uid keybase1.UID) error {
 	k.log.Debug("Received FavoritesChanged RPC.")
-	k.config.KBFSOps().RefreshCachedFavorites(ctx)
+	k.config.KBFSOps().RefreshCachedFavorites(ctx,
+		FavoritesRefreshModeInMainFavoritesLoop)
 	return nil
 }

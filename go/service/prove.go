@@ -57,6 +57,13 @@ func (p *proveUI) OkToCheck(ctx context.Context, arg keybase1.OkToCheckArg) (boo
 	arg.SessionID = p.sessionID
 	return p.cli.OkToCheck(ctx, arg)
 }
+func (p *proveUI) Checking(ctx context.Context, arg keybase1.CheckingArg) error {
+	arg.SessionID = p.sessionID
+	return p.cli.Checking(ctx, arg)
+}
+func (p *proveUI) ContinueChecking(ctx context.Context, _ int) (bool, error) {
+	return p.cli.ContinueChecking(ctx, p.sessionID)
+}
 func (p *proveUI) DisplayRecheckWarning(ctx context.Context, arg keybase1.DisplayRecheckWarningArg) error {
 	arg.SessionID = p.sessionID
 	return p.cli.DisplayRecheckWarning(ctx, arg)
@@ -83,6 +90,16 @@ func (ph *ProveHandler) StartProof(ctx context.Context, arg keybase1.StartProofA
 	}
 	res.SigID = eng.SigID()
 	return res, err
+}
+
+func (ph *ProveHandler) ValidateUsername(ctx context.Context, arg keybase1.ValidateUsernameArg) error {
+	mctx := libkb.NewMetaContext(ctx, ph.G())
+	serviceType := mctx.G().GetProofServices().GetServiceType(ctx, arg.Service)
+	if serviceType == nil {
+		return libkb.BadServiceError{Service: arg.Service}
+	}
+	_, err := serviceType.NormalizeRemoteName(mctx, arg.Remotename)
+	return err
 }
 
 // Prove handles the `keybase.1.checkProof` RPC.

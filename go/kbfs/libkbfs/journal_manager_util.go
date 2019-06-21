@@ -8,6 +8,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/keybase/client/go/kbfs/data"
 	"github.com/keybase/client/go/kbfs/tlf"
 	"github.com/keybase/client/go/logger"
 	"golang.org/x/net/context"
@@ -29,8 +30,7 @@ func GetJournalManager(config Config) (*JournalManager, error) {
 // given TLF.
 func TLFJournalEnabled(config Config, tlfID tlf.ID) bool {
 	if jManager, err := GetJournalManager(config); err == nil {
-		_, err := jManager.JournalStatus(tlfID)
-		return err == nil
+		return jManager.JournalEnabled(tlfID)
 	}
 	return false
 }
@@ -74,7 +74,7 @@ func FillInJournalStatusUnflushedPaths(ctx context.Context, config Config,
 			}
 
 			status, _, err := config.KBFSOps().FolderStatus(
-				groupCtx, FolderBranch{Tlf: tlfID, Branch: MasterBranch})
+				groupCtx, data.FolderBranch{Tlf: tlfID, Branch: data.MasterBranch})
 			if err != nil {
 				return err
 			}

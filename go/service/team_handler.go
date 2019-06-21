@@ -51,6 +51,8 @@ func (r *teamHandler) Create(ctx context.Context, cli gregor1.IncomingInterface,
 		return true, r.sharingBeforeSignup(ctx, cli, item)
 	case "team.openreq":
 		return true, r.openTeamAccessRequest(ctx, cli, item)
+	case "team.opensweep":
+		return true, r.openTeamSweepResetUsersRequest(ctx, cli, item)
 	case "team.change":
 		return true, r.changeTeam(ctx, cli, category, item, keybase1.TeamChangeSet{})
 	case "team.force_repoll":
@@ -128,7 +130,9 @@ func (r *teamHandler) memberOutFromReset(ctx context.Context, cli gregor1.Incomi
 	if err := r.G().UIDMapper.ClearUIDAtEldestSeqno(ctx, r.G(), msg.ResetUser.Uid, msg.ResetUser.EldestSeqno); err != nil {
 		return err
 	}
-
+	// Favorites is misused to let people know when there are reset team
+	// members. This busts the relevant cache.
+	r.G().NotifyRouter.HandleFavoritesChanged(r.G().GetMyUID())
 	r.G().Log.CDebugf(ctx, "%s: cleared UIDMap cache for %s%%%d", nm, msg.ResetUser.Uid, msg.ResetUser.EldestSeqno)
 	return nil
 }
@@ -191,12 +195,7 @@ func (r *teamHandler) deleteTeam(ctx context.Context, cli gregor1.IncomingInterf
 	}
 	r.G().Log.CDebugf(ctx, "teamHandler: team.delete unmarshaled: %+v", rows)
 
-	err := teams.HandleDeleteNotification(ctx, r.G(), rows)
-	if err != nil {
-		return err
-	}
-
-	return r.G().GregorState.DismissItem(ctx, cli, item.Metadata().MsgID())
+	return teams.HandleDeleteNotification(ctx, r.G(), rows)
 }
 
 func (r *teamHandler) exitTeam(ctx context.Context, cli gregor1.IncomingInterface, item gregor.Item) error {
@@ -227,10 +226,8 @@ func (r *teamHandler) newlyAddedToTeam(ctx context.Context, cli gregor1.Incoming
 		return err
 	}
 
-	r.G().Log.CDebugf(ctx, "teamHandler.newlyAddedToTeam: locally dismissing %s", nm)
-	if err := r.G().GregorState.LocalDismissItem(ctx, item.Metadata().MsgID()); err != nil {
-		r.G().Log.CDebugf(ctx, "teamHandler.newlyAddedToTeam: failed to locally dismiss msg %v", item.Metadata().MsgID())
-	}
+	// Note there used to be a local dismissal here, but the newly_added_to_team needs
+	// to stay in the gregor state for badging to work.
 
 	return nil
 }
@@ -266,6 +263,23 @@ func (r *teamHandler) openTeamAccessRequest(ctx context.Context, cli gregor1.Inc
 	}
 
 	r.G().Log.CDebugf(ctx, "dismissing team.openreq item since it succeeded")
+	return r.G().GregorState.DismissItem(ctx, cli, item.Metadata().MsgID())
+}
+
+func (r *teamHandler) openTeamSweepResetUsersRequest(ctx context.Context, cli gregor1.IncomingInterface, item gregor.Item) error {
+	r.G().Log.CDebugf(ctx, "teamHandler: team.opensweep received")
+	var msg keybase1.TeamOpenSweepMsg
+	if err := json.Unmarshal(item.Body().Bytes(), &msg); err != nil {
+		r.G().Log.CDebugf(ctx, "error unmarshaling team.opensweep item: %s", err)
+		return err
+	}
+	r.G().Log.CDebugf(ctx, "team.opensweep unmarshaled: %+v", msg)
+
+	if err := teams.HandleOpenTeamSweepRequest(ctx, r.G(), msg); err != nil {
+		return err
+	}
+
+	r.G().Log.CDebugf(ctx, "dismissing team.opensweep item since it succeeded")
 	return r.G().GregorState.DismissItem(ctx, cli, item.Metadata().MsgID())
 }
 

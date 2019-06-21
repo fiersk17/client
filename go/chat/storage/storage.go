@@ -315,8 +315,8 @@ func (h *HoleyResultCollector) Holes() int {
 }
 
 func (s *Storage) Nuke(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID) Error {
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
 	return s.maybeNukeLocked(ctx, true /* force */, nil /* error */, convID, uid)
 }
 
@@ -342,12 +342,20 @@ func (s *Storage) maybeNukeLocked(ctx context.Context, force bool, err Error, co
 	return err
 }
 
-func (s *Storage) GetMaxMsgID(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID) (chat1.MessageID, error) {
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
+func (s *Storage) SetMaxMsgID(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID,
+	msgID chat1.MessageID) (err Error) {
+	defer s.Trace(ctx, func() error { return err }, "SetMaxMsgID")()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
+	return s.idtracker.bumpMaxMessageID(ctx, convID, uid, msgID)
+}
 
-	maxMsgID, err := s.idtracker.getMaxMessageID(ctx, convID, uid)
-	if err != nil {
+func (s *Storage) GetMaxMsgID(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID) (maxMsgID chat1.MessageID, err Error) {
+	defer s.Trace(ctx, func() error { return err }, "GetMaxMsgID")()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
+
+	if maxMsgID, err = s.idtracker.getMaxMessageID(ctx, convID, uid); err != nil {
 		return maxMsgID, s.maybeNukeLocked(ctx, false, err, convID, uid)
 	}
 	return maxMsgID, nil
@@ -358,6 +366,7 @@ type MergeResult struct {
 	Exploded        []chat1.MessageUnboxed
 	ReactionTargets []chat1.MessageUnboxed
 	UnfurlTargets   []chat1.MessageUnboxed
+	RepliesAffected []chat1.MessageUnboxed
 }
 
 type FetchResult struct {
@@ -384,11 +393,8 @@ func (s *Storage) Expunge(ctx context.Context,
 func (s *Storage) MergeHelper(ctx context.Context,
 	convID chat1.ConversationID, uid gregor1.UID, msgs []chat1.MessageUnboxed, expunge *chat1.Expunge) (res MergeResult, err Error) {
 	defer s.Trace(ctx, func() error { return err }, "MergeHelper")()
-
-	// All public functions get locks to make access to the database single threaded.
-	// They should never be called from private functions.
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
 
 	s.Debug(ctx, "MergeHelper: convID: %s uid: %s num msgs: %d", convID, uid, len(msgs))
 
@@ -415,6 +421,7 @@ func (s *Storage) MergeHelper(ctx context.Context,
 	}
 	res.ReactionTargets = updateRes.reactionTargets
 	res.UnfurlTargets = updateRes.unfurlTargets
+	res.RepliesAffected = updateRes.repliesAffected
 
 	if err = s.updateMinDeletableMessage(ctx, convID, uid, msgs); err != nil {
 		return res, s.maybeNukeLocked(ctx, false, err, convID, uid)
@@ -449,6 +456,18 @@ func (s *Storage) MergeHelper(ctx context.Context,
 type updateAllSupersededByRes struct {
 	reactionTargets []chat1.MessageUnboxed
 	unfurlTargets   []chat1.MessageUnboxed
+	repliesAffected []chat1.MessageUnboxed
+}
+
+func (s *Storage) isReply(msg chat1.MessageUnboxed) *chat1.MessageID {
+	if !msg.IsValid() {
+		return nil
+	}
+	body := msg.Valid().MessageBody
+	if body.IsType(chat1.MessageType_TEXT) && body.Text().ReplyTo != nil && *body.Text().ReplyTo > 0 {
+		return body.Text().ReplyTo
+	}
+	return nil
 }
 
 func (s *Storage) updateAllSupersededBy(ctx context.Context, convID chat1.ConversationID,
@@ -462,6 +481,7 @@ func (s *Storage) updateAllSupersededBy(ctx context.Context, convID chat1.Conver
 	updatedReactionTargets := map[chat1.MessageID]chat1.MessageUnboxed{}
 	// Unfurl targets
 	updatedUnfurlTargets := map[chat1.MessageID]chat1.MessageUnboxed{}
+	repliesAffected := map[chat1.MessageID]chat1.MessageUnboxed{}
 
 	// Sort in reverse order so this playback works as it would have if we received these
 	// in real-time
@@ -480,6 +500,9 @@ func (s *Storage) updateAllSupersededBy(ctx context.Context, convID chat1.Conver
 		supersededIDs, ierr := utils.GetSupersedes(msg)
 		if ierr != nil {
 			continue
+		}
+		if replyID := s.isReply(msg); replyID != nil {
+			supersededIDs = append(supersededIDs, *replyID)
 		}
 		// Set all supersedes targets
 		for _, supersededID := range supersededIDs {
@@ -508,6 +531,10 @@ func (s *Storage) updateAllSupersededBy(ctx context.Context, convID chat1.Conver
 
 				newMsgs := []chat1.MessageUnboxed{}
 				switch msg.GetMessageType() {
+				case chat1.MessageType_TEXT:
+					mvalid.ServerHeader.Replies = append(mvalid.ServerHeader.Replies, msg.GetMessageID())
+					newMsg := chat1.NewMessageUnboxedWithValid(mvalid)
+					newMsgs = append(newMsgs, newMsg)
 				case chat1.MessageType_UNFURL:
 					unfurl := msg.Valid().MessageBody.Unfurl()
 					utils.SetUnfurl(&mvalid, msg.GetMessageID(), unfurl.Unfurl)
@@ -529,6 +556,7 @@ func (s *Storage) updateAllSupersededBy(ctx context.Context, convID chat1.Conver
 					}
 				case chat1.MessageType_DELETE:
 					mvalid.ServerHeader.SupersededBy = msgid
+					s.updateRepliesAffected(ctx, convID, uid, mvalid.ServerHeader.Replies, repliesAffected)
 					switch superMsg.GetMessageType() {
 					case chat1.MessageType_UNFURL:
 						updatedTarget, err := s.updateUnfurlTargetOnDelete(ctx, convID, uid, *superMsg)
@@ -556,6 +584,9 @@ func (s *Storage) updateAllSupersededBy(ctx context.Context, convID chat1.Conver
 					allPurged = append(allPurged, *superMsg)
 					allAssets = append(allAssets, assets...)
 					newMsgs = append(newMsgs, msgPurged)
+				case chat1.MessageType_EDIT:
+					s.updateRepliesAffected(ctx, convID, uid, mvalid.ServerHeader.Replies, repliesAffected)
+					fallthrough
 				default:
 					mvalid.ServerHeader.SupersededBy = msgid
 					newMsg := chat1.NewMessageUnboxedWithValid(mvalid)
@@ -576,16 +607,18 @@ func (s *Storage) updateAllSupersededBy(ctx context.Context, convID chat1.Conver
 	// queue search index update in the background
 	go s.G().Indexer.Remove(ctx, convID, uid, allPurged)
 
-	flatten := func(m map[chat1.MessageID]chat1.MessageUnboxed) (res []chat1.MessageUnboxed) {
-		for _, msg := range m {
-			res = append(res, msg)
-		}
-		return res
-	}
 	return updateAllSupersededByRes{
-		reactionTargets: flatten(updatedReactionTargets),
-		unfurlTargets:   flatten(updatedUnfurlTargets),
+		reactionTargets: s.flatten(updatedReactionTargets),
+		unfurlTargets:   s.flatten(updatedUnfurlTargets),
+		repliesAffected: s.flatten(repliesAffected),
 	}, nil
+}
+
+func (s *Storage) flatten(m map[chat1.MessageID]chat1.MessageUnboxed) (res []chat1.MessageUnboxed) {
+	for _, msg := range m {
+		res = append(res, msg)
+	}
+	return res
 }
 
 func (s *Storage) updateMinDeletableMessage(ctx context.Context, convID chat1.ConversationID,
@@ -813,12 +846,9 @@ func (s *Storage) clearUpthrough(ctx context.Context, convID chat1.ConversationI
 // ClearBefore clears all messages up to (but not including) the upto messageID
 func (s *Storage) ClearBefore(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID,
 	upto chat1.MessageID) (err Error) {
-	defer s.Trace(ctx, func() error { return err }, "ClearBefore")()
-	// All public functions get locks to make access to the database single threaded.
-	// They should never be called from private functions.
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
-	s.Debug(ctx, "ClearBefore: convID: %s uid: %s msgID: %d", convID, uid, upto)
+	defer s.Trace(ctx, func() error { return err }, fmt.Sprintf("ClearBefore: convID: %s, uid: %s, msgID: %d", convID, uid, upto))()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
 
 	// Abort, we don't want to overflow uint (chat1.MessageID)
 	if upto == 0 {
@@ -829,10 +859,8 @@ func (s *Storage) ClearBefore(ctx context.Context, convID chat1.ConversationID, 
 
 func (s *Storage) ClearAll(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID) (err Error) {
 	defer s.Trace(ctx, func() error { return err }, "ClearAll")()
-	// All public functions get locks to make access to the database single threaded.
-	// They should never be called from private functions.
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
 	maxMsgID, err := s.idtracker.getMaxMessageID(ctx, convID, uid)
 	if err != nil {
 		return err
@@ -958,11 +986,9 @@ func (s *Storage) fetchUpToMsgIDLocked(ctx context.Context, rc ResultCollector,
 func (s *Storage) FetchUpToLocalMaxMsgID(ctx context.Context,
 	convID chat1.ConversationID, uid gregor1.UID, rc ResultCollector, iboxMaxMsgID chat1.MessageID,
 	query *chat1.GetThreadQuery, pagination *chat1.Pagination) (res FetchResult, err Error) {
-	// All public functions get locks to make access to the database single threaded.
-	// They should never be called from private functions.
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
 	defer s.Trace(ctx, func() error { return err }, "FetchUpToLocalMaxMsgID")()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
 
 	maxMsgID, err := s.idtracker.getMaxMessageID(ctx, convID, uid)
 	if err != nil {
@@ -980,21 +1006,19 @@ func (s *Storage) FetchUpToLocalMaxMsgID(ctx context.Context,
 
 func (s *Storage) Fetch(ctx context.Context, conv chat1.Conversation,
 	uid gregor1.UID, rc ResultCollector, query *chat1.GetThreadQuery, pagination *chat1.Pagination) (res FetchResult, err Error) {
-	// All public functions get locks to make access to the database single threaded.
-	// They should never be called from private functions.
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
 	defer s.Trace(ctx, func() error { return err }, "Fetch")()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), conv.GetConvID().String())
+	defer lock.Release(ctx)
 
-	return s.fetchUpToMsgIDLocked(ctx, rc, conv.Metadata.ConversationID, uid, conv.ReaderInfo.MaxMsgid,
+	return s.fetchUpToMsgIDLocked(ctx, rc, conv.GetConvID(), uid, conv.ReaderInfo.MaxMsgid,
 		query, pagination)
 }
 
 func (s *Storage) FetchMessages(ctx context.Context, convID chat1.ConversationID,
 	uid gregor1.UID, msgIDs []chat1.MessageID) (res []*chat1.MessageUnboxed, err Error) {
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
 	defer s.Trace(ctx, func() error { return err }, "FetchMessages")()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
 	if err = isAbortedRequest(ctx); err != nil {
 		return res, err
 	}
@@ -1029,9 +1053,9 @@ func (s *Storage) FetchMessages(ctx context.Context, convID chat1.ConversationID
 
 func (s *Storage) FetchUnreadlineID(ctx context.Context, convID chat1.ConversationID,
 	uid gregor1.UID, readMsgID chat1.MessageID) (msgID *chat1.MessageID, err Error) {
-	locks.Storage.Lock()
-	defer locks.Storage.Unlock()
 	defer s.Trace(ctx, func() error { return err }, "FetchUnreadlineID")()
+	lock := locks.StorageLockTab.AcquireOnName(ctx, s.G(), convID.String())
+	defer lock.Release(ctx)
 	if err = isAbortedRequest(ctx); err != nil {
 		return nil, err
 	}
@@ -1048,8 +1072,7 @@ func (s *Storage) FetchUnreadlineID(ctx context.Context, convID chat1.Conversati
 	}
 
 	// Run seek looking for each message
-	unreadlineID := readMsgID + 1
-	for {
+	for unreadlineID := readMsgID + 1; unreadlineID < readMsgID+1000; unreadlineID++ {
 		msg, err := s.getMessage(ctx, convID, uid, unreadlineID)
 		if err != nil {
 			return nil, s.maybeNukeLocked(ctx, false, err, convID, uid)
@@ -1061,12 +1084,6 @@ func (s *Storage) FetchUnreadlineID(ctx context.Context, convID chat1.Conversati
 		// return the first non-deleted visible message we have
 		if msg.IsValidFull() && utils.IsVisibleChatMessageType(msg.GetMessageType()) {
 			return &unreadlineID, nil
-		}
-
-		unreadlineID++
-		// just get out of here
-		if unreadlineID-readMsgID > 1000 {
-			break
 		}
 	}
 
@@ -1123,6 +1140,43 @@ func (s *Storage) updateUnfurlTargetOnDelete(ctx context.Context, convID chat1.C
 	mvalid := targetMsg.Valid()
 	utils.RemoveUnfurl(&mvalid, unfurlMsg.GetMessageID())
 	return chat1.NewMessageUnboxedWithValid(mvalid), nil
+}
+
+func (s *Storage) updateRepliesAffected(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID,
+	replies []chat1.MessageID, replyMap map[chat1.MessageID]chat1.MessageUnboxed) {
+	if len(replies) == 0 {
+		return
+	}
+	defer s.Trace(ctx, func() error { return nil }, "updateRepliesAffected: num: %d", len(replies))()
+	for _, reply := range replies {
+		if _, ok := replyMap[reply]; ok {
+			continue
+		}
+		replyMsg, err := s.getMessage(ctx, convID, uid, reply)
+		if err != nil || replyMsg == nil {
+			s.Debug(ctx, "updateRepliesAffected: failed to get message: err: %s", err)
+			continue
+		}
+		replyMap[reply] = *replyMsg
+	}
+}
+
+func (s *Storage) GetExplodedReplies(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID,
+	exploded []chat1.MessageUnboxed) []chat1.MessageUnboxed {
+	if len(exploded) == 0 {
+		return nil
+	}
+	defer s.Trace(ctx, func() error { return nil }, "getExplodedReplies: num: %d", len(exploded))()
+	var replies []chat1.MessageID
+	for _, msg := range exploded {
+		if !msg.IsValid() {
+			continue
+		}
+		replies = append(replies, msg.Valid().ServerHeader.Replies...)
+	}
+	replyMap := make(map[chat1.MessageID]chat1.MessageUnboxed)
+	s.updateRepliesAffected(ctx, convID, uid, replies, replyMap)
+	return s.flatten(replyMap)
 }
 
 // updateReactionIDs appends `msgid` to `reactionIDs` if it is not already

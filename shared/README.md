@@ -149,17 +149,7 @@ We host the electron binaries used for our build process in keybase.pub. If you 
 
 The app uses [storybook](https://storybook.js.org/) snapshots. If you make a change that changes the html output of a story, tests will catch the difference.
 
-To update the stories, first determine which stories changed. Run the tests `yarn test Storyshots` and look for lines containing:
-
-```
-Received value does not match stored snapshot
-# for example
-Received value does not match stored snapshot "Storyshots Wallets/Transaction Account (receiverOnly) 1".
-```
-
-```
-yarn test Storyshots 2>&1 | grep "Received value does not match stored snapshot"
-```
+To update the stories, first determine which stories changed. Run the tests `yarn test Storyshots` and look for lines containing '●':
 
 Run the local storybook server. Verify that the affected stories look correct.
 

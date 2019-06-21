@@ -34,6 +34,7 @@ type StartOptions struct {
 
 func startMounting(options StartOptions,
 	log logger.Logger, mi *libfs.MountInterrupter) error {
+	log.Info("Starting mount with options: %#v", options)
 	var mounter = &mounter{options: options, log: log}
 	err := mi.MountAndSetUnmount(mounter)
 	if err != nil {
@@ -84,12 +85,14 @@ func Start(options StartOptions, kbCtx libkbfs.Context) *libfs.Error {
 
 	defer libkbfs.Shutdown()
 
+	libfs.AddRootWrapper(config)
+
 	if options.RuntimeDir != "" {
 		err := os.MkdirAll(options.RuntimeDir, libkb.PermDir)
 		if err != nil {
 			return libfs.InitError(err.Error())
 		}
-		info := libkb.NewServiceInfo(libkbfs.Version, libkbfs.PrereleaseBuild, options.Label, os.Getpid())
+		info := libkb.NewServiceInfo(libkb.Version, libkbfs.PrereleaseBuild, options.Label, os.Getpid())
 		err = info.WriteFile(path.Join(options.RuntimeDir, "kbfs.info"), log)
 		if err != nil {
 			return libfs.InitError(err.Error())
@@ -144,6 +147,8 @@ func Start(options StartOptions, kbCtx libkbfs.Context) *libfs.Error {
 		}
 	}
 
+	log.CDebugf(ctx, "Entering mount wait")
 	mi.Wait()
+	log.CDebugf(ctx, "Filesystem unmounted - mount wait returned - exiting")
 	return nil
 }

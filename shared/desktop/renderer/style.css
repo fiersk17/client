@@ -3,6 +3,7 @@
 @import '../../common-adapters/box.css';
 @import '../../common-adapters/icon.css';
 @import '../../common-adapters/text.css';
+@import '../../common-adapters/button.css';
 
 /* Reset */
 /* http://meyerweb.com/eric/tools/css/reset/
@@ -113,7 +114,6 @@ section {
   display: block;
 }
 body {
-  background-color: white;
   line-height: 1;
 }
 ol,
@@ -164,39 +164,46 @@ table {
 @font-face {
   font-family: 'Keybase';
   font-weight: 500;
-  src: url('../../fonts/keybase-medium.otf') format('opentype');
+  src: url('../../fonts/keybase-medium.ttf') format('truetype');
 }
 
 @font-face {
   font-family: 'Keybase';
   font-weight: 500;
   font-style: italic;
-  src: url('../../fonts/keybase-medium-italic.otf') format('opentype');
+  src: url('../../fonts/keybase-medium-italic.ttf') format('truetype');
 }
 
 @font-face {
   font-family: 'Keybase';
   font-weight: 600;
-  src: url('../../fonts/keybase-semibold.otf') format('opentype');
+  src: url('../../fonts/keybase-semibold.ttf') format('truetype');
 }
 
 @font-face {
   font-family: 'Keybase';
   font-weight: 600;
   font-style: italic;
-  src: url('../../fonts/keybase-semibold-italic.otf') format('opentype');
+  src: url('../../fonts/keybase-semibold-italic.ttf') format('truetype');
 }
 
 @font-face {
   font-family: 'Keybase';
   font-weight: 700;
-  src: url('../../fonts/keybase-bold.otf') format('opentype');
+  src: url('../../fonts/keybase-bold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Keybase';
+  font-weight: 700;
+  font-style: italic;
+  src: url('../../fonts/keybase-bold-italic.ttf') format('truetype');
 }
 
 @font-face {
   font-family: 'Keybase';
   font-weight: 800;
-  src: url('../../fonts/keybase-extrabold.otf') format('opentype');
+  src: url('../../fonts/keybase-extrabold.ttf') format('truetype');
 }
 /* End Keybase */
 
@@ -241,6 +248,10 @@ body {
   text-decoration: underline;
 }
 
+.hover-underline-container:hover .hover-underline-child {
+  text-decoration: underline;
+}
+
 .hover-opacity {
   opacity: 0.8;
 }
@@ -267,22 +278,47 @@ body {
 
 .fade-anim-enter {
   opacity: 0;
+  pointer-events: none;
 }
 
 .fade-anim-enter.fade-anim-enter-active {
   opacity: 1;
+  pointer-events: auto;
   transition: opacity 250ms ease-in-out;
 }
 
 .fade-anim-exit {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .fade-anim-exit.fade-anim-exit-active {
   opacity: 0;
+  pointer-events: none;
   transition: opacity 250ms ease-in-out;
+}
+
+/* These overrides are so the 'invisible' native emoji (so we can copy and paste) doesn't affect the sizing */
+.emoji-mart-emoji .emoji-mart-emoji-native {
+  line-height: 0;
+  width: 0;
+  height: 0;
+  display: inline-block;
 }
 
 .emoji-mart-emoji {
   vertical-align: middle;
+  display: inline;
+}
+
+.growFadeInSmall {
+  max-height: 0px;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 1250ms ease-in-out;
+  transition: opacity 250ms ease-in-out;
+}
+.growFadeInBig {
+  max-height: 999px;
+  opacity: 1;
 }

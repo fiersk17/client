@@ -2,6 +2,7 @@ package chat1
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"flag"
@@ -82,7 +83,11 @@ const DbShortFormLen = 10
 // DbShortForm should only be used when interacting with the database, and should
 // never leave Gregor
 func (cid ConversationID) DbShortForm() ConvIDShort {
-	return cid[:DbShortFormLen]
+	end := DbShortFormLen
+	if end > len(cid) {
+		end = len(cid)
+	}
+	return cid[:end]
 }
 
 func (cid ConversationID) DbShortFormString() string {
@@ -124,6 +129,10 @@ func (mid MessageID) IsNil() bool {
 	return uint(mid) == 0
 }
 
+func (mid MessageID) Advance(num uint) MessageID {
+	return MessageID(uint(mid) + num)
+}
+
 func (t MessageType) String() string {
 	s, ok := MessageTypeRevMap[t]
 	if ok {
@@ -163,10 +172,19 @@ var visibleMessageTypes = []MessageType{
 	MessageType_SYSTEM,
 	MessageType_SENDPAYMENT,
 	MessageType_REQUESTPAYMENT,
+	MessageType_FLIP,
 }
 
 func VisibleChatMessageTypes() []MessageType {
 	return visibleMessageTypes
+}
+
+var editableMessageTypesByEdit = []MessageType{
+	MessageType_TEXT,
+}
+
+func EditableMessageTypesByEdit() []MessageType {
+	return editableMessageTypesByEdit
 }
 
 func IsEphemeralSupersederType(typ MessageType) bool {
@@ -184,7 +202,8 @@ func IsEphemeralSupersederType(typ MessageType) bool {
 func IsEphemeralNonSupersederType(typ MessageType) bool {
 	switch typ {
 	case MessageType_TEXT,
-		MessageType_ATTACHMENT:
+		MessageType_ATTACHMENT,
+		MessageType_FLIP:
 		return true
 	default:
 		return false
@@ -426,6 +445,34 @@ func (m MessageUnboxed) SearchableText() string {
 		return ""
 	}
 	return m.Valid().MessageBody.SearchableText()
+}
+
+func (m MessageUnboxed) SenderUsername() string {
+	if !m.IsValid() {
+		return ""
+	}
+	return m.Valid().SenderUsername
+}
+
+func (m MessageUnboxed) Ctime() gregor1.Time {
+	if !m.IsValid() {
+		return 0
+	}
+	return m.Valid().ServerHeader.Ctime
+}
+
+func (m MessageUnboxed) AtMentionUsernames() []string {
+	if !m.IsValid() {
+		return nil
+	}
+	return m.Valid().AtMentionUsernames
+}
+
+func (m MessageUnboxed) ChannelMention() ChannelMention {
+	if !m.IsValid() {
+		return ChannelMention_NONE
+	}
+	return m.Valid().ChannelMention
 }
 
 func (m *MessageUnboxed) DebugString() string {
@@ -690,6 +737,10 @@ func (b MessageBody) SearchableText() string {
 		return b.Requestpayment().Note
 	case MessageType_ATTACHMENT:
 		return b.Attachment().GetTitle()
+	case MessageType_FLIP:
+		return b.Flip().Text
+	case MessageType_UNFURL:
+		return b.Unfurl().SearchableText()
 	default:
 		return ""
 	}
@@ -936,6 +987,11 @@ func (o OutboxRecord) IsUnfurl() bool {
 	return o.Msg.ClientHeader.MessageType == MessageType_UNFURL
 }
 
+func (o OutboxRecord) IsChatFlip() bool {
+	return o.Msg.ClientHeader.MessageType == MessageType_FLIP &&
+		o.Msg.ClientHeader.Conv.TopicType == TopicType_CHAT
+}
+
 func (o OutboxRecord) MessageType() MessageType {
 	return o.Msg.ClientHeader.MessageType
 }
@@ -1066,7 +1122,7 @@ func (p *Pagination) String() string {
 
 // FirstPage returns true if the pagination object is not pointing in any direction
 func (p *Pagination) FirstPage() bool {
-	return p == nil || (len(p.Next) == 0 && len(p.Previous) == 0)
+	return p == nil || p.ForceFirstPage || (len(p.Next) == 0 && len(p.Previous) == 0)
 }
 
 func (c ConversationLocal) GetMtime() gregor1.Time {
@@ -1244,8 +1300,12 @@ func (c Conversation) MaxVisibleMsgID() MessageID {
 }
 
 func (c Conversation) IsUnread() bool {
+	return c.IsUnreadFromMsgID(c.ReaderInfo.ReadMsgid)
+}
+
+func (c Conversation) IsUnreadFromMsgID(readMsgID MessageID) bool {
 	maxMsgID := c.MaxVisibleMsgID()
-	return maxMsgID > 0 && maxMsgID > c.ReaderInfo.ReadMsgid
+	return maxMsgID > 0 && maxMsgID > readMsgID
 }
 
 func (c Conversation) HasMemberStatus(status ConversationMemberStatus) bool {
@@ -1398,14 +1458,6 @@ func (r *GetNextAttachmentMessageLocalRes) SetOffline() {
 	r.Offline = true
 }
 
-func (r *DownloadAttachmentLocalRes) SetOffline() {
-	r.Offline = true
-}
-
-func (r *DownloadFileAttachmentLocalRes) SetOffline() {
-	r.Offline = true
-}
-
 func (r *FindConversationsLocalRes) SetOffline() {
 	r.Offline = true
 }
@@ -1426,7 +1478,11 @@ func (r *DeleteConversationLocalRes) SetOffline() {
 	r.Offline = true
 }
 
-func (r *GetInboxUILocalRes) SetOffline() {
+func (r *SearchRegexpRes) SetOffline() {
+	r.Offline = true
+}
+
+func (r *SearchInboxRes) SetOffline() {
 	r.Offline = true
 }
 
@@ -1553,6 +1609,35 @@ func humanizeDuration(duration time.Duration) string {
 	return fmt.Sprintf("%.0f %s", value, unit)
 }
 
+func (p RetentionPolicy) Eq(o RetentionPolicy) bool {
+	typ1, err := p.Typ()
+	if err != nil {
+		return false
+	}
+
+	typ2, err := o.Typ()
+	if err != nil {
+		return false
+	}
+	if typ1 != typ2 {
+		return false
+	}
+	switch typ1 {
+	case RetentionPolicyType_NONE:
+		return true
+	case RetentionPolicyType_RETAIN:
+		return p.Retain() == o.Retain()
+	case RetentionPolicyType_EXPIRE:
+		return p.Expire() == o.Expire()
+	case RetentionPolicyType_INHERIT:
+		return p.Inherit() == o.Inherit()
+	case RetentionPolicyType_EPHEMERAL:
+		return p.Ephemeral() == o.Ephemeral()
+	default:
+		return false
+	}
+}
+
 func (p RetentionPolicy) HumanSummary() (summary string) {
 	typ, err := p.Typ()
 	if err != nil {
@@ -1627,6 +1712,14 @@ func (r *GetInboxAndUnboxLocalRes) GetRateLimit() []RateLimit {
 }
 
 func (r *GetInboxAndUnboxLocalRes) SetRateLimits(rl []RateLimit) {
+	r.RateLimits = rl
+}
+
+func (r *LoadFlipRes) GetRateLimit() []RateLimit {
+	return r.RateLimits
+}
+
+func (r *LoadFlipRes) SetRateLimits(rl []RateLimit) {
 	r.RateLimits = rl
 }
 
@@ -1958,17 +2051,24 @@ func (r *SetRetentionRes) SetRateLimits(rl []RateLimit) {
 	r.RateLimit = &rl[0]
 }
 
-func (r *GetInboxUILocalRes) GetRateLimit() (res []RateLimit) {
+func (r *LoadGalleryRes) GetRateLimit() []RateLimit {
 	return r.RateLimits
 }
 
-func (r *GetInboxUILocalRes) SetRateLimits(rl []RateLimit) {
+func (r *LoadGalleryRes) SetRateLimits(rl []RateLimit) {
 	r.RateLimits = rl
 }
 
 func (i EphemeralPurgeInfo) String() string {
 	return fmt.Sprintf("EphemeralPurgeInfo{ ConvID: %v, IsActive: %v, NextPurgeTime: %v, MinUnexplodedID: %v }",
 		i.ConvID, i.IsActive, i.NextPurgeTime.Time(), i.MinUnexplodedID)
+}
+
+func (i EphemeralPurgeInfo) Eq(o EphemeralPurgeInfo) bool {
+	return (i.IsActive == o.IsActive &&
+		i.MinUnexplodedID == o.MinUnexplodedID &&
+		i.NextPurgeTime == o.NextPurgeTime &&
+		i.ConvID.Eq(o.ConvID))
 }
 
 func (r ReactionMap) HasReactionFromUser(reactionText, username string) (found bool, reactionMsgID MessageID) {
@@ -1988,44 +2088,40 @@ func (i *ConversationMinWriterRoleInfoLocal) String() string {
 	if i == nil {
 		return "Minimum writer role for this conversation is not set."
 	}
-	usernameSuffix := "."
-	if i.Username != "" {
-		usernameSuffix = fmt.Sprintf(", last set by %v.", i.Username)
+	changedBySuffix := "."
+	if i.ChangedBy != "" {
+		changedBySuffix = fmt.Sprintf(", last set by %v.", i.ChangedBy)
 	}
-	return fmt.Sprintf("Minimum writer role for this conversation is %v%v", i.Role, usernameSuffix)
+	return fmt.Sprintf("Minimum writer role for this conversation is %v%v", i.Role, changedBySuffix)
 }
 
 func (s *ConversationSettings) IsNil() bool {
 	return s == nil || s.MinWriterRoleInfo == nil
 }
 
-type MsgMetadata interface {
-	GetSenderUsername() string
-	GetCtime() gregor1.Time
-}
-
-func (m MessageUnboxed) GetSenderUsername() string {
-	if !m.IsValid() {
-		return ""
-	}
-	return m.Valid().SenderUsername
-}
-
-func (m MessageUnboxed) GetCtime() gregor1.Time {
-	if !m.IsValid() {
-		return 0
-	}
-	return m.Valid().ServerHeader.Ctime
-}
-
-func (o SearchOpts) Matches(msgMetadata MsgMetadata) bool {
-	if o.SentBy != "" && msgMetadata.GetSenderUsername() != o.SentBy {
+func (o SearchOpts) Matches(msg MessageUnboxed) bool {
+	if o.SentAfter != 0 && msg.Ctime() < o.SentAfter {
 		return false
 	}
-	if o.SentAfter != 0 && msgMetadata.GetCtime() < o.SentAfter {
+	if o.SentBefore != 0 && msg.Ctime() > o.SentBefore {
 		return false
 	}
-	if o.SentBefore != 0 && msgMetadata.GetCtime() > o.SentBefore {
+	if o.SentBy != "" && msg.SenderUsername() != o.SentBy {
+		return false
+	}
+	// Check if the user was @mentioned or there was a @here/@channel.
+	if o.SentTo != "" {
+		if o.MatchMentions {
+			switch msg.ChannelMention() {
+			case ChannelMention_ALL, ChannelMention_HERE:
+				return true
+			}
+		}
+		for _, username := range msg.AtMentionUsernames() {
+			if o.SentTo == username {
+				return true
+			}
+		}
 		return false
 	}
 	return true
@@ -2039,40 +2135,28 @@ func (a MessageAttachment) GetTitle() string {
 	return title
 }
 
+func (u MessageUnfurl) SearchableText() string {
+	typ, err := u.Unfurl.Unfurl.UnfurlType()
+	if err != nil {
+		return ""
+	}
+	switch typ {
+	case UnfurlType_GENERIC:
+		generic := u.Unfurl.Unfurl.Generic()
+		res := generic.Title
+		if generic.Description != nil {
+			res += " " + *generic.Description
+		}
+		return res
+	}
+	return ""
+}
+
 func (h *ChatSearchInboxHit) Size() int {
 	if h == nil {
 		return 0
 	}
 	return len(h.Hits)
-}
-
-func (idx *ConversationIndex) MissingIDs(min, max MessageID) []MessageID {
-	missingIDs := []MessageID{}
-	if min == 0 {
-		min = 1
-	}
-	for i := min; i <= max; i++ {
-		if _, ok := idx.Metadata.SeenIDs[i]; !ok {
-			missingIDs = append(missingIDs, i)
-		}
-	}
-	return missingIDs
-}
-
-func (idx *ConversationIndex) PercentIndexed(conv Conversation) int {
-	if idx == nil {
-		return 0
-	}
-	// lowest msgID we care about
-	min := conv.GetMaxDeletedUpTo()
-	// highest msgID we care about
-	max := conv.GetMaxMessageID()
-	numMessages := int(max) - int(min)
-	if numMessages <= 0 {
-		return 100
-	}
-	missingIDs := idx.MissingIDs(min, max)
-	return 100 * (1 - (len(missingIDs) / numMessages))
 }
 
 func (u UnfurlRaw) GetUrl() string {
@@ -2084,7 +2168,9 @@ func (u UnfurlRaw) GetUrl() string {
 	case UnfurlType_GENERIC:
 		return u.Generic().Url
 	case UnfurlType_GIPHY:
-		return u.Giphy().ImageUrl
+		if u.Giphy().ImageUrl != nil {
+			return *u.Giphy().ImageUrl
+		}
 	}
 	return ""
 }
@@ -2132,7 +2218,7 @@ func (g UnfurlGiphyRaw) UnsafeDebugString() string {
 	return fmt.Sprintf(`GIPHY SPECIAL
 FaviconUrl: %s
 ImageUrl: %s
-Video: %s`, yieldStr(g.FaviconUrl), g.ImageUrl, g.Video)
+Video: %s`, yieldStr(g.FaviconUrl), yieldStr(g.ImageUrl), g.Video)
 }
 
 func (v UnfurlVideo) String() string {
@@ -2164,6 +2250,8 @@ func (g GlobalAppNotificationSetting) Usage() string {
 	switch g {
 	case GlobalAppNotificationSetting_NEWMESSAGES:
 		return "Show notifications for new messages"
+	case GlobalAppNotificationSetting_PLAINTEXTDESKTOP:
+		return "Show plaintext notifications on desktop devices"
 	case GlobalAppNotificationSetting_PLAINTEXTMOBILE:
 		return "Show plaintext notifications on mobile devices"
 	case GlobalAppNotificationSetting_DEFAULTSOUNDMOBILE:
@@ -2179,6 +2267,8 @@ func (g GlobalAppNotificationSetting) FlagName() string {
 	switch g {
 	case GlobalAppNotificationSetting_NEWMESSAGES:
 		return "new-messages"
+	case GlobalAppNotificationSetting_PLAINTEXTDESKTOP:
+		return "plaintext-desktop"
 	case GlobalAppNotificationSetting_PLAINTEXTMOBILE:
 		return "plaintext-mobile"
 	case GlobalAppNotificationSetting_DEFAULTSOUNDMOBILE:
@@ -2187,43 +2277,6 @@ func (g GlobalAppNotificationSetting) FlagName() string {
 		return "disable-typing"
 	default:
 		return ""
-	}
-}
-
-func (m MessageSystem) String() string {
-	typ, err := m.SystemType()
-	if err != nil {
-		return "<unknown system message>"
-	}
-	switch typ {
-	case MessageSystemType_ADDEDTOTEAM:
-		return fmt.Sprintf("[Added @%s to the team]", m.Addedtoteam().Addee)
-	case MessageSystemType_INVITEADDEDTOTEAM:
-		return fmt.Sprintf("[Added %s to the team (invited by @%s)]",
-			m.Inviteaddedtoteam().Invitee, m.Inviteaddedtoteam().Inviter)
-	case MessageSystemType_COMPLEXTEAM:
-		return fmt.Sprintf("[Created a new channel in %s]", m.Complexteam().Team)
-	case MessageSystemType_CREATETEAM:
-		return fmt.Sprintf("[%s created the team %s]", m.Createteam().Creator, m.Createteam().Team)
-	case MessageSystemType_GITPUSH:
-		body := m.Gitpush()
-		switch body.PushType {
-		case keybase1.GitPushType_CREATEREPO:
-			return fmt.Sprintf("[git %s created the repo %s]", body.Pusher, body.RepoName)
-		case keybase1.GitPushType_RENAMEREPO:
-			return fmt.Sprintf("[git %s changed the name of the repo %s to %s]", body.Pusher, body.PreviousRepoName, body.RepoName)
-		default:
-			total := keybase1.TotalNumberOfCommits(body.Refs)
-			names := keybase1.RefNames(body.Refs)
-			return fmt.Sprintf("[git (%s) %s pushed %d commits to %s]", body.RepoName,
-				body.Pusher, total, names)
-		}
-	case MessageSystemType_CHANGEAVATAR:
-		return fmt.Sprintf("[%s changed team avatar]", m.Changeavatar().User)
-	case MessageSystemType_CHANGERETENTION:
-		return m.Changeretention().String()
-	default:
-		return "<unknown system message>"
 	}
 }
 
@@ -2244,7 +2297,84 @@ func (m MessageSystemChangeRetention) String() string {
 		inheritDescription = " to inherit from the team policy"
 	}
 
-	format := "[%s changed the %s retention policy%s. %s]"
+	format := "%s changed the %s retention policy%s. %s"
 	summary := m.Policy.HumanSummary()
 	return fmt.Sprintf(format, m.User, appliesTo, inheritDescription, summary)
+}
+
+func (m MessageSystemBulkAddToConv) String() string {
+	prefix := "Added %s to the conversation"
+	var suffix string
+	switch len(m.Usernames) {
+	case 0:
+		return ""
+	case 1:
+		suffix = m.Usernames[0]
+	case 2:
+		suffix = fmt.Sprintf("%s and %s", m.Usernames[0], m.Usernames[1])
+	default:
+		suffix = fmt.Sprintf("%s and %d others", m.Usernames[0], len(m.Usernames)-1)
+	}
+	return fmt.Sprintf(prefix, suffix)
+}
+
+func (m MessageSystem) String() string {
+	typ, err := m.SystemType()
+	if err != nil {
+		return ""
+	}
+	switch typ {
+	case MessageSystemType_ADDEDTOTEAM:
+		return fmt.Sprintf("Added @%s to the team", m.Addedtoteam().Addee)
+	case MessageSystemType_INVITEADDEDTOTEAM:
+		return fmt.Sprintf("Added %s to the team (invited by @%s)",
+			m.Inviteaddedtoteam().Invitee, m.Inviteaddedtoteam().Inviter)
+	case MessageSystemType_COMPLEXTEAM:
+		return fmt.Sprintf("Created a new channel in %s", m.Complexteam().Team)
+	case MessageSystemType_CREATETEAM:
+		return fmt.Sprintf("%s created the team %s", m.Createteam().Creator, m.Createteam().Team)
+	case MessageSystemType_GITPUSH:
+		body := m.Gitpush()
+		switch body.PushType {
+		case keybase1.GitPushType_CREATEREPO:
+			return fmt.Sprintf("git %s created the repo %s", body.Pusher, body.RepoName)
+		case keybase1.GitPushType_RENAMEREPO:
+			return fmt.Sprintf("git %s changed the name of the repo %s to %s", body.Pusher, body.PreviousRepoName, body.RepoName)
+		default:
+			total := keybase1.TotalNumberOfCommits(body.Refs)
+			names := keybase1.RefNames(body.Refs)
+			return fmt.Sprintf("git (%s) %s pushed %d commits to %s", body.RepoName,
+				body.Pusher, total, names)
+		}
+	case MessageSystemType_CHANGEAVATAR:
+		return fmt.Sprintf("%s changed team avatar", m.Changeavatar().User)
+	case MessageSystemType_CHANGERETENTION:
+		return m.Changeretention().String()
+	case MessageSystemType_BULKADDTOCONV:
+		return m.Bulkaddtoconv().String()
+	default:
+		return ""
+	}
+}
+
+func isZero(v []byte) bool {
+	for _, b := range v {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func MakeFlipGameID(s string) (FlipGameID, error) { return hex.DecodeString(s) }
+func (g FlipGameID) String() string               { return hex.EncodeToString(g) }
+func (g FlipGameID) Eq(h FlipGameID) bool         { return hmac.Equal(g[:], h[:]) }
+func (g FlipGameID) IsZero() bool                 { return isZero(g[:]) }
+func (g FlipGameID) Check() bool                  { return g != nil && !g.IsZero() }
+
+func (o *SenderSendOptions) GetJoinMentionsAs() *ConversationMemberStatus {
+	if o == nil {
+		return nil
+	}
+	return o.JoinMentionsAs
 }

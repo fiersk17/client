@@ -2,16 +2,6 @@
 protocol user {
   import idl "common.avdl";
 
-  record Tracker {
-    UID tracker;
-    int status; // 0 == none, 1 == tracking
-    Time mTime;
-  }
-
-  array<Tracker> listTrackers(int sessionID, UID uid);
-  array<Tracker> listTrackersByName(int sessionID, string username);
-  array<Tracker> listTrackersSelf(int sessionID);
-
   record TrackProof {
     string proofType;
     string proofName;
@@ -53,6 +43,7 @@ protocol user {
 
   record UserSettings {
     array<Email> emails;
+    array<UserPhoneNumber> phoneNumbers;
   }
 
   /**
@@ -72,7 +63,12 @@ protocol user {
     Load a user + device keys from the server.
     */
   UserPlusKeys loadUserPlusKeys(int sessionID, UID uid, KID pollForKID);
-  UserPlusKeysV2AllIncarnations loadUserPlusKeysV2(int sessionID, UID uid, KID pollForKID);
+  UserPlusKeysV2AllIncarnations loadUserPlusKeysV2(
+    int sessionID,
+    UID uid,
+    KID pollForKID,
+    OfflineAvailability oa
+  );
 
   /**
     Load public keys for a user.
@@ -126,6 +122,7 @@ protocol user {
   record InterestingPerson {
     UID uid;
     string username;
+    string fullname;
   }
   array<InterestingPerson> interestingPeople(int maxUsers);
 
@@ -185,7 +182,13 @@ protocol user {
 
   record CanLogoutRes {
     boolean canLogout;
-    string reason;
+    string reason; // CLI prints this string.
+    boolean setPassphrase; // GUI is driven by this boolean.
   }
   CanLogoutRes canLogout(int sessionID);
+
+  union { null, UserCard } userCard(int sessionID, string username, boolean useSession);
+
+  void blockUser(string username);
+  void unblockUser(string username);
 }

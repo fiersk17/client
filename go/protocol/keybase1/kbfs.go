@@ -40,13 +40,25 @@ type FSSyncEventArg struct {
 	Event FSPathSyncStatus `codec:"event" json:"event"`
 }
 
+type FSOverallSyncEventArg struct {
+	Status FolderSyncStatus `codec:"status" json:"status"`
+}
+
+type FSOnlineStatusChangedEventArg struct {
+	Online bool `codec:"online" json:"online"`
+}
+
+type FSFavoritesChangedEventArg struct {
+}
+
 type CreateTLFArg struct {
 	TeamID TeamID `codec:"teamID" json:"teamID"`
 	TlfID  TLFID  `codec:"tlfID" json:"tlfID"`
 }
 
 type GetKBFSTeamSettingsArg struct {
-	TeamID TeamID `codec:"teamID" json:"teamID"`
+	TeamID TeamID              `codec:"teamID" json:"teamID"`
+	Oa     OfflineAvailability `codec:"oa" json:"oa"`
 }
 
 type UpgradeTLFArg struct {
@@ -84,11 +96,18 @@ type KbfsInterface interface {
 	// FSSyncEvent is called by KBFS when the sync status of an individual path
 	// changes.
 	FSSyncEvent(context.Context, FSPathSyncStatus) error
+	// FSOverallSyncEvent is called by KBFS when the overall sync status
+	// changes.
+	FSOverallSyncEvent(context.Context, FolderSyncStatus) error
+	// FSOnlineStatusChangedEvent is called by KBFS when the online status changes.
+	FSOnlineStatusChangedEvent(context.Context, bool) error
+	// FSFavoritesChangedEvent is called by KBFS when the favorites list changes.
+	FSFavoritesChangedEvent(context.Context) error
 	// createTLF is called by KBFS to associate the tlfID with the given teamID,
 	// using the v2 Team-based system.
 	CreateTLF(context.Context, CreateTLFArg) error
 	// getKBFSTeamSettings gets the settings written for the team in the team's sigchain.
-	GetKBFSTeamSettings(context.Context, TeamID) (KBFSTeamSettings, error)
+	GetKBFSTeamSettings(context.Context, GetKBFSTeamSettingsArg) (KBFSTeamSettings, error)
 	// upgradeTLF upgrades a TLF to use implicit team keys
 	UpgradeTLF(context.Context, UpgradeTLFArg) error
 	// Encrypt cached favorites to store on disk.
@@ -176,6 +195,46 @@ func KbfsProtocol(i KbfsInterface) rpc.Protocol {
 					return
 				},
 			},
+			"FSOverallSyncEvent": {
+				MakeArg: func() interface{} {
+					var ret [1]FSOverallSyncEventArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]FSOverallSyncEventArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]FSOverallSyncEventArg)(nil), args)
+						return
+					}
+					err = i.FSOverallSyncEvent(ctx, typedArgs[0].Status)
+					return
+				},
+			},
+			"FSOnlineStatusChangedEvent": {
+				MakeArg: func() interface{} {
+					var ret [1]FSOnlineStatusChangedEventArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]FSOnlineStatusChangedEventArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]FSOnlineStatusChangedEventArg)(nil), args)
+						return
+					}
+					err = i.FSOnlineStatusChangedEvent(ctx, typedArgs[0].Online)
+					return
+				},
+			},
+			"FSFavoritesChangedEvent": {
+				MakeArg: func() interface{} {
+					var ret [1]FSFavoritesChangedEventArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					err = i.FSFavoritesChangedEvent(ctx)
+					return
+				},
+			},
 			"createTLF": {
 				MakeArg: func() interface{} {
 					var ret [1]CreateTLFArg
@@ -202,7 +261,7 @@ func KbfsProtocol(i KbfsInterface) rpc.Protocol {
 						err = rpc.NewTypeError((*[1]GetKBFSTeamSettingsArg)(nil), args)
 						return
 					}
-					ret, err = i.GetKBFSTeamSettings(ctx, typedArgs[0].TeamID)
+					ret, err = i.GetKBFSTeamSettings(ctx, typedArgs[0])
 					return
 				},
 			},
@@ -303,6 +362,27 @@ func (c KbfsClient) FSSyncEvent(ctx context.Context, event FSPathSyncStatus) (er
 	return
 }
 
+// FSOverallSyncEvent is called by KBFS when the overall sync status
+// changes.
+func (c KbfsClient) FSOverallSyncEvent(ctx context.Context, status FolderSyncStatus) (err error) {
+	__arg := FSOverallSyncEventArg{Status: status}
+	err = c.Cli.Call(ctx, "keybase.1.kbfs.FSOverallSyncEvent", []interface{}{__arg}, nil)
+	return
+}
+
+// FSOnlineStatusChangedEvent is called by KBFS when the online status changes.
+func (c KbfsClient) FSOnlineStatusChangedEvent(ctx context.Context, online bool) (err error) {
+	__arg := FSOnlineStatusChangedEventArg{Online: online}
+	err = c.Cli.Call(ctx, "keybase.1.kbfs.FSOnlineStatusChangedEvent", []interface{}{__arg}, nil)
+	return
+}
+
+// FSFavoritesChangedEvent is called by KBFS when the favorites list changes.
+func (c KbfsClient) FSFavoritesChangedEvent(ctx context.Context) (err error) {
+	err = c.Cli.Call(ctx, "keybase.1.kbfs.FSFavoritesChangedEvent", []interface{}{FSFavoritesChangedEventArg{}}, nil)
+	return
+}
+
 // createTLF is called by KBFS to associate the tlfID with the given teamID,
 // using the v2 Team-based system.
 func (c KbfsClient) CreateTLF(ctx context.Context, __arg CreateTLFArg) (err error) {
@@ -311,8 +391,7 @@ func (c KbfsClient) CreateTLF(ctx context.Context, __arg CreateTLFArg) (err erro
 }
 
 // getKBFSTeamSettings gets the settings written for the team in the team's sigchain.
-func (c KbfsClient) GetKBFSTeamSettings(ctx context.Context, teamID TeamID) (res KBFSTeamSettings, err error) {
-	__arg := GetKBFSTeamSettingsArg{TeamID: teamID}
+func (c KbfsClient) GetKBFSTeamSettings(ctx context.Context, __arg GetKBFSTeamSettingsArg) (res KBFSTeamSettings, err error) {
 	err = c.Cli.Call(ctx, "keybase.1.kbfs.getKBFSTeamSettings", []interface{}{__arg}, &res)
 	return
 }

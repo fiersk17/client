@@ -134,9 +134,63 @@ func (o TextPayment) DeepCopy() TextPayment {
 	}
 }
 
+type KnownUserMention struct {
+	Text string      `codec:"text" json:"text"`
+	Uid  gregor1.UID `codec:"uid" json:"uid"`
+}
+
+func (o KnownUserMention) DeepCopy() KnownUserMention {
+	return KnownUserMention{
+		Text: o.Text,
+		Uid:  o.Uid.DeepCopy(),
+	}
+}
+
+type KnownTeamMention struct {
+	Name    string `codec:"name" json:"name"`
+	Channel string `codec:"channel" json:"channel"`
+}
+
+func (o KnownTeamMention) DeepCopy() KnownTeamMention {
+	return KnownTeamMention{
+		Name:    o.Name,
+		Channel: o.Channel,
+	}
+}
+
+type MaybeMention struct {
+	Name    string `codec:"name" json:"name"`
+	Channel string `codec:"channel" json:"channel"`
+}
+
+func (o MaybeMention) DeepCopy() MaybeMention {
+	return MaybeMention{
+		Name:    o.Name,
+		Channel: o.Channel,
+	}
+}
+
+type Coordinate struct {
+	Lat      float64 `codec:"lat" json:"lat"`
+	Lon      float64 `codec:"lon" json:"lon"`
+	Accuracy float64 `codec:"accuracy" json:"accuracy"`
+}
+
+func (o Coordinate) DeepCopy() Coordinate {
+	return Coordinate{
+		Lat:      o.Lat,
+		Lon:      o.Lon,
+		Accuracy: o.Accuracy,
+	}
+}
+
 type MessageText struct {
-	Body     string        `codec:"body" json:"body"`
-	Payments []TextPayment `codec:"payments" json:"payments"`
+	Body         string             `codec:"body" json:"body"`
+	Payments     []TextPayment      `codec:"payments" json:"payments"`
+	ReplyTo      *MessageID         `codec:"replyTo,omitempty" json:"replyTo,omitempty"`
+	UserMentions []KnownUserMention `codec:"userMentions" json:"userMentions"`
+	TeamMentions []KnownTeamMention `codec:"teamMentions" json:"teamMentions"`
+	Coord        *Coordinate        `codec:"coord,omitempty" json:"coord,omitempty"`
 }
 
 func (o MessageText) DeepCopy() MessageText {
@@ -153,6 +207,42 @@ func (o MessageText) DeepCopy() MessageText {
 			}
 			return ret
 		})(o.Payments),
+		ReplyTo: (func(x *MessageID) *MessageID {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.ReplyTo),
+		UserMentions: (func(x []KnownUserMention) []KnownUserMention {
+			if x == nil {
+				return nil
+			}
+			ret := make([]KnownUserMention, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.UserMentions),
+		TeamMentions: (func(x []KnownTeamMention) []KnownTeamMention {
+			if x == nil {
+				return nil
+			}
+			ret := make([]KnownTeamMention, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.TeamMentions),
+		Coord: (func(x *Coordinate) *Coordinate {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.Coord),
 	}
 }
 
@@ -167,14 +257,38 @@ func (o MessageConversationMetadata) DeepCopy() MessageConversationMetadata {
 }
 
 type MessageEdit struct {
-	MessageID MessageID `codec:"messageID" json:"messageID"`
-	Body      string    `codec:"body" json:"body"`
+	MessageID    MessageID          `codec:"messageID" json:"messageID"`
+	Body         string             `codec:"body" json:"body"`
+	UserMentions []KnownUserMention `codec:"userMentions" json:"userMentions"`
+	TeamMentions []KnownTeamMention `codec:"teamMentions" json:"teamMentions"`
 }
 
 func (o MessageEdit) DeepCopy() MessageEdit {
 	return MessageEdit{
 		MessageID: o.MessageID.DeepCopy(),
 		Body:      o.Body,
+		UserMentions: (func(x []KnownUserMention) []KnownUserMention {
+			if x == nil {
+				return nil
+			}
+			ret := make([]KnownUserMention, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.UserMentions),
+		TeamMentions: (func(x []KnownTeamMention) []KnownTeamMention {
+			if x == nil {
+				return nil
+			}
+			ret := make([]KnownTeamMention, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.TeamMentions),
 	}
 }
 
@@ -208,6 +322,44 @@ func (o MessageHeadline) DeepCopy() MessageHeadline {
 	}
 }
 
+type MessageFlip struct {
+	Text         string             `codec:"text" json:"text"`
+	GameID       FlipGameID         `codec:"gameID" json:"gameID"`
+	FlipConvID   ConversationID     `codec:"flipConvID" json:"flipConvID"`
+	UserMentions []KnownUserMention `codec:"userMentions" json:"userMentions"`
+	TeamMentions []KnownTeamMention `codec:"teamMentions" json:"teamMentions"`
+}
+
+func (o MessageFlip) DeepCopy() MessageFlip {
+	return MessageFlip{
+		Text:       o.Text,
+		GameID:     o.GameID.DeepCopy(),
+		FlipConvID: o.FlipConvID.DeepCopy(),
+		UserMentions: (func(x []KnownUserMention) []KnownUserMention {
+			if x == nil {
+				return nil
+			}
+			ret := make([]KnownUserMention, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.UserMentions),
+		TeamMentions: (func(x []KnownTeamMention) []KnownTeamMention {
+			if x == nil {
+				return nil
+			}
+			ret := make([]KnownTeamMention, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.TeamMentions),
+	}
+}
+
 type MessageSystemType int
 
 const (
@@ -218,6 +370,7 @@ const (
 	MessageSystemType_GITPUSH           MessageSystemType = 4
 	MessageSystemType_CHANGEAVATAR      MessageSystemType = 5
 	MessageSystemType_CHANGERETENTION   MessageSystemType = 6
+	MessageSystemType_BULKADDTOCONV     MessageSystemType = 7
 )
 
 func (o MessageSystemType) DeepCopy() MessageSystemType { return o }
@@ -230,6 +383,7 @@ var MessageSystemTypeMap = map[string]MessageSystemType{
 	"GITPUSH":           4,
 	"CHANGEAVATAR":      5,
 	"CHANGERETENTION":   6,
+	"BULKADDTOCONV":     7,
 }
 
 var MessageSystemTypeRevMap = map[MessageSystemType]string{
@@ -240,6 +394,7 @@ var MessageSystemTypeRevMap = map[MessageSystemType]string{
 	4: "GITPUSH",
 	5: "CHANGEAVATAR",
 	6: "CHANGERETENTION",
+	7: "BULKADDTOCONV",
 }
 
 func (e MessageSystemType) String() string {
@@ -413,6 +568,26 @@ func (o MessageSystemChangeRetention) DeepCopy() MessageSystemChangeRetention {
 	}
 }
 
+type MessageSystemBulkAddToConv struct {
+	Usernames []string `codec:"usernames" json:"usernames"`
+}
+
+func (o MessageSystemBulkAddToConv) DeepCopy() MessageSystemBulkAddToConv {
+	return MessageSystemBulkAddToConv{
+		Usernames: (func(x []string) []string {
+			if x == nil {
+				return nil
+			}
+			ret := make([]string, len(x))
+			for i, v := range x {
+				vCopy := v
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Usernames),
+	}
+}
+
 type MessageSystem struct {
 	SystemType__        MessageSystemType               `codec:"systemType" json:"systemType"`
 	Addedtoteam__       *MessageSystemAddedToTeam       `codec:"addedtoteam,omitempty" json:"addedtoteam,omitempty"`
@@ -422,6 +597,7 @@ type MessageSystem struct {
 	Gitpush__           *MessageSystemGitPush           `codec:"gitpush,omitempty" json:"gitpush,omitempty"`
 	Changeavatar__      *MessageSystemChangeAvatar      `codec:"changeavatar,omitempty" json:"changeavatar,omitempty"`
 	Changeretention__   *MessageSystemChangeRetention   `codec:"changeretention,omitempty" json:"changeretention,omitempty"`
+	Bulkaddtoconv__     *MessageSystemBulkAddToConv     `codec:"bulkaddtoconv,omitempty" json:"bulkaddtoconv,omitempty"`
 }
 
 func (o *MessageSystem) SystemType() (ret MessageSystemType, err error) {
@@ -459,6 +635,11 @@ func (o *MessageSystem) SystemType() (ret MessageSystemType, err error) {
 	case MessageSystemType_CHANGERETENTION:
 		if o.Changeretention__ == nil {
 			err = errors.New("unexpected nil value for Changeretention__")
+			return ret, err
+		}
+	case MessageSystemType_BULKADDTOCONV:
+		if o.Bulkaddtoconv__ == nil {
+			err = errors.New("unexpected nil value for Bulkaddtoconv__")
 			return ret, err
 		}
 	}
@@ -535,6 +716,16 @@ func (o MessageSystem) Changeretention() (res MessageSystemChangeRetention) {
 	return *o.Changeretention__
 }
 
+func (o MessageSystem) Bulkaddtoconv() (res MessageSystemBulkAddToConv) {
+	if o.SystemType__ != MessageSystemType_BULKADDTOCONV {
+		panic("wrong case accessed")
+	}
+	if o.Bulkaddtoconv__ == nil {
+		return
+	}
+	return *o.Bulkaddtoconv__
+}
+
 func NewMessageSystemWithAddedtoteam(v MessageSystemAddedToTeam) MessageSystem {
 	return MessageSystem{
 		SystemType__:  MessageSystemType_ADDEDTOTEAM,
@@ -581,6 +772,13 @@ func NewMessageSystemWithChangeretention(v MessageSystemChangeRetention) Message
 	return MessageSystem{
 		SystemType__:      MessageSystemType_CHANGERETENTION,
 		Changeretention__: &v,
+	}
+}
+
+func NewMessageSystemWithBulkaddtoconv(v MessageSystemBulkAddToConv) MessageSystem {
+	return MessageSystem{
+		SystemType__:    MessageSystemType_BULKADDTOCONV,
+		Bulkaddtoconv__: &v,
 	}
 }
 
@@ -636,6 +834,13 @@ func (o MessageSystem) DeepCopy() MessageSystem {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.Changeretention__),
+		Bulkaddtoconv__: (func(x *MessageSystemBulkAddToConv) *MessageSystemBulkAddToConv {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.Bulkaddtoconv__),
 	}
 }
 
@@ -796,6 +1001,7 @@ type MessageBody struct {
 	Sendpayment__        *MessageSendPayment          `codec:"sendpayment,omitempty" json:"sendpayment,omitempty"`
 	Requestpayment__     *MessageRequestPayment       `codec:"requestpayment,omitempty" json:"requestpayment,omitempty"`
 	Unfurl__             *MessageUnfurl               `codec:"unfurl,omitempty" json:"unfurl,omitempty"`
+	Flip__               *MessageFlip                 `codec:"flip,omitempty" json:"flip,omitempty"`
 }
 
 func (o *MessageBody) MessageType() (ret MessageType, err error) {
@@ -873,6 +1079,11 @@ func (o *MessageBody) MessageType() (ret MessageType, err error) {
 	case MessageType_UNFURL:
 		if o.Unfurl__ == nil {
 			err = errors.New("unexpected nil value for Unfurl__")
+			return ret, err
+		}
+	case MessageType_FLIP:
+		if o.Flip__ == nil {
+			err = errors.New("unexpected nil value for Flip__")
 			return ret, err
 		}
 	}
@@ -1029,6 +1240,16 @@ func (o MessageBody) Unfurl() (res MessageUnfurl) {
 	return *o.Unfurl__
 }
 
+func (o MessageBody) Flip() (res MessageFlip) {
+	if o.MessageType__ != MessageType_FLIP {
+		panic("wrong case accessed")
+	}
+	if o.Flip__ == nil {
+		return
+	}
+	return *o.Flip__
+}
+
 func NewMessageBodyWithText(v MessageText) MessageBody {
 	return MessageBody{
 		MessageType__: MessageType_TEXT,
@@ -1131,6 +1352,13 @@ func NewMessageBodyWithUnfurl(v MessageUnfurl) MessageBody {
 	return MessageBody{
 		MessageType__: MessageType_UNFURL,
 		Unfurl__:      &v,
+	}
+}
+
+func NewMessageBodyWithFlip(v MessageFlip) MessageBody {
+	return MessageBody{
+		MessageType__: MessageType_FLIP,
+		Flip__:        &v,
 	}
 }
 
@@ -1242,6 +1470,47 @@ func (o MessageBody) DeepCopy() MessageBody {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.Unfurl__),
+		Flip__: (func(x *MessageFlip) *MessageFlip {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.Flip__),
+	}
+}
+
+type SenderPrepareOptions struct {
+	SkipTopicNameState bool       `codec:"skipTopicNameState" json:"skipTopicNameState"`
+	ReplyTo            *MessageID `codec:"replyTo,omitempty" json:"replyTo,omitempty"`
+}
+
+func (o SenderPrepareOptions) DeepCopy() SenderPrepareOptions {
+	return SenderPrepareOptions{
+		SkipTopicNameState: o.SkipTopicNameState,
+		ReplyTo: (func(x *MessageID) *MessageID {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.ReplyTo),
+	}
+}
+
+type SenderSendOptions struct {
+	JoinMentionsAs *ConversationMemberStatus `codec:"joinMentionsAs,omitempty" json:"joinMentionsAs,omitempty"`
+}
+
+func (o SenderSendOptions) DeepCopy() SenderSendOptions {
+	return SenderSendOptions{
+		JoinMentionsAs: (func(x *ConversationMemberStatus) *ConversationMemberStatus {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.JoinMentionsAs),
 	}
 }
 
@@ -1413,8 +1682,11 @@ type OutboxRecord struct {
 	Ctime            gregor1.Time                 `codec:"ctime" json:"ctime"`
 	Msg              MessagePlaintext             `codec:"Msg" json:"Msg"`
 	IdentifyBehavior keybase1.TLFIdentifyBehavior `codec:"identifyBehavior" json:"identifyBehavior"`
+	PrepareOpts      *SenderPrepareOptions        `codec:"prepareOpts,omitempty" json:"prepareOpts,omitempty"`
+	SendOpts         *SenderSendOptions           `codec:"sendOpts,omitempty" json:"sendOpts,omitempty"`
 	Ordinal          int                          `codec:"ordinal" json:"ordinal"`
 	Preview          *MakePreviewRes              `codec:"preview,omitempty" json:"preview,omitempty"`
+	ReplyTo          *MessageUnboxed              `codec:"replyTo,omitempty" json:"replyTo,omitempty"`
 }
 
 func (o OutboxRecord) DeepCopy() OutboxRecord {
@@ -1425,7 +1697,21 @@ func (o OutboxRecord) DeepCopy() OutboxRecord {
 		Ctime:            o.Ctime.DeepCopy(),
 		Msg:              o.Msg.DeepCopy(),
 		IdentifyBehavior: o.IdentifyBehavior.DeepCopy(),
-		Ordinal:          o.Ordinal,
+		PrepareOpts: (func(x *SenderPrepareOptions) *SenderPrepareOptions {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.PrepareOpts),
+		SendOpts: (func(x *SenderSendOptions) *SenderSendOptions {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.SendOpts),
+		Ordinal: o.Ordinal,
 		Preview: (func(x *MakePreviewRes) *MakePreviewRes {
 			if x == nil {
 				return nil
@@ -1433,6 +1719,13 @@ func (o OutboxRecord) DeepCopy() OutboxRecord {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.Preview),
+		ReplyTo: (func(x *MessageUnboxed) *MessageUnboxed {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.ReplyTo),
 	}
 }
 
@@ -2335,9 +2628,11 @@ type MessageUnboxedValid struct {
 	AtMentionUsernames    []string                    `codec:"atMentionUsernames" json:"atMentionUsernames"`
 	AtMentions            []gregor1.UID               `codec:"atMentions" json:"atMentions"`
 	ChannelMention        ChannelMention              `codec:"channelMention" json:"channelMention"`
+	MaybeMentions         []MaybeMention              `codec:"maybeMentions" json:"maybeMentions"`
 	ChannelNameMentions   []ChannelNameMention        `codec:"channelNameMentions" json:"channelNameMentions"`
 	Reactions             ReactionMap                 `codec:"reactions" json:"reactions"`
 	Unfurls               map[MessageID]UnfurlResult  `codec:"unfurls" json:"unfurls"`
+	ReplyTo               *MessageUnboxed             `codec:"replyTo,omitempty" json:"replyTo,omitempty"`
 }
 
 func (o MessageUnboxedValid) DeepCopy() MessageUnboxedValid {
@@ -2399,6 +2694,17 @@ func (o MessageUnboxedValid) DeepCopy() MessageUnboxedValid {
 			return ret
 		})(o.AtMentions),
 		ChannelMention: o.ChannelMention.DeepCopy(),
+		MaybeMentions: (func(x []MaybeMention) []MaybeMention {
+			if x == nil {
+				return nil
+			}
+			ret := make([]MaybeMention, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.MaybeMentions),
 		ChannelNameMentions: (func(x []ChannelNameMention) []ChannelNameMention {
 			if x == nil {
 				return nil
@@ -2423,6 +2729,13 @@ func (o MessageUnboxedValid) DeepCopy() MessageUnboxedValid {
 			}
 			return ret
 		})(o.Unfurls),
+		ReplyTo: (func(x *MessageUnboxed) *MessageUnboxed {
+			if x == nil {
+				return nil
+			}
+			tmp := (*x).DeepCopy()
+			return &tmp
+		})(o.ReplyTo),
 	}
 }
 
@@ -2696,6 +3009,7 @@ type ConversationInfoLocal struct {
 	TeamType     TeamType                       `codec:"teamType" json:"teamType"`
 	Existence    ConversationExistence          `codec:"existence" json:"existence"`
 	Version      ConversationVers               `codec:"version" json:"version"`
+	LocalVersion LocalConversationVers          `codec:"localVersion" json:"localVersion"`
 	Participants []ConversationLocalParticipant `codec:"participants" json:"participants"`
 	FinalizeInfo *ConversationFinalizeInfo      `codec:"finalizeInfo,omitempty" json:"finalizeInfo,omitempty"`
 	ResetNames   []string                       `codec:"resetNames" json:"resetNames"`
@@ -2722,6 +3036,7 @@ func (o ConversationInfoLocal) DeepCopy() ConversationInfoLocal {
 		TeamType:     o.TeamType.DeepCopy(),
 		Existence:    o.Existence.DeepCopy(),
 		Version:      o.Version.DeepCopy(),
+		LocalVersion: o.LocalVersion.DeepCopy(),
 		Participants: (func(x []ConversationLocalParticipant) []ConversationLocalParticipant {
 			if x == nil {
 				return nil
@@ -2868,14 +3183,16 @@ func (o ConversationErrorRekey) DeepCopy() ConversationErrorRekey {
 }
 
 type ConversationMinWriterRoleInfoLocal struct {
-	Username string            `codec:"username" json:"username"`
-	Role     keybase1.TeamRole `codec:"role" json:"role"`
+	ChangedBy   string            `codec:"changedBy" json:"changedBy"`
+	CannotWrite bool              `codec:"cannotWrite" json:"cannotWrite"`
+	Role        keybase1.TeamRole `codec:"role" json:"role"`
 }
 
 func (o ConversationMinWriterRoleInfoLocal) DeepCopy() ConversationMinWriterRoleInfoLocal {
 	return ConversationMinWriterRoleInfoLocal{
-		Username: o.Username,
-		Role:     o.Role.DeepCopy(),
+		ChangedBy:   o.ChangedBy,
+		CannotWrite: o.CannotWrite,
+		Role:        o.Role.DeepCopy(),
 	}
 }
 
@@ -3071,10 +3388,42 @@ func (o ThreadView) DeepCopy() ThreadView {
 	}
 }
 
+type MessageIDControlMode int
+
+const (
+	MessageIDControlMode_OLDERMESSAGES MessageIDControlMode = 0
+	MessageIDControlMode_NEWERMESSAGES MessageIDControlMode = 1
+	MessageIDControlMode_CENTERED      MessageIDControlMode = 2
+	MessageIDControlMode_UNREADLINE    MessageIDControlMode = 3
+)
+
+func (o MessageIDControlMode) DeepCopy() MessageIDControlMode { return o }
+
+var MessageIDControlModeMap = map[string]MessageIDControlMode{
+	"OLDERMESSAGES": 0,
+	"NEWERMESSAGES": 1,
+	"CENTERED":      2,
+	"UNREADLINE":    3,
+}
+
+var MessageIDControlModeRevMap = map[MessageIDControlMode]string{
+	0: "OLDERMESSAGES",
+	1: "NEWERMESSAGES",
+	2: "CENTERED",
+	3: "UNREADLINE",
+}
+
+func (e MessageIDControlMode) String() string {
+	if v, ok := MessageIDControlModeRevMap[e]; ok {
+		return v
+	}
+	return ""
+}
+
 type MessageIDControl struct {
-	Pivot  *MessageID `codec:"pivot,omitempty" json:"pivot,omitempty"`
-	Recent bool       `codec:"recent" json:"recent"`
-	Num    int        `codec:"num" json:"num"`
+	Pivot *MessageID           `codec:"pivot,omitempty" json:"pivot,omitempty"`
+	Mode  MessageIDControlMode `codec:"mode" json:"mode"`
+	Num   int                  `codec:"num" json:"num"`
 }
 
 func (o MessageIDControl) DeepCopy() MessageIDControl {
@@ -3086,8 +3435,8 @@ func (o MessageIDControl) DeepCopy() MessageIDControl {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.Pivot),
-		Recent: o.Recent,
-		Num:    o.Num,
+		Mode: o.Mode.DeepCopy(),
+		Num:  o.Num,
 	}
 }
 
@@ -3270,60 +3619,6 @@ func (o UnreadlineRes) DeepCopy() UnreadlineRes {
 			tmp := (*x).DeepCopy()
 			return &tmp
 		})(o.UnreadlineID),
-	}
-}
-
-type GetInboxUILocalRes struct {
-	ConversationsRemote []UnverifiedInboxUIItem       `codec:"conversationsRemote" json:"conversationsRemote"`
-	Pagination          *Pagination                   `codec:"pagination,omitempty" json:"pagination,omitempty"`
-	Offline             bool                          `codec:"offline" json:"offline"`
-	RateLimits          []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
-	IdentifyFailures    []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
-}
-
-func (o GetInboxUILocalRes) DeepCopy() GetInboxUILocalRes {
-	return GetInboxUILocalRes{
-		ConversationsRemote: (func(x []UnverifiedInboxUIItem) []UnverifiedInboxUIItem {
-			if x == nil {
-				return nil
-			}
-			ret := make([]UnverifiedInboxUIItem, len(x))
-			for i, v := range x {
-				vCopy := v.DeepCopy()
-				ret[i] = vCopy
-			}
-			return ret
-		})(o.ConversationsRemote),
-		Pagination: (func(x *Pagination) *Pagination {
-			if x == nil {
-				return nil
-			}
-			tmp := (*x).DeepCopy()
-			return &tmp
-		})(o.Pagination),
-		Offline: o.Offline,
-		RateLimits: (func(x []RateLimit) []RateLimit {
-			if x == nil {
-				return nil
-			}
-			ret := make([]RateLimit, len(x))
-			for i, v := range x {
-				vCopy := v.DeepCopy()
-				ret[i] = vCopy
-			}
-			return ret
-		})(o.RateLimits),
-		IdentifyFailures: (func(x []keybase1.TLFIdentifyFailure) []keybase1.TLFIdentifyFailure {
-			if x == nil {
-				return nil
-			}
-			ret := make([]keybase1.TLFIdentifyFailure, len(x))
-			for i, v := range x {
-				vCopy := v.DeepCopy()
-				ret[i] = vCopy
-			}
-			return ret
-		})(o.IdentifyFailures),
 	}
 }
 
@@ -3687,13 +3982,15 @@ func (o SetConversationStatusLocalRes) DeepCopy() SetConversationStatusLocalRes 
 
 type NewConversationLocalRes struct {
 	Conv             ConversationLocal             `codec:"conv" json:"conv"`
+	UiConv           InboxUIItem                   `codec:"uiConv" json:"uiConv"`
 	RateLimits       []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
 	IdentifyFailures []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
 }
 
 func (o NewConversationLocalRes) DeepCopy() NewConversationLocalRes {
 	return NewConversationLocalRes{
-		Conv: o.Conv.DeepCopy(),
+		Conv:   o.Conv.DeepCopy(),
+		UiConv: o.UiConv.DeepCopy(),
 		RateLimits: (func(x []RateLimit) []RateLimit {
 			if x == nil {
 				return nil
@@ -3997,14 +4294,12 @@ func (o GetNextAttachmentMessageLocalRes) DeepCopy() GetNextAttachmentMessageLoc
 }
 
 type DownloadAttachmentLocalRes struct {
-	Offline          bool                          `codec:"offline" json:"offline"`
 	RateLimits       []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
 	IdentifyFailures []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
 }
 
 func (o DownloadAttachmentLocalRes) DeepCopy() DownloadAttachmentLocalRes {
 	return DownloadAttachmentLocalRes{
-		Offline: o.Offline,
 		RateLimits: (func(x []RateLimit) []RateLimit {
 			if x == nil {
 				return nil
@@ -4032,7 +4327,6 @@ func (o DownloadAttachmentLocalRes) DeepCopy() DownloadAttachmentLocalRes {
 
 type DownloadFileAttachmentLocalRes struct {
 	Filename         string                        `codec:"filename" json:"filename"`
-	Offline          bool                          `codec:"offline" json:"offline"`
 	RateLimits       []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
 	IdentifyFailures []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
 }
@@ -4040,7 +4334,6 @@ type DownloadFileAttachmentLocalRes struct {
 func (o DownloadFileAttachmentLocalRes) DeepCopy() DownloadFileAttachmentLocalRes {
 	return DownloadFileAttachmentLocalRes{
 		Filename: o.Filename,
-		Offline:  o.Offline,
 		RateLimits: (func(x []RateLimit) []RateLimit {
 			if x == nil {
 				return nil
@@ -4272,6 +4565,7 @@ func (o MarkAsReadLocalRes) DeepCopy() MarkAsReadLocalRes {
 
 type FindConversationsLocalRes struct {
 	Conversations    []ConversationLocal           `codec:"conversations" json:"conversations"`
+	UiConversations  []InboxUIItem                 `codec:"uiConversations" json:"uiConversations"`
 	Offline          bool                          `codec:"offline" json:"offline"`
 	RateLimits       []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
 	IdentifyFailures []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
@@ -4290,6 +4584,17 @@ func (o FindConversationsLocalRes) DeepCopy() FindConversationsLocalRes {
 			}
 			return ret
 		})(o.Conversations),
+		UiConversations: (func(x []InboxUIItem) []InboxUIItem {
+			if x == nil {
+				return nil
+			}
+			ret := make([]InboxUIItem, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.UiConversations),
 		Offline: o.Offline,
 		RateLimits: (func(x []RateLimit) []RateLimit {
 			if x == nil {
@@ -4431,6 +4736,7 @@ func (o AppNotificationSettingLocal) DeepCopy() AppNotificationSettingLocal {
 }
 
 type SearchRegexpRes struct {
+	Offline          bool                          `codec:"offline" json:"offline"`
 	Hits             []ChatSearchHit               `codec:"hits" json:"hits"`
 	RateLimits       []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
 	IdentifyFailures []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
@@ -4438,6 +4744,7 @@ type SearchRegexpRes struct {
 
 func (o SearchRegexpRes) DeepCopy() SearchRegexpRes {
 	return SearchRegexpRes{
+		Offline: o.Offline,
 		Hits: (func(x []ChatSearchHit) []ChatSearchHit {
 			if x == nil {
 				return nil
@@ -4475,6 +4782,7 @@ func (o SearchRegexpRes) DeepCopy() SearchRegexpRes {
 }
 
 type SearchInboxRes struct {
+	Offline          bool                          `codec:"offline" json:"offline"`
 	Res              *ChatSearchInboxResults       `codec:"res,omitempty" json:"res,omitempty"`
 	RateLimits       []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
 	IdentifyFailures []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
@@ -4482,6 +4790,7 @@ type SearchInboxRes struct {
 
 func (o SearchInboxRes) DeepCopy() SearchInboxRes {
 	return SearchInboxRes{
+		Offline: o.Offline,
 		Res: (func(x *ChatSearchInboxResults) *ChatSearchInboxResults {
 			if x == nil {
 				return nil
@@ -4515,16 +4824,28 @@ func (o SearchInboxRes) DeepCopy() SearchInboxRes {
 }
 
 type ProfileSearchConvStats struct {
+	Err            string               `codec:"err" json:"err"`
+	ConvName       string               `codec:"convName" json:"convName"`
+	MinConvID      MessageID            `codec:"minConvID" json:"minConvID"`
+	MaxConvID      MessageID            `codec:"maxConvID" json:"maxConvID"`
+	NumMissing     int                  `codec:"numMissing" json:"numMissing"`
 	NumMessages    int                  `codec:"numMessages" json:"numMessages"`
-	IndexSize      int                  `codec:"indexSize" json:"indexSize"`
+	IndexSizeDisk  int                  `codec:"indexSizeDisk" json:"indexSizeDisk"`
+	IndexSizeMem   int64                `codec:"indexSizeMem" json:"indexSizeMem"`
 	DurationMsec   gregor1.DurationMsec `codec:"durationMsec" json:"durationMsec"`
 	PercentIndexed int                  `codec:"percentIndexed" json:"percentIndexed"`
 }
 
 func (o ProfileSearchConvStats) DeepCopy() ProfileSearchConvStats {
 	return ProfileSearchConvStats{
+		Err:            o.Err,
+		ConvName:       o.ConvName,
+		MinConvID:      o.MinConvID.DeepCopy(),
+		MaxConvID:      o.MaxConvID.DeepCopy(),
+		NumMissing:     o.NumMissing,
 		NumMessages:    o.NumMessages,
-		IndexSize:      o.IndexSize,
+		IndexSizeDisk:  o.IndexSizeDisk,
+		IndexSizeMem:   o.IndexSizeMem,
 		DurationMsec:   o.DurationMsec.DeepCopy(),
 		PercentIndexed: o.PercentIndexed,
 	}
@@ -4713,6 +5034,115 @@ func (o UnfurlPromptResult) DeepCopy() UnfurlPromptResult {
 	}
 }
 
+type GalleryItemTyp int
+
+const (
+	GalleryItemTyp_MEDIA GalleryItemTyp = 0
+	GalleryItemTyp_LINK  GalleryItemTyp = 1
+	GalleryItemTyp_DOC   GalleryItemTyp = 2
+)
+
+func (o GalleryItemTyp) DeepCopy() GalleryItemTyp { return o }
+
+var GalleryItemTypMap = map[string]GalleryItemTyp{
+	"MEDIA": 0,
+	"LINK":  1,
+	"DOC":   2,
+}
+
+var GalleryItemTypRevMap = map[GalleryItemTyp]string{
+	0: "MEDIA",
+	1: "LINK",
+	2: "DOC",
+}
+
+func (e GalleryItemTyp) String() string {
+	if v, ok := GalleryItemTypRevMap[e]; ok {
+		return v
+	}
+	return ""
+}
+
+type LoadGalleryRes struct {
+	Messages         []UIMessage                   `codec:"messages" json:"messages"`
+	Last             bool                          `codec:"last" json:"last"`
+	RateLimits       []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
+	IdentifyFailures []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
+}
+
+func (o LoadGalleryRes) DeepCopy() LoadGalleryRes {
+	return LoadGalleryRes{
+		Messages: (func(x []UIMessage) []UIMessage {
+			if x == nil {
+				return nil
+			}
+			ret := make([]UIMessage, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.Messages),
+		Last: o.Last,
+		RateLimits: (func(x []RateLimit) []RateLimit {
+			if x == nil {
+				return nil
+			}
+			ret := make([]RateLimit, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.RateLimits),
+		IdentifyFailures: (func(x []keybase1.TLFIdentifyFailure) []keybase1.TLFIdentifyFailure {
+			if x == nil {
+				return nil
+			}
+			ret := make([]keybase1.TLFIdentifyFailure, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.IdentifyFailures),
+	}
+}
+
+type LoadFlipRes struct {
+	Status           UICoinFlipStatus              `codec:"status" json:"status"`
+	RateLimits       []RateLimit                   `codec:"rateLimits" json:"rateLimits"`
+	IdentifyFailures []keybase1.TLFIdentifyFailure `codec:"identifyFailures" json:"identifyFailures"`
+}
+
+func (o LoadFlipRes) DeepCopy() LoadFlipRes {
+	return LoadFlipRes{
+		Status: o.Status.DeepCopy(),
+		RateLimits: (func(x []RateLimit) []RateLimit {
+			if x == nil {
+				return nil
+			}
+			ret := make([]RateLimit, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.RateLimits),
+		IdentifyFailures: (func(x []keybase1.TLFIdentifyFailure) []keybase1.TLFIdentifyFailure {
+			if x == nil {
+				return nil
+			}
+			ret := make([]keybase1.TLFIdentifyFailure, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.IdentifyFailures),
+	}
+}
+
 type GetThreadLocalArg struct {
 	ConversationID   ConversationID               `codec:"conversationID" json:"conversationID"`
 	Reason           GetThreadReason              `codec:"reason" json:"reason"`
@@ -4746,12 +5176,6 @@ type GetUnreadlineArg struct {
 	IdentifyBehavior keybase1.TLFIdentifyBehavior `codec:"identifyBehavior" json:"identifyBehavior"`
 }
 
-type GetInboxUILocalArg struct {
-	Query            *GetInboxLocalQuery          `codec:"query,omitempty" json:"query,omitempty"`
-	Pagination       *Pagination                  `codec:"pagination,omitempty" json:"pagination,omitempty"`
-	IdentifyBehavior keybase1.TLFIdentifyBehavior `codec:"identifyBehavior" json:"identifyBehavior"`
-}
-
 type GetInboxAndUnboxLocalArg struct {
 	Query            *GetInboxLocalQuery          `codec:"query,omitempty" json:"query,omitempty"`
 	Pagination       *Pagination                  `codec:"pagination,omitempty" json:"pagination,omitempty"`
@@ -4776,6 +5200,7 @@ type GetInboxNonblockLocalArg struct {
 type PostLocalArg struct {
 	ConversationID   ConversationID               `codec:"conversationID" json:"conversationID"`
 	Msg              MessagePlaintext             `codec:"msg" json:"msg"`
+	ReplyTo          *MessageID                   `codec:"replyTo,omitempty" json:"replyTo,omitempty"`
 	IdentifyBehavior keybase1.TLFIdentifyBehavior `codec:"identifyBehavior" json:"identifyBehavior"`
 }
 
@@ -4788,6 +5213,7 @@ type PostLocalNonblockArg struct {
 	Msg              MessagePlaintext             `codec:"msg" json:"msg"`
 	ClientPrev       MessageID                    `codec:"clientPrev" json:"clientPrev"`
 	OutboxID         *OutboxID                    `codec:"outboxID,omitempty" json:"outboxID,omitempty"`
+	ReplyTo          *MessageID                   `codec:"replyTo,omitempty" json:"replyTo,omitempty"`
 	IdentifyBehavior keybase1.TLFIdentifyBehavior `codec:"identifyBehavior" json:"identifyBehavior"`
 }
 
@@ -4798,6 +5224,7 @@ type PostTextNonblockArg struct {
 	TlfPublic         bool                         `codec:"tlfPublic" json:"tlfPublic"`
 	Body              string                       `codec:"body" json:"body"`
 	ClientPrev        MessageID                    `codec:"clientPrev" json:"clientPrev"`
+	ReplyTo           *MessageID                   `codec:"replyTo,omitempty" json:"replyTo,omitempty"`
 	OutboxID          *OutboxID                    `codec:"outboxID,omitempty" json:"outboxID,omitempty"`
 	IdentifyBehavior  keybase1.TLFIdentifyBehavior `codec:"identifyBehavior" json:"identifyBehavior"`
 	EphemeralLifetime *gregor1.DurationSec         `codec:"ephemeralLifetime,omitempty" json:"ephemeralLifetime,omitempty"`
@@ -5006,6 +5433,12 @@ type FindConversationsLocalArg struct {
 
 type UpdateTypingArg struct {
 	ConversationID ConversationID `codec:"conversationID" json:"conversationID"`
+	Typing         bool           `codec:"typing" json:"typing"`
+}
+
+type UpdateUnsentTextArg struct {
+	ConversationID ConversationID `codec:"conversationID" json:"conversationID"`
+	TlfName        string         `codec:"tlfName" json:"tlfName"`
 	Text           string         `codec:"text" json:"text"`
 }
 
@@ -5094,16 +5527,22 @@ type SearchRegexpArg struct {
 	SessionID        int                          `codec:"sessionID" json:"sessionID"`
 	ConvID           ConversationID               `codec:"convID" json:"convID"`
 	Query            string                       `codec:"query" json:"query"`
-	IsRegex          bool                         `codec:"isRegex" json:"isRegex"`
 	Opts             SearchOpts                   `codec:"opts" json:"opts"`
 	IdentifyBehavior keybase1.TLFIdentifyBehavior `codec:"identifyBehavior" json:"identifyBehavior"`
+}
+
+type CancelActiveInboxSearchArg struct {
 }
 
 type SearchInboxArg struct {
 	SessionID        int                          `codec:"sessionID" json:"sessionID"`
 	Query            string                       `codec:"query" json:"query"`
 	Opts             SearchOpts                   `codec:"opts" json:"opts"`
+	NamesOnly        bool                         `codec:"namesOnly" json:"namesOnly"`
 	IdentifyBehavior keybase1.TLFIdentifyBehavior `codec:"identifyBehavior" json:"identifyBehavior"`
+}
+
+type CancelActiveSearchArg struct {
 }
 
 type ProfileChatSearchArg struct {
@@ -5134,12 +5573,39 @@ type ToggleMessageCollapseArg struct {
 	Collapse bool           `codec:"collapse" json:"collapse"`
 }
 
+type BulkAddToConvArg struct {
+	ConvID    ConversationID `codec:"convID" json:"convID"`
+	Usernames []string       `codec:"usernames" json:"usernames"`
+}
+
+type PutReacjiSkinToneArg struct {
+	SkinTone keybase1.ReacjiSkinTone `codec:"skinTone" json:"skinTone"`
+}
+
+type ResolveMaybeMentionArg struct {
+	Mention MaybeMention `codec:"mention" json:"mention"`
+}
+
+type LoadGalleryArg struct {
+	SessionID int            `codec:"sessionID" json:"sessionID"`
+	ConvID    ConversationID `codec:"convID" json:"convID"`
+	Typ       GalleryItemTyp `codec:"typ" json:"typ"`
+	Num       int            `codec:"num" json:"num"`
+	FromMsgID *MessageID     `codec:"fromMsgID,omitempty" json:"fromMsgID,omitempty"`
+}
+
+type LoadFlipArg struct {
+	HostConvID ConversationID `codec:"hostConvID" json:"hostConvID"`
+	HostMsgID  MessageID      `codec:"hostMsgID" json:"hostMsgID"`
+	FlipConvID ConversationID `codec:"flipConvID" json:"flipConvID"`
+	GameID     FlipGameID     `codec:"gameID" json:"gameID"`
+}
+
 type LocalInterface interface {
 	GetThreadLocal(context.Context, GetThreadLocalArg) (GetThreadLocalRes, error)
 	GetCachedThread(context.Context, GetCachedThreadArg) (GetThreadLocalRes, error)
 	GetThreadNonblock(context.Context, GetThreadNonblockArg) (NonblockFetchRes, error)
 	GetUnreadline(context.Context, GetUnreadlineArg) (UnreadlineRes, error)
-	GetInboxUILocal(context.Context, GetInboxUILocalArg) (GetInboxUILocalRes, error)
 	GetInboxAndUnboxLocal(context.Context, GetInboxAndUnboxLocalArg) (GetInboxAndUnboxLocalRes, error)
 	GetInboxAndUnboxUILocal(context.Context, GetInboxAndUnboxUILocalArg) (GetInboxAndUnboxUILocalRes, error)
 	GetInboxNonblockLocal(context.Context, GetInboxNonblockLocalArg) (NonblockFetchRes, error)
@@ -5175,6 +5641,7 @@ type LocalInterface interface {
 	MarkAsReadLocal(context.Context, MarkAsReadLocalArg) (MarkAsReadLocalRes, error)
 	FindConversationsLocal(context.Context, FindConversationsLocalArg) (FindConversationsLocalRes, error)
 	UpdateTyping(context.Context, UpdateTypingArg) error
+	UpdateUnsentText(context.Context, UpdateUnsentTextArg) error
 	JoinConversationLocal(context.Context, JoinConversationLocalArg) (JoinLeaveConversationLocalRes, error)
 	JoinConversationByIDLocal(context.Context, ConversationID) (JoinLeaveConversationLocalRes, error)
 	PreviewConversationByIDLocal(context.Context, ConversationID) (JoinLeaveConversationLocalRes, error)
@@ -5192,13 +5659,20 @@ type LocalInterface interface {
 	SetConvMinWriterRoleLocal(context.Context, SetConvMinWriterRoleLocalArg) error
 	UpgradeKBFSConversationToImpteam(context.Context, ConversationID) error
 	SearchRegexp(context.Context, SearchRegexpArg) (SearchRegexpRes, error)
+	CancelActiveInboxSearch(context.Context) error
 	SearchInbox(context.Context, SearchInboxArg) (SearchInboxRes, error)
+	CancelActiveSearch(context.Context) error
 	ProfileChatSearch(context.Context, keybase1.TLFIdentifyBehavior) (map[string]ProfileSearchConvStats, error)
 	GetStaticConfig(context.Context) (StaticConfig, error)
 	ResolveUnfurlPrompt(context.Context, ResolveUnfurlPromptArg) error
 	GetUnfurlSettings(context.Context) (UnfurlSettingsDisplay, error)
 	SaveUnfurlSettings(context.Context, SaveUnfurlSettingsArg) error
 	ToggleMessageCollapse(context.Context, ToggleMessageCollapseArg) error
+	BulkAddToConv(context.Context, BulkAddToConvArg) error
+	PutReacjiSkinTone(context.Context, keybase1.ReacjiSkinTone) (keybase1.UserReacjis, error)
+	ResolveMaybeMention(context.Context, MaybeMention) error
+	LoadGallery(context.Context, LoadGalleryArg) (LoadGalleryRes, error)
+	LoadFlip(context.Context, LoadFlipArg) (LoadFlipRes, error)
 }
 
 func LocalProtocol(i LocalInterface) rpc.Protocol {
@@ -5262,21 +5736,6 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 						return
 					}
 					ret, err = i.GetUnreadline(ctx, typedArgs[0])
-					return
-				},
-			},
-			"getInboxUILocal": {
-				MakeArg: func() interface{} {
-					var ret [1]GetInboxUILocalArg
-					return &ret
-				},
-				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
-					typedArgs, ok := args.(*[1]GetInboxUILocalArg)
-					if !ok {
-						err = rpc.NewTypeError((*[1]GetInboxUILocalArg)(nil), args)
-						return
-					}
-					ret, err = i.GetInboxUILocal(ctx, typedArgs[0])
 					return
 				},
 			},
@@ -5800,6 +6259,21 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 					return
 				},
 			},
+			"updateUnsentText": {
+				MakeArg: func() interface{} {
+					var ret [1]UpdateUnsentTextArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]UpdateUnsentTextArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]UpdateUnsentTextArg)(nil), args)
+						return
+					}
+					err = i.UpdateUnsentText(ctx, typedArgs[0])
+					return
+				},
+			},
 			"joinConversationLocal": {
 				MakeArg: func() interface{} {
 					var ret [1]JoinConversationLocalArg
@@ -6050,6 +6524,16 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 					return
 				},
 			},
+			"cancelActiveInboxSearch": {
+				MakeArg: func() interface{} {
+					var ret [1]CancelActiveInboxSearchArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					err = i.CancelActiveInboxSearch(ctx)
+					return
+				},
+			},
 			"searchInbox": {
 				MakeArg: func() interface{} {
 					var ret [1]SearchInboxArg
@@ -6062,6 +6546,16 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 						return
 					}
 					ret, err = i.SearchInbox(ctx, typedArgs[0])
+					return
+				},
+			},
+			"cancelActiveSearch": {
+				MakeArg: func() interface{} {
+					var ret [1]CancelActiveSearchArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					err = i.CancelActiveSearch(ctx)
 					return
 				},
 			},
@@ -6145,6 +6639,81 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 					return
 				},
 			},
+			"bulkAddToConv": {
+				MakeArg: func() interface{} {
+					var ret [1]BulkAddToConvArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]BulkAddToConvArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]BulkAddToConvArg)(nil), args)
+						return
+					}
+					err = i.BulkAddToConv(ctx, typedArgs[0])
+					return
+				},
+			},
+			"putReacjiSkinTone": {
+				MakeArg: func() interface{} {
+					var ret [1]PutReacjiSkinToneArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]PutReacjiSkinToneArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]PutReacjiSkinToneArg)(nil), args)
+						return
+					}
+					ret, err = i.PutReacjiSkinTone(ctx, typedArgs[0].SkinTone)
+					return
+				},
+			},
+			"resolveMaybeMention": {
+				MakeArg: func() interface{} {
+					var ret [1]ResolveMaybeMentionArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]ResolveMaybeMentionArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]ResolveMaybeMentionArg)(nil), args)
+						return
+					}
+					err = i.ResolveMaybeMention(ctx, typedArgs[0].Mention)
+					return
+				},
+			},
+			"loadGallery": {
+				MakeArg: func() interface{} {
+					var ret [1]LoadGalleryArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]LoadGalleryArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]LoadGalleryArg)(nil), args)
+						return
+					}
+					ret, err = i.LoadGallery(ctx, typedArgs[0])
+					return
+				},
+			},
+			"loadFlip": {
+				MakeArg: func() interface{} {
+					var ret [1]LoadFlipArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]LoadFlipArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]LoadFlipArg)(nil), args)
+						return
+					}
+					ret, err = i.LoadFlip(ctx, typedArgs[0])
+					return
+				},
+			},
 		},
 	}
 }
@@ -6170,11 +6739,6 @@ func (c LocalClient) GetThreadNonblock(ctx context.Context, __arg GetThreadNonbl
 
 func (c LocalClient) GetUnreadline(ctx context.Context, __arg GetUnreadlineArg) (res UnreadlineRes, err error) {
 	err = c.Cli.Call(ctx, "chat.1.local.getUnreadline", []interface{}{__arg}, &res)
-	return
-}
-
-func (c LocalClient) GetInboxUILocal(ctx context.Context, __arg GetInboxUILocalArg) (res GetInboxUILocalRes, err error) {
-	err = c.Cli.Call(ctx, "chat.1.local.getInboxUILocal", []interface{}{__arg}, &res)
 	return
 }
 
@@ -6356,6 +6920,11 @@ func (c LocalClient) UpdateTyping(ctx context.Context, __arg UpdateTypingArg) (e
 	return
 }
 
+func (c LocalClient) UpdateUnsentText(ctx context.Context, __arg UpdateUnsentTextArg) (err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.updateUnsentText", []interface{}{__arg}, nil)
+	return
+}
+
 func (c LocalClient) JoinConversationLocal(ctx context.Context, __arg JoinConversationLocalArg) (res JoinLeaveConversationLocalRes, err error) {
 	err = c.Cli.Call(ctx, "chat.1.local.joinConversationLocal", []interface{}{__arg}, &res)
 	return
@@ -6447,8 +7016,18 @@ func (c LocalClient) SearchRegexp(ctx context.Context, __arg SearchRegexpArg) (r
 	return
 }
 
+func (c LocalClient) CancelActiveInboxSearch(ctx context.Context) (err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.cancelActiveInboxSearch", []interface{}{CancelActiveInboxSearchArg{}}, nil)
+	return
+}
+
 func (c LocalClient) SearchInbox(ctx context.Context, __arg SearchInboxArg) (res SearchInboxRes, err error) {
 	err = c.Cli.Call(ctx, "chat.1.local.searchInbox", []interface{}{__arg}, &res)
+	return
+}
+
+func (c LocalClient) CancelActiveSearch(ctx context.Context) (err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.cancelActiveSearch", []interface{}{CancelActiveSearchArg{}}, nil)
 	return
 }
 
@@ -6480,5 +7059,32 @@ func (c LocalClient) SaveUnfurlSettings(ctx context.Context, __arg SaveUnfurlSet
 
 func (c LocalClient) ToggleMessageCollapse(ctx context.Context, __arg ToggleMessageCollapseArg) (err error) {
 	err = c.Cli.Call(ctx, "chat.1.local.toggleMessageCollapse", []interface{}{__arg}, nil)
+	return
+}
+
+func (c LocalClient) BulkAddToConv(ctx context.Context, __arg BulkAddToConvArg) (err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.bulkAddToConv", []interface{}{__arg}, nil)
+	return
+}
+
+func (c LocalClient) PutReacjiSkinTone(ctx context.Context, skinTone keybase1.ReacjiSkinTone) (res keybase1.UserReacjis, err error) {
+	__arg := PutReacjiSkinToneArg{SkinTone: skinTone}
+	err = c.Cli.Call(ctx, "chat.1.local.putReacjiSkinTone", []interface{}{__arg}, &res)
+	return
+}
+
+func (c LocalClient) ResolveMaybeMention(ctx context.Context, mention MaybeMention) (err error) {
+	__arg := ResolveMaybeMentionArg{Mention: mention}
+	err = c.Cli.Call(ctx, "chat.1.local.resolveMaybeMention", []interface{}{__arg}, nil)
+	return
+}
+
+func (c LocalClient) LoadGallery(ctx context.Context, __arg LoadGalleryArg) (res LoadGalleryRes, err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.loadGallery", []interface{}{__arg}, &res)
+	return
+}
+
+func (c LocalClient) LoadFlip(ctx context.Context, __arg LoadFlipArg) (res LoadFlipRes, err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.loadFlip", []interface{}{__arg}, &res)
 	return
 }

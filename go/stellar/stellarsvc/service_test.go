@@ -1,7 +1,10 @@
 package stellarsvc
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,7 +27,9 @@ import (
 	"github.com/keybase/client/go/stellar/stellarcommon"
 	"github.com/keybase/client/go/teams"
 	insecureTriplesec "github.com/keybase/go-triplesec-insecure"
+	"github.com/keybase/stellarnet"
 	"github.com/stellar/go/keypair"
+	"github.com/stellar/go/xdr"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,7 +58,7 @@ func TestCreateWallet(t *testing.T) {
 	defer cleanup()
 
 	t.Logf("Lookup for a bogus address")
-	uv, _, err := stellar.LookupUserByAccountID(tcs[0].MetaContext(), "GCCJJFCRCQAWDWRAZ3R6235KCQ4PQYE5KEWHGE5ICVTZLTMRKVWAWP7N")
+	_, _, err := stellar.LookupUserByAccountID(tcs[0].MetaContext(), "GCCJJFCRCQAWDWRAZ3R6235KCQ4PQYE5KEWHGE5ICVTZLTMRKVWAWP7N")
 	require.Error(t, err)
 	require.IsType(t, libkb.NotFoundError{}, err)
 
@@ -119,7 +124,7 @@ func TestCreateWallet(t *testing.T) {
 	require.Equal(t, tcs[0].Fu.GetUserVersion(), uv)
 
 	t.Logf("Looking up by the old address no longer works")
-	uv, _, err = stellar.LookupUserByAccountID(tcs[1].MetaContext(), a1)
+	_, _, err = stellar.LookupUserByAccountID(tcs[1].MetaContext(), a1)
 	require.Error(t, err)
 	require.IsType(t, libkb.NotFoundError{}, err)
 }
@@ -148,8 +153,8 @@ func rotatePuk(t *testing.T, m libkb.MetaContext) {
 
 func TestUpkeep(t *testing.T) {
 	tcs, cleanup := setupNTests(t, 1)
-	srv := tcs[0].Srv
 	defer cleanup()
+	srv := tcs[0].Srv
 	m := tcs[0].MetaContext()
 	// create a wallet with two accounts
 	setupWithNewBundle(t, tcs[0])
@@ -418,16 +423,13 @@ func TestSendLocalKeybase(t *testing.T) {
 	require.NoError(t, err)
 
 	balances, err := srvSender.BalancesLocal(context.Background(), accountIDSender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	require.Equal(t, "9899.9999900", balances[0].Amount)
 
-	srvRecip.walletState.RefreshAll(tcs[1].MetaContext(), "test")
+	err = srvRecip.walletState.RefreshAll(tcs[1].MetaContext(), "test")
+	require.NoError(t, err)
 	balances, err = srvRecip.BalancesLocal(context.Background(), accountIDRecip)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	require.Equal(t, "10100.0000000", balances[0].Amount)
 
 	senderMsgs := kbtest.MockSentMessages(tcs[0].G, tcs[0].T)
@@ -514,12 +516,15 @@ func TestRelayTransferInnards(t *testing.T) {
 	require.NoError(t, err)
 	appKey, teamID, err := relays.GetKey(m, recipient)
 	require.NoError(t, err)
+	sp, unlock := stellar.NewSeqnoProvider(libkb.NewMetaContextForTest(tcs[0].TestContext), tcs[0].Srv.walletState)
+	defer unlock()
 	out, err := relays.Create(relays.Input{
 		From:          senderAccountBundle.Signers[0],
 		AmountXLM:     "10.0005",
 		Note:          "hey",
 		EncryptFor:    appKey,
-		SeqnoProvider: stellar.NewSeqnoProvider(libkb.NewMetaContextForTest(tcs[0].TestContext), tcs[0].Srv.walletState),
+		SeqnoProvider: sp,
+		BaseFee:       100,
 	})
 	require.NoError(t, err)
 	_, err = libkb.ParseStellarAccountID(out.RelayAccountID.String())
@@ -559,7 +564,7 @@ func testRelaySBS(t *testing.T, yank bool) {
 	})
 	require.NoError(t, err)
 
-	details, err := tcs[0].Backend.PaymentDetails(context.Background(), tcs[0], sendRes.KbTxID.String())
+	details, err := tcs[0].Backend.PaymentDetailsGeneric(context.Background(), tcs[0], sendRes.KbTxID.String())
 	require.NoError(t, err)
 
 	claimant := 0
@@ -590,7 +595,8 @@ func testRelaySBS(t *testing.T, yank bool) {
 		require.NoError(t, err)
 	}
 
-	tcs[claimant].Srv.walletState.RefreshAll(tcs[claimant].MetaContext(), "test")
+	err = tcs[claimant].Srv.walletState.RefreshAll(tcs[claimant].MetaContext(), "test")
+	require.NoError(t, err)
 
 	history, err := tcs[claimant].Srv.RecentPaymentsCLILocal(context.Background(), nil)
 	require.NoError(t, err)
@@ -678,7 +684,8 @@ func testRelaySBS(t *testing.T, yank bool) {
 		require.Equal(t, "Canceled", history[0].Payment.Status)
 	}
 
-	tcs[0].Srv.walletState.RefreshAll(tcs[0].MetaContext(), "test")
+	err = tcs[0].Srv.walletState.RefreshAll(tcs[0].MetaContext(), "test")
+	require.NoError(t, err)
 
 	fhistoryPage, err = tcs[0].Srv.GetPaymentsLocal(context.Background(), stellar1.GetPaymentsLocalArg{AccountID: getPrimaryAccountID(tcs[0])})
 	require.NoError(t, err)
@@ -718,7 +725,7 @@ func testRelayReset(t *testing.T, yank bool) {
 	})
 	require.NoError(t, err)
 
-	details, err := tcs[0].Backend.PaymentDetails(context.Background(), tcs[0], sendRes.KbTxID.String())
+	details, err := tcs[0].Backend.PaymentDetailsGeneric(context.Background(), tcs[0], sendRes.KbTxID.String())
 	require.NoError(t, err)
 
 	typ, err := details.Summary.Typ()
@@ -748,7 +755,8 @@ func testRelayReset(t *testing.T, yank bool) {
 		claimant = 0
 	}
 
-	tcs[claimant].Srv.walletState.RefreshAll(tcs[claimant].MetaContext(), "test")
+	err = tcs[claimant].Srv.walletState.RefreshAll(tcs[claimant].MetaContext(), "test")
+	require.NoError(t, err)
 	tcs[claimant].Srv.walletState.DumpToLog(tcs[claimant].MetaContext())
 
 	history, err := tcs[claimant].Srv.RecentPaymentsCLILocal(context.Background(), nil)
@@ -1252,6 +1260,57 @@ func TestMakeAccountMobileOnlyOnRecentMobile(t *testing.T) {
 	checker.assertBundle(t, bundle, 4, 3, stellar1.AccountMode_USER)
 }
 
+type DummyMerkleStore struct {
+	Entry keybase1.MerkleStoreEntry
+}
+
+func (dm DummyMerkleStore) GetLatestEntry(m libkb.MetaContext) (e keybase1.MerkleStoreEntry, err error) {
+	return dm.Entry, nil
+}
+func (dm DummyMerkleStore) GetLatestEntryWithKnown(m libkb.MetaContext, mskh *keybase1.MerkleStoreKitHash) (entry *keybase1.MerkleStoreEntry, err error) {
+	return nil, nil
+}
+
+var _ libkb.MerkleStore = (*DummyMerkleStore)(nil)
+
+func TestGetPartnerUrlsLocal(t *testing.T) {
+	// inject some fake data into the merkle store hanging off G
+	// and then verify that the stellar exchange urls are extracted correctly
+	tc, cleanup := setupMobileTest(t)
+	defer cleanup()
+	ctx := context.Background()
+	g := tc.G
+	firstPartnerURL := "billtop.com/%{accountID}"
+	secondPartnerURL := "https://bitwat.com/keybase"
+	jsonEntry := json.RawMessage(fmt.Sprintf(`
+	{"external_urls":{
+		"stellar_partners":[
+			{"admin_only":false,"description":"buy from billtop","extra":"{\"superfun\":true}","icon_filename":"first.png","title":"BillTop","url":"%s"}
+			, {"admin_only":true,"description":"buy from bitwat","extra":"{\"superfun\":false}","icon_filename":"second.png","title":"BitWat","url":"%s"}
+		],
+		"something_unrelated":[
+			{"something":"else entirely","url":"dunno.pizza/txID"}
+		]
+	}}
+	`, firstPartnerURL, secondPartnerURL))
+	injectedEntry := keybase1.MerkleStoreEntry{
+		Hash:  "000this-is-tested-elsewhere000",
+		Entry: keybase1.MerkleStoreEntryString(jsonEntry),
+	}
+	injectedStore := DummyMerkleStore{injectedEntry}
+	g.SetExternalURLStore(injectedStore)
+
+	res, err := tc.Srv.GetPartnerUrlsLocal(ctx, 0)
+	require.NoError(t, err)
+	require.Equal(t, len(res), 2)
+	require.Equal(t, res[0].Url, firstPartnerURL)
+	require.Equal(t, res[0].Extra, `{"superfun":true}`)
+	require.False(t, res[0].AdminOnly)
+	require.Equal(t, res[1].Url, secondPartnerURL)
+	require.Equal(t, res[1].Extra, `{"superfun":false}`)
+	require.True(t, res[1].AdminOnly)
+}
+
 func TestAutoClaimLoop(t *testing.T) {
 	tcs, cleanup := setupTestsWithSettings(t, []usetting{usettingFull, usettingFull})
 	defer cleanup()
@@ -1301,7 +1360,9 @@ func TestShutdown(t *testing.T) {
 
 	accountID := tcs[0].Backend.AddAccount()
 
+	tcs[0].Srv.walletState.SeqnoLock()
 	_, err := tcs[0].Srv.walletState.AccountSeqnoAndBump(context.Background(), accountID)
+	tcs[0].Srv.walletState.SeqnoUnlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1321,7 +1382,7 @@ func TestShutdown(t *testing.T) {
 		go func() {
 			_, err := tcs[0].Srv.BalancesLocal(context.Background(), accountID)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
 			}
 			wg.Done()
 		}()
@@ -1329,11 +1390,104 @@ func TestShutdown(t *testing.T) {
 
 	wg.Add(1)
 	go func() {
-		tcs[0].Srv.walletState.Shutdown()
+		if err := tcs[0].Srv.walletState.Shutdown(); err != nil {
+			t.Logf("shutdown error: %s", err)
+		}
 		wg.Done()
 	}()
 
 	wg.Wait()
+}
+
+func TestSignTransactionXdr(t *testing.T) {
+	tcs, cleanup := setupNTests(t, 2)
+	defer cleanup()
+
+	acceptDisclaimer(tcs[0])
+	accounts := tcs[0].Backend.ImportAccountsForUser(tcs[0])
+	acceptDisclaimer(tcs[1])
+	accounts2 := tcs[1].Backend.ImportAccountsForUser(tcs[1])
+
+	sp, unlock := stellar.NewSeqnoProvider(tcs[0].MetaContext(), tcs[0].Srv.walletState)
+	defer unlock()
+	tx := stellarnet.NewBaseTx(stellarnet.AddressStr(accounts[0].accountID), sp, 100)
+	tx.AddPaymentOp(stellarnet.AddressStr(accounts[0].accountID), "100")
+	tx.AddMemoText("test")
+	signRes, err := tx.Sign(stellarnet.SeedStr(accounts[0].secretKey))
+	require.NoError(t, err)
+
+	// Unpack transaction, strip signatures. We will try to resign
+	// that transaction using SignTransactionXdrLocal and are hoping
+	// to see the same result.
+	unpacked, _, err := unpackTx(signRes.Signed)
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	unpacked.Signatures = []xdr.DecoratedSignature{}
+	_, err = xdr.Marshal(&buf, unpacked)
+	require.NoError(t, err)
+	unsigned := base64.StdEncoding.EncodeToString(buf.Bytes())
+
+	// Happy path.
+	res, err := tcs[0].Srv.SignTransactionXdrLocal(context.Background(), stellar1.SignTransactionXdrLocalArg{
+		EnvelopeXdr: unsigned,
+	})
+	require.NoError(t, err)
+	require.Equal(t, accounts[0].accountID, res.AccountID)
+	// Signed result should match stellarnet result from before we stipped signatures.
+	require.Equal(t, signRes.Signed, res.SingedTx)
+	// Wasn't trying to submit, so both SubmitTxID and SubmitErr should be nil.
+	require.Nil(t, res.SubmitErr)
+	require.Nil(t, res.SubmitTxID)
+
+	// Submitting - we are not mocking whole submit process, but we can test if
+	// the flag does anything.
+	res, err = tcs[0].Srv.SignTransactionXdrLocal(context.Background(), stellar1.SignTransactionXdrLocalArg{
+		EnvelopeXdr: unsigned,
+		Submit:      true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, accounts[0].accountID, res.AccountID)
+	require.Equal(t, signRes.Signed, res.SingedTx)
+	require.NotNil(t, res.SubmitErr)
+	require.Contains(t, *res.SubmitErr, "post any transaction is not mocked")
+	require.Nil(t, res.SubmitTxID)
+
+	var emptyResult stellar1.SignXdrResult
+
+	// Try with invalid envelope.
+	envelope := "AAAAAJHtRFG9qD+hsTVmp0/1ZPWkxQj/F4217ia3nVY+dPHjAAAAZAAAAAACd"
+	res, err = tcs[0].Srv.SignTransactionXdrLocal(context.Background(), stellar1.SignTransactionXdrLocalArg{
+		EnvelopeXdr: envelope,
+	})
+	require.Error(t, err)
+	require.Equal(t, emptyResult, res)
+
+	// Try with account id user doesn't own.
+	invalidAccID, _ := randomStellarKeypair()
+	res, err = tcs[0].Srv.SignTransactionXdrLocal(context.Background(), stellar1.SignTransactionXdrLocalArg{
+		EnvelopeXdr: unsigned,
+		AccountID:   &invalidAccID,
+	})
+	require.Equal(t, emptyResult, res)
+	require.Error(t, err)
+
+	// Same, but the SourceAccount is one that user doesn't own.
+	res, err = tcs[1].Srv.SignTransactionXdrLocal(context.Background(), stellar1.SignTransactionXdrLocalArg{
+		EnvelopeXdr: unsigned,
+	})
+	require.Equal(t, emptyResult, res)
+	require.Error(t, err)
+
+	// Can, however, sign with non-default account ID that user owns.
+	accID2 := accounts2[0].accountID
+	res, err = tcs[1].Srv.SignTransactionXdrLocal(context.Background(), stellar1.SignTransactionXdrLocalArg{
+		EnvelopeXdr: unsigned,
+		AccountID:   &accID2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, res.AccountID, accID2)
+	require.NotEmpty(t, res.SingedTx)
 }
 
 func makeActiveDeviceOlder(t *testing.T, g *libkb.GlobalContext) {
@@ -1341,12 +1495,12 @@ func makeActiveDeviceOlder(t *testing.T, g *libkb.GlobalContext) {
 	apiArg := libkb.APIArg{
 		Endpoint:    "test/agedevice",
 		SessionType: libkb.APISessionTypeREQUIRED,
-		NetContext:  context.Background(),
 		Args: libkb.HTTPArgs{
 			"device_id": libkb.S{Val: deviceID.String()},
 		},
 	}
-	_, err := g.API.Post(apiArg)
+	mctx := libkb.NewMetaContextBackground(g)
+	_, err := g.API.Post(mctx, apiArg)
 	require.NoError(t, err)
 }
 

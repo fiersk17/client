@@ -96,6 +96,7 @@ protocol NotifyChat {
 
   record ReactionUpdateNotif {
     ConversationID convID;
+    keybase1.UserReacjis userReacjis;
     array<ReactionUpdate> reactionUpdates;
   }
 
@@ -150,6 +151,7 @@ protocol NotifyChat {
 
   record ChatSyncIncrementalInfo {
     array<ChatSyncIncrementalConv> items;
+    array<string> removals; // Removed ConvIDs
   }
 
   variant ChatSyncResult switch (SyncInboxResType syncType) {

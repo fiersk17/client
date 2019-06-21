@@ -9,6 +9,7 @@ import (
 	"github.com/keybase/client/go/ephemeral"
 	"github.com/keybase/client/go/libkb"
 	"github.com/keybase/client/go/protocol/chat1"
+	"github.com/keybase/client/go/protocol/gregor1"
 	"github.com/keybase/client/go/protocol/keybase1"
 	"github.com/keybase/client/go/teams"
 	"github.com/keybase/go-framed-msgpack-rpc/rpc"
@@ -27,7 +28,7 @@ type PermanentUnboxingError struct{ inner error }
 
 func (e PermanentUnboxingError) Error() string {
 	switch err := e.inner.(type) {
-	case EphemeralUnboxingError:
+	case EphemeralUnboxingError, NotAuthenticatedForThisDeviceError:
 		return err.Error()
 	default:
 		return fmt.Sprintf("Unable to decrypt chat message: %s", err.Error())
@@ -202,14 +203,20 @@ func (e PublicTeamEphemeralKeyError) Error() string {
 
 //=============================================================================
 
-type NotAuthenticatedForThisDeviceError struct{}
+type NotAuthenticatedForThisDeviceError struct{ inner ephemeral.EphemeralKeyError }
 
-func NewNotAuthenticatedForThisDeviceError() NotAuthenticatedForThisDeviceError {
-	return NotAuthenticatedForThisDeviceError{}
+func NewNotAuthenticatedForThisDeviceError(mctx libkb.MetaContext, tlfID chat1.TLFID,
+	contentCtime gregor1.Time) NotAuthenticatedForThisDeviceError {
+	inner := ephemeral.NewNotAuthenticatedForThisDeviceError(mctx, tlfID, contentCtime)
+	return NotAuthenticatedForThisDeviceError{inner: inner}
 }
 
 func (e NotAuthenticatedForThisDeviceError) Error() string {
-	return "Message is not authenticated for this device"
+	return e.inner.HumanError()
+}
+
+func (e NotAuthenticatedForThisDeviceError) InternalError() string {
+	return e.inner.Error()
 }
 
 //=============================================================================
@@ -289,6 +296,13 @@ func (e BoxingError) IsImmediateFail() (chat1.OutboxErrorType, bool) {
 
 type BoxingCryptKeysError struct {
 	Err error
+}
+
+// Cause implements the pkg/errors Cause() method, also cloned in libkb via HumanError,
+// so that we know which error to show to the human being using keybase (rather than
+// for our own internal uses).
+func (e BoxingCryptKeysError) Cause() error {
+	return e.Err
 }
 
 func NewBoxingCryptKeysError(err error) BoxingCryptKeysError {
@@ -535,6 +549,15 @@ func IsOfflineError(err error) OfflineErrorKind {
 		return OfflineErrorKindOfflineReconnect
 	case ErrDuplicateConnection:
 		return OfflineErrorKindOfflineBasic
+	}
+
+	// Unfortunately, Go throws these without a type and they can occasionally
+	// propagate up. The strings were copied from
+	// https://golang.org/src/crypto/tls/conn.go
+	switch err.Error() {
+	case "tls: use of closed connection",
+		"tls: protocol is shutdown":
+		return OfflineErrorKindOfflineReconnect
 	}
 	return OfflineErrorKindOnline
 }

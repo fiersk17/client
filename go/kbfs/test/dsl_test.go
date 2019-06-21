@@ -16,9 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/keybase/client/go/kbfs/data"
 	"github.com/keybase/client/go/kbfs/kbfsmd"
 	"github.com/keybase/client/go/kbfs/libfs"
 	"github.com/keybase/client/go/kbfs/libkbfs"
+	"github.com/keybase/client/go/kbfs/test/clocktest"
 	"github.com/keybase/client/go/kbfs/tlf"
 	kbname "github.com/keybase/client/go/kbun"
 	"github.com/keybase/client/go/protocol/keybase1"
@@ -54,7 +56,7 @@ type opt struct {
 	batchSize                int
 	bwKBps                   int
 	timeout                  time.Duration
-	clock                    *libkbfs.TestClock
+	clock                    *clocktest.TestClock
 	isParallel               bool
 	journal                  bool
 }
@@ -114,10 +116,10 @@ func test(t *testing.T, actions ...optionOp) {
 	})
 }
 
-func benchmark(b *testing.B, tb testing.TB, actions ...optionOp) {
+func benchmark(b *testing.B, actions ...optionOp) {
 	runBenchmarkOverMetadataVers(
 		b, func(b *testing.B, ver kbfsmd.MetadataVer) {
-			runOneTestOrBenchmark(tb, ver, actions...)
+			runOneTestOrBenchmark(silentBenchmark{b}, ver, actions...)
 		})
 }
 
@@ -173,7 +175,7 @@ func (o *opt) close() {
 
 func (o *opt) runInitOnce() {
 	o.initOnce.Do(func() {
-		o.clock = &libkbfs.TestClock{}
+		o.clock = &clocktest.TestClock{}
 		o.clock.Set(time.Unix(1, 0))
 		o.users = o.engine.InitTest(o.ver, o.blockSize,
 			o.blockChangeSize, o.batchSize, o.bwKBps, o.timeout, o.usernames,
@@ -479,6 +481,54 @@ func noSync() fileOp {
 		c.noSyncInit = true
 		return nil
 	}, IsInit, "noSync()"}
+}
+
+func resetTimer() fileOp {
+	return fileOp{func(c *ctx) error {
+		switch b := c.tb.(type) {
+		case *testing.B:
+			b.ResetTimer()
+		case silentBenchmark:
+			b.ResetTimer()
+		}
+		return nil
+	}, Defaults, "resetTimer()"}
+}
+
+func startTimer() fileOp {
+	return fileOp{func(c *ctx) error {
+		switch b := c.tb.(type) {
+		case *testing.B:
+			b.StartTimer()
+		case silentBenchmark:
+			b.StartTimer()
+		}
+		return nil
+	}, Defaults, "startTimer()"}
+}
+
+func stopTimer() fileOp {
+	return fileOp{func(c *ctx) error {
+		switch b := c.tb.(type) {
+		case *testing.B:
+			b.StopTimer()
+		case silentBenchmark:
+			b.StopTimer()
+		}
+		return nil
+	}, Defaults, "stopTimer()"}
+}
+
+func getBenchN(n *int) fileOp {
+	return fileOp{func(c *ctx) error {
+		switch b := c.tb.(type) {
+		case *testing.B:
+			*n = b.N
+		case silentBenchmark:
+			*n = b.N
+		}
+		return nil
+	}, Defaults, "getBenchN()"}
 }
 
 // noSyncEnd turns off the SyncFromServer call at the end of each `as`
@@ -1038,10 +1088,11 @@ func checkPrevRevisions(filepath string, counts []uint8) fileOp {
 }
 
 type expectedEdit struct {
-	tlfName string
-	tlfType keybase1.FolderType
-	writer  string
-	files   []string
+	tlfName      string
+	tlfType      keybase1.FolderType
+	writer       string
+	files        []string
+	deletedFiles []string
 }
 
 func checkUserEditHistory(expectedEdits []expectedEdit) fileOp {
@@ -1063,6 +1114,10 @@ func checkUserEditHistory(expectedEdits []expectedEdit) fileOp {
 			hEdits[i].writer = h.History[0].WriterName
 			for _, we := range h.History[0].Edits {
 				hEdits[i].files = append(hEdits[i].files, we.Filename)
+			}
+			for _, we := range h.History[0].Deletes {
+				hEdits[i].deletedFiles = append(
+					hEdits[i].deletedFiles, we.Filename)
 			}
 		}
 
@@ -1097,24 +1152,44 @@ func disablePrefetch() fileOp {
 	}, IsInit, "disablePrefetch()"}
 }
 
+func forceConflict() fileOp {
+	return fileOp{func(c *ctx) error {
+		return c.engine.ForceConflict(c.user, c.tlfName, c.tlfType)
+	}, IsInit, "forceConflict()"}
+}
+
+func clearConflicts() fileOp {
+	return fileOp{func(c *ctx) error {
+		return c.engine.ClearConflicts(c.user, c.tlfName, c.tlfType)
+	}, IsInit, "clearConflicts()"}
+}
+
 func lsfavoritesOp(c *ctx, expected []string, t tlf.Type) error {
 	favorites, err := c.engine.GetFavorites(c.user, t)
 	if err != nil {
 		return err
 	}
 	c.tb.Log("lsfavorites", t, "=>", favorites)
-	expectedMap := make(map[string]bool)
 	for _, f := range expected {
-		if !favorites[f] {
+		if favorites[f] {
+			delete(favorites, f)
+			continue
+		}
+
+		p, err := tlf.CanonicalToPreferredName(
+			kbname.NormalizedUsername(c.username), tlf.CanonicalName(f))
+		if err != nil {
+			return err
+		}
+		if favorites[string(p)] {
+			delete(favorites, string(p))
+		} else {
 			return fmt.Errorf("Missing favorite %s", f)
 		}
-		expectedMap[f] = true
 	}
 
 	for f := range favorites {
-		if !expectedMap[f] {
-			return fmt.Errorf("Unexpected favorite %s", f)
-		}
+		return fmt.Errorf("Unexpected favorite %s", f)
 	}
 	return nil
 }
@@ -1129,6 +1204,12 @@ func lsprivatefavorites(contents []string) fileOp {
 	return fileOp{func(c *ctx) error {
 		return lsfavoritesOp(c, contents, tlf.Private)
 	}, Defaults, fmt.Sprintf("lsprivatefavorites(%s)", contents)}
+}
+
+func lsteamfavorites(contents []string) fileOp {
+	return fileOp{func(c *ctx) error {
+		return lsfavoritesOp(c, contents, tlf.SingleTeam)
+	}, Defaults, fmt.Sprintf("lsteamfavorites(%s)", contents)}
 }
 
 func lsdir(name string, contents m) fileOp {
@@ -1220,7 +1301,7 @@ func (c *ctx) getNode(filepath string, create createType, sym symBehavior) (
 			switch {
 			case err == nil:
 				if create == createFileExcl {
-					return nil, false, libkbfs.NameExistsError{}
+					return nil, false, data.NameExistsError{}
 				}
 			case create == createFileExcl:
 				c.tb.Log("getNode: CreateFileExcl")
@@ -1297,7 +1378,7 @@ func crnameEsc(path string, user username) string {
 	return crnameAtTimeEsc(path, user, 0)
 }
 
-type silentBenchmark struct{ testing.TB }
+type silentBenchmark struct{ *testing.B }
 
 func (silentBenchmark) Log(args ...interface{})                 {}
 func (silentBenchmark) Logf(format string, args ...interface{}) {}

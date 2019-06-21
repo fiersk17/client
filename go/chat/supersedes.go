@@ -59,12 +59,15 @@ func (t *basicSupersedesTransform) transformDelete(msg chat1.MessageUnboxed, sup
 func (t *basicSupersedesTransform) transformEdit(msg chat1.MessageUnboxed, superMsg chat1.MessageUnboxed) *chat1.MessageUnboxed {
 	mvalid := msg.Valid()
 	var payments []chat1.TextPayment
+	var replyTo *chat1.MessageID
 	if mvalid.MessageBody.IsType(chat1.MessageType_TEXT) {
 		payments = mvalid.MessageBody.Text().Payments
+		replyTo = mvalid.MessageBody.Text().ReplyTo
 	}
 	mvalid.MessageBody = chat1.NewMessageBodyWithText(chat1.MessageText{
 		Body:     superMsg.Valid().MessageBody.Edit().Body,
 		Payments: payments,
+		ReplyTo:  replyTo,
 	})
 	mvalid.AtMentions = superMsg.Valid().AtMentions
 	mvalid.AtMentionUsernames = superMsg.Valid().AtMentionUsernames
@@ -256,7 +259,10 @@ func (t *basicSupersedesTransform) Run(ctx context.Context,
 				// exploding message.
 				mvalid := newMsg.Valid()
 				if !mvalid.IsEphemeral() || mvalid.HideExplosion(conv.GetMaxDeletedUpTo(), time.Now()) {
-					t.Debug(ctx, "skipping: %d because not valid full", msg.GetMessageID())
+					btyp, _ := mvalid.MessageBody.MessageType()
+					t.Debug(ctx, "skipping: %d because not valid full: typ: %v bodymatch: %v btyp: %v",
+						msg.GetMessageID(), msg.GetMessageType(),
+						mvalid.MessageBody.IsType(msg.GetMessageType()), btyp)
 					xformDelete(msg.GetMessageID())
 					continue
 				}

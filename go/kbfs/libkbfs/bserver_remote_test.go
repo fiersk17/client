@@ -7,6 +7,7 @@ package libkbfs
 import (
 	"testing"
 
+	"github.com/keybase/client/go/kbfs/idutil"
 	"github.com/keybase/client/go/kbfs/kbfsblock"
 	"github.com/keybase/client/go/kbfs/kbfscrypto"
 	"github.com/keybase/client/go/kbfs/tlf"
@@ -69,7 +70,7 @@ type testBlockServerRemoteConfig struct {
 	codecGetter
 	logMaker
 	signer         kbfscrypto.Signer
-	sessionGetter  CurrentSessionGetter
+	sessionGetter  idutil.CurrentSessionGetter
 	diskBlockCache DiskBlockCache
 }
 
@@ -79,7 +80,7 @@ func (c testBlockServerRemoteConfig) Signer() kbfscrypto.Signer {
 	return c.signer
 }
 
-func (c testBlockServerRemoteConfig) CurrentSessionGetter() CurrentSessionGetter {
+func (c testBlockServerRemoteConfig) CurrentSessionGetter() idutil.CurrentSessionGetter {
 	return c.sessionGetter
 }
 
@@ -101,7 +102,8 @@ func TestBServerRemotePutAndGet(t *testing.T) {
 	bCtx := kbfsblock.MakeFirstContext(
 		currentUID.AsUserOrTeam(), keybase1.BlockType_DATA)
 	data := []byte{1, 2, 3, 4}
-	bID, err := kbfsblock.MakePermanentID(data, kbfscrypto.EncryptionSecretbox)
+	bID, err := kbfsblock.MakePermanentID(
+		data, kbfscrypto.EncryptionSecretboxWithKeyNonce)
 	require.NoError(t, err)
 
 	serverHalf, err := kbfscrypto.MakeRandomBlockCryptKeyServerHalf()

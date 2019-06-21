@@ -70,8 +70,6 @@ func (d dummyAuditor) AuditTeam(m libkb.MetaContext, id keybase1.TeamID, isPubli
 	return nil
 }
 
-func (d dummyAuditor) OnLogout(m libkb.MetaContext) {}
-
 type Auditor struct {
 
 	// single-flight lock on TeamID
@@ -97,7 +95,10 @@ func NewAuditorAndInstall(g *libkb.GlobalContext) {
 		g.Log.CDebugf(context.TODO(), "Using dummy auditor, audit disabled")
 		g.SetTeamAuditor(dummyAuditor{})
 	} else {
-		g.SetTeamAuditor(NewAuditor(g))
+		a := NewAuditor(g)
+		g.SetTeamAuditor(a)
+		g.AddLogoutHook(a, "team auditor")
+		g.AddDbNukeHook(a, "team auditor")
 	}
 }
 
@@ -111,7 +112,7 @@ func NewAuditorAndInstall(g *libkb.GlobalContext) {
 func (a *Auditor) AuditTeam(m libkb.MetaContext, id keybase1.TeamID, isPublic bool, headMerkleSeqno keybase1.Seqno, chain map[keybase1.Seqno]keybase1.LinkID, maxSeqno keybase1.Seqno) (err error) {
 
 	m = m.WithLogTag("AUDIT")
-	defer m.CTraceTimed(fmt.Sprintf("Auditor#AuditTeam(%+v)", id), func() error { return err })()
+	defer m.TraceTimed(fmt.Sprintf("Auditor#AuditTeam(%+v)", id), func() error { return err })()
 
 	if id.IsPublic() != isPublic {
 		return NewBadPublicError(id, isPublic)
@@ -137,7 +138,7 @@ func (a *Auditor) getFromLRU(m libkb.MetaContext, id keybase1.TeamID, lru *lru.C
 	}
 	ret, ok := tmp.(*keybase1.AuditHistory)
 	if !ok {
-		m.CErrorf("Bad type assertion in Auditor#getFromLRU")
+		m.Error("Bad type assertion in Auditor#getFromLRU")
 		return nil
 	}
 	return ret
@@ -153,7 +154,7 @@ func (a *Auditor) getFromDisk(m libkb.MetaContext, id keybase1.TeamID) (*keybase
 		return nil, nil
 	}
 	if ret.Version != AuditCurrentVersion {
-		m.CDebugf("Discarding audit at version %d (we are supporting %d)", ret.Version, AuditCurrentVersion)
+		m.Debug("Discarding audit at version %d (we are supporting %d)", ret.Version, AuditCurrentVersion)
 		return nil, nil
 	}
 	return &ret, nil
@@ -177,17 +178,17 @@ func (a *Auditor) putToCache(m libkb.MetaContext, id keybase1.TeamID, lru *lru.C
 
 func (a *Auditor) checkRecent(m libkb.MetaContext, history *keybase1.AuditHistory, root *libkb.MerkleRoot) bool {
 	if root == nil {
-		m.CDebugf("no recent known merkle root in checkRecent")
+		m.Debug("no recent known merkle root in checkRecent")
 		return false
 	}
 	last := lastAudit(history)
 	if last == nil {
-		m.CDebugf("no recent audits")
+		m.Debug("no recent audits")
 		return false
 	}
 	diff := *root.Seqno() - last.MaxMerkleSeqno
 	if diff >= getAuditParams(m).MerkleMovementTrigger {
-		m.CDebugf("previous merkle audit was %v ago", diff)
+		m.Debug("previous merkle audit was %v ago", diff)
 		return false
 	}
 	return true
@@ -238,8 +239,9 @@ func makeHistory(history *keybase1.AuditHistory, id keybase1.TeamID) *keybase1.A
 	return &ret
 }
 
+// doPostProbes probes the sequence timeline _after_ the team was created.
 func (a *Auditor) doPostProbes(m libkb.MetaContext, history *keybase1.AuditHistory, probeID int, headMerkleSeqno keybase1.Seqno, latestMerkleSeqno keybase1.Seqno, chain map[keybase1.Seqno]keybase1.LinkID, maxChainSeqno keybase1.Seqno) (numProbes int, maxMerkleProbe keybase1.Seqno, err error) {
-	defer m.CTrace("Auditor#doPostProbes", func() error { return err })()
+	defer m.Trace("Auditor#doPostProbes", func() error { return err })()
 
 	var low keybase1.Seqno
 	lastMaxMerkleProbe := maxMerkleProbeInAuditHistory(history)
@@ -252,7 +254,7 @@ func (a *Auditor) doPostProbes(m libkb.MetaContext, history *keybase1.AuditHisto
 		if !ok {
 			// This might happen if leveldb was corrupted, or if we had a bug of some sort.
 			// But it makes sense not error out of the audit process.
-			m.CWarningf("previous audit pointed to a bogus probe (seqno=%d); starting from scratch at head Merkle seqno=%d", lastMaxMerkleProbe, headMerkleSeqno)
+			m.Warning("previous audit pointed to a bogus probe (seqno=%d); starting from scratch at head Merkle seqno=%d", lastMaxMerkleProbe, headMerkleSeqno)
 			low = headMerkleSeqno
 		} else {
 			prev = &probeTuple{
@@ -263,19 +265,32 @@ func (a *Auditor) doPostProbes(m libkb.MetaContext, history *keybase1.AuditHisto
 		}
 	}
 
+	// Probe only after the checkpoint. Merkle roots before the checkpoint aren't examined and are
+	// trusted to be legit, being buried far enough in the past. Therefore probing is not necessary.
+	first := m.G().MerkleClient.FirstExaminableHistoricalRoot(m)
+
+	if first == nil {
+		return 0, keybase1.Seqno(0), NewAuditError("cannot find a first modern merkle sequence")
+	}
+
+	if low < *first {
+		m.Debug("bumping low sequence number to last merkle checkpoint: %s", *first)
+		low = *first
+	}
+
 	probeTuples, err := a.computeProbes(m, history.ID, history.PostProbes, probeID, low, latestMerkleSeqno, 0, getAuditParams(m).NumPostProbes)
 	if err != nil {
 		return 0, keybase1.Seqno(0), err
 	}
 	if len(probeTuples) == 0 {
-		m.CDebugf("No probe tuples, so bailing")
+		m.Debug("No probe tuples, so bailing")
 		return 0, keybase1.Seqno(0), nil
 	}
 
 	ret := 0
 
 	for _, tuple := range probeTuples {
-		m.CDebugf("postProbe: checking probe at %+v", tuple)
+		m.Debug("postProbe: checking probe at %+v", tuple)
 
 		// Note that we might see tuple.team == 0 in a legit case. There is a race here. If seqno=1
 		// of team foo was made when the last merkle seqno was 2000, let's say, then for merkle seqnos
@@ -319,9 +334,9 @@ func (a *Auditor) doPostProbes(m libkb.MetaContext, history *keybase1.AuditHisto
 // in question was created. It selects probes from before the team was created. Each
 // probed leaf must not be occupied.
 func (a *Auditor) doPreProbes(m libkb.MetaContext, history *keybase1.AuditHistory, probeID int, headMerkleSeqno keybase1.Seqno) (numProbes int, err error) {
-	defer m.CTrace("Auditor#doPreProbes", func() error { return err })()
+	defer m.Trace("Auditor#doPreProbes", func() error { return err })()
 
-	first := m.G().MerkleClient.FirstSeqnoWithSkips(m)
+	first := m.G().MerkleClient.FirstExaminableHistoricalRoot(m)
 	if first == nil {
 		return 0, NewAuditError("cannot find a first modern merkle sequence")
 	}
@@ -331,11 +346,11 @@ func (a *Auditor) doPreProbes(m libkb.MetaContext, history *keybase1.AuditHistor
 		return 0, err
 	}
 	if len(probeTuples) == 0 {
-		m.CDebugf("No probe pairs, so bailing")
+		m.Debug("No probe pairs, so bailing")
 		return 0, nil
 	}
 	for _, tuple := range probeTuples {
-		m.CDebugf("preProbe: checking probe at merkle %d", tuple.merkle)
+		m.Debug("preProbe: checking probe at merkle %d", tuple.merkle)
 		if tuple.team != keybase1.Seqno(0) || !tuple.linkID.IsNil() {
 			return 0, NewAuditError("merkle root at %v should have been nil for %v; got %s/%d",
 				tuple.merkle, history.ID, tuple.linkID, tuple.team)
@@ -373,14 +388,14 @@ func (a *Auditor) computeProbes(m libkb.MetaContext, teamID keybase1.TeamID, pro
 }
 
 func (a *Auditor) scheduleProbes(m libkb.MetaContext, previousProbes map[keybase1.Seqno]keybase1.Probe, probeID int, left keybase1.Seqno, right keybase1.Seqno, probesInRange int, n int) (ret []probeTuple, err error) {
-	defer m.CTrace(fmt.Sprintf("Auditor#scheduleProbes(left=%d,right=%d)", left, right), func() error { return err })()
+	defer m.Trace(fmt.Sprintf("Auditor#scheduleProbes(left=%d,right=%d)", left, right), func() error { return err })()
 	if probesInRange > n {
-		m.CDebugf("no more probes needed; did %d, wanted %d", probesInRange, n)
+		m.Debug("no more probes needed; did %d, wanted %d", probesInRange, n)
 		return nil, nil
 	}
 	rng := right - left + 1
 	if int(rng) <= probesInRange {
-		m.CDebugf("no more probes needed; range was only %d, and we did %d", rng, probesInRange)
+		m.Debug("no more probes needed; range was only %d, and we did %d", rng, probesInRange)
 		return nil, nil
 	}
 	currentProbes := make(map[keybase1.Seqno]bool)
@@ -401,18 +416,18 @@ func (a *Auditor) scheduleProbes(m libkb.MetaContext, previousProbes map[keybase
 	sort.SliceStable(ret, func(i, j int) bool {
 		return ret[i].merkle < ret[j].merkle
 	})
-	m.CDebugf("scheduled probes: %+v", ret)
+	m.Debug("scheduled probes: %+v", ret)
 	return ret, nil
 }
 
 func (a *Auditor) lookupProbe(m libkb.MetaContext, teamID keybase1.TeamID, probe *probeTuple) (err error) {
-	defer m.CTrace(fmt.Sprintf("Auditor#lookupProbe(%v,%v)", teamID, *probe), func() error { return err })()
+	defer m.Trace(fmt.Sprintf("Auditor#lookupProbe(%v,%v)", teamID, *probe), func() error { return err })()
 	leaf, _, err := m.G().MerkleClient.LookupLeafAtSeqnoForAudit(m, teamID.AsUserOrTeam(), probe.merkle)
 	if err != nil {
 		return err
 	}
 	if leaf == nil || leaf.Private == nil {
-		m.CDebugf("nil leaf at %v/%v", teamID, probe.merkle)
+		m.Debug("nil leaf at %v/%v", teamID, probe.merkle)
 		return nil
 	}
 	probe.team = leaf.Private.Seqno
@@ -458,7 +473,7 @@ func (a *Auditor) checkTail(m libkb.MetaContext, history *keybase1.AuditHistory,
 
 func (a *Auditor) auditLocked(m libkb.MetaContext, id keybase1.TeamID, headMerkleSeqno keybase1.Seqno, chain map[keybase1.Seqno]keybase1.LinkID, maxChainSeqno keybase1.Seqno) (err error) {
 
-	defer m.CTrace(fmt.Sprintf("Auditor#auditLocked(%v)", id), func() error { return err })()
+	defer m.Trace(fmt.Sprintf("Auditor#auditLocked(%v)", id), func() error { return err })()
 
 	lru := a.getLRU()
 
@@ -475,7 +490,7 @@ func (a *Auditor) auditLocked(m libkb.MetaContext, id keybase1.TeamID, headMerkl
 	// That's fine, just make sure to short-circuit as long as we've audited past
 	// the given maxChainSeqno.
 	if last != nil && last.MaxChainSeqno >= maxChainSeqno {
-		m.CDebugf("Short-circuit audit, since there is no new data (@%v <= %v)", maxChainSeqno, last.MaxChainSeqno)
+		m.Debug("Short-circuit audit, since there is no new data (@%v <= %v)", maxChainSeqno, last.MaxChainSeqno)
 		return nil
 	}
 
@@ -489,13 +504,13 @@ func (a *Auditor) auditLocked(m libkb.MetaContext, id keybase1.TeamID, headMerkl
 		}
 	}
 
-	root, err := m.G().MerkleClient.FetchRootFromServerByFreshness(m, getAuditParams(m).RootFreshness)
+	root, err := m.G().MerkleClient.FetchRootFromServer(m, getAuditParams(m).RootFreshness)
 	if err != nil {
 		return err
 	}
 
 	if history != nil && a.checkRecent(m, history, root) {
-		m.CDebugf("cached audit was recent; short-circuiting")
+		m.Debug("cached audit was recent; short-circuiting")
 		return nil
 	}
 
@@ -516,11 +531,11 @@ func (a *Auditor) auditLocked(m libkb.MetaContext, id keybase1.TeamID, headMerkl
 	}
 
 	if numPostProbes+numPreProbes == 0 {
-		m.CDebugf("No new probes, not writing to cache")
+		m.Debug("No new probes, not writing to cache")
 		return nil
 	}
 
-	m.CDebugf("Probes completed; numPre=%d, numPost=%d", numPreProbes, numPostProbes)
+	m.Debug("Probes completed; numPre=%d, numPost=%d", numPreProbes, numPostProbes)
 
 	audit := keybase1.Audit{
 		Time:           keybase1.ToTime(m.G().Clock().Now()),
@@ -557,6 +572,12 @@ func (a *Auditor) newLRU(m libkb.MetaContext) {
 	a.lru = lru
 }
 
-func (a *Auditor) OnLogout(m libkb.MetaContext) {
-	a.newLRU(m)
+func (a *Auditor) OnLogout(mctx libkb.MetaContext) error {
+	a.newLRU(mctx)
+	return nil
+}
+
+func (a *Auditor) OnDbNuke(mctx libkb.MetaContext) error {
+	a.newLRU(mctx)
+	return nil
 }

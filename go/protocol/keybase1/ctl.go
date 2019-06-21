@@ -93,6 +93,11 @@ type StopArg struct {
 	ExitCode  ExitCode `codec:"exitCode" json:"exitCode"`
 }
 
+type StopServiceArg struct {
+	SessionID int      `codec:"sessionID" json:"sessionID"`
+	ExitCode  ExitCode `codec:"exitCode" json:"exitCode"`
+}
+
 type LogRotateArg struct {
 	SessionID int `codec:"sessionID" json:"sessionID"`
 }
@@ -103,6 +108,12 @@ type ReloadArg struct {
 
 type DbNukeArg struct {
 	SessionID int `codec:"sessionID" json:"sessionID"`
+}
+
+type DbCleanArg struct {
+	SessionID int    `codec:"sessionID" json:"sessionID"`
+	Force     bool   `codec:"force" json:"force"`
+	DbType    DbType `codec:"dbType" json:"dbType"`
 }
 
 type AppExitArg struct {
@@ -127,9 +138,11 @@ type DbGetArg struct {
 
 type CtlInterface interface {
 	Stop(context.Context, StopArg) error
+	StopService(context.Context, StopServiceArg) error
 	LogRotate(context.Context, int) error
 	Reload(context.Context, int) error
 	DbNuke(context.Context, int) error
+	DbClean(context.Context, DbCleanArg) error
 	AppExit(context.Context, int) error
 	DbDelete(context.Context, DbDeleteArg) error
 	DbPut(context.Context, DbPutArg) error
@@ -152,6 +165,21 @@ func CtlProtocol(i CtlInterface) rpc.Protocol {
 						return
 					}
 					err = i.Stop(ctx, typedArgs[0])
+					return
+				},
+			},
+			"stopService": {
+				MakeArg: func() interface{} {
+					var ret [1]StopServiceArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]StopServiceArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]StopServiceArg)(nil), args)
+						return
+					}
+					err = i.StopService(ctx, typedArgs[0])
 					return
 				},
 			},
@@ -197,6 +225,21 @@ func CtlProtocol(i CtlInterface) rpc.Protocol {
 						return
 					}
 					err = i.DbNuke(ctx, typedArgs[0].SessionID)
+					return
+				},
+			},
+			"dbClean": {
+				MakeArg: func() interface{} {
+					var ret [1]DbCleanArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]DbCleanArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]DbCleanArg)(nil), args)
+						return
+					}
+					err = i.DbClean(ctx, typedArgs[0])
 					return
 				},
 			},
@@ -273,6 +316,11 @@ func (c CtlClient) Stop(ctx context.Context, __arg StopArg) (err error) {
 	return
 }
 
+func (c CtlClient) StopService(ctx context.Context, __arg StopServiceArg) (err error) {
+	err = c.Cli.Call(ctx, "keybase.1.ctl.stopService", []interface{}{__arg}, nil)
+	return
+}
+
 func (c CtlClient) LogRotate(ctx context.Context, sessionID int) (err error) {
 	__arg := LogRotateArg{SessionID: sessionID}
 	err = c.Cli.Call(ctx, "keybase.1.ctl.logRotate", []interface{}{__arg}, nil)
@@ -288,6 +336,11 @@ func (c CtlClient) Reload(ctx context.Context, sessionID int) (err error) {
 func (c CtlClient) DbNuke(ctx context.Context, sessionID int) (err error) {
 	__arg := DbNukeArg{SessionID: sessionID}
 	err = c.Cli.Call(ctx, "keybase.1.ctl.dbNuke", []interface{}{__arg}, nil)
+	return
+}
+
+func (c CtlClient) DbClean(ctx context.Context, __arg DbCleanArg) (err error) {
+	err = c.Cli.Call(ctx, "keybase.1.ctl.dbClean", []interface{}{__arg}, nil)
 	return
 }
 

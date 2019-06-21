@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/keybase/client/go/kbfs/data"
+	"github.com/keybase/client/go/kbfs/idutil"
 	"github.com/keybase/client/go/kbfs/ioutil"
 	"github.com/keybase/client/go/kbfs/kbfscodec"
 	"github.com/keybase/client/go/kbfs/kbfscrypto"
@@ -131,9 +133,11 @@ type mdJournal struct {
 	crypto         cryptoPure
 	clock          Clock
 	teamMemChecker kbfsmd.TeamMembershipChecker
+	osg            idutil.OfflineStatusGetter
 	tlfID          tlf.ID
 	mdVer          kbfsmd.MetadataVer
 	dir            string
+	overrideTlfID  tlf.ID
 
 	log      logger.Logger
 	deferLog logger.Logger
@@ -160,9 +164,9 @@ type mdJournal struct {
 func makeMDJournalWithIDJournal(
 	ctx context.Context, uid keybase1.UID, key kbfscrypto.VerifyingKey,
 	codec kbfscodec.Codec, crypto cryptoPure, clock Clock,
-	teamMemChecker kbfsmd.TeamMembershipChecker, tlfID tlf.ID,
-	mdVer kbfsmd.MetadataVer, dir string, idJournal mdIDJournal,
-	log logger.Logger) (*mdJournal, error) {
+	teamMemChecker kbfsmd.TeamMembershipChecker, osg idutil.OfflineStatusGetter,
+	tlfID tlf.ID, mdVer kbfsmd.MetadataVer, dir string, idJournal mdIDJournal,
+	log logger.Logger, overrideTlfID tlf.ID) (*mdJournal, error) {
 	if uid == keybase1.UID("") {
 		return nil, errors.New("Empty user")
 	}
@@ -178,9 +182,11 @@ func makeMDJournalWithIDJournal(
 		crypto:         crypto,
 		clock:          clock,
 		teamMemChecker: teamMemChecker,
+		osg:            osg,
 		tlfID:          tlfID,
 		mdVer:          mdVer,
 		dir:            dir,
+		overrideTlfID:  overrideTlfID,
 		log:            log,
 		deferLog:       deferLog,
 		j:              idJournal,
@@ -224,17 +230,17 @@ func mdJournalPath(dir string) string {
 func makeMDJournal(
 	ctx context.Context, uid keybase1.UID, key kbfscrypto.VerifyingKey,
 	codec kbfscodec.Codec, crypto cryptoPure, clock Clock,
-	teamMemChecker kbfsmd.TeamMembershipChecker, tlfID tlf.ID,
-	mdVer kbfsmd.MetadataVer, dir string,
-	log logger.Logger) (*mdJournal, error) {
+	teamMemChecker kbfsmd.TeamMembershipChecker, osg idutil.OfflineStatusGetter,
+	tlfID tlf.ID, mdVer kbfsmd.MetadataVer, dir string,
+	log logger.Logger, overrideTlfID tlf.ID) (*mdJournal, error) {
 	journalDir := mdJournalPath(dir)
 	idJournal, err := makeMdIDJournal(codec, journalDir)
 	if err != nil {
 		return nil, err
 	}
 	return makeMDJournalWithIDJournal(
-		ctx, uid, key, codec, crypto, clock, teamMemChecker, tlfID, mdVer, dir,
-		idJournal, log)
+		ctx, uid, key, codec, crypto, clock, teamMemChecker, osg, tlfID, mdVer,
+		dir, idJournal, log, overrideTlfID)
 }
 
 // The functions below are for building various paths.
@@ -475,7 +481,8 @@ func (j mdJournal) getMDAndExtra(ctx context.Context, entry mdIDJournalEntry,
 	}
 
 	err = rmd.IsValidAndSigned(
-		ctx, j.codec, j.teamMemChecker, extra, j.key)
+		ctx, j.codec, j.teamMemChecker, extra, j.key,
+		j.osg.OfflineAvailabilityForID(j.tlfID))
 	if err != nil {
 		return nil, nil, time.Time{}, err
 	}
@@ -485,6 +492,11 @@ func (j mdJournal) getMDAndExtra(ctx context.Context, entry mdIDJournalEntry,
 		return nil, nil, time.Time{}, errors.Errorf(
 			"Branch ID mismatch: expected %s, got %s",
 			j.branchID, rmd.BID())
+	}
+
+	// Local conflict branches will have a different local TLF ID.
+	if j.overrideTlfID != tlf.NullID {
+		rmd.SetTlfID(j.overrideTlfID)
 	}
 
 	return rmd, extra, timestamp, nil
@@ -1202,7 +1214,7 @@ func (e MDJournalConflictError) Error() string {
 // rmd becomes the initial entry.
 func (j *mdJournal) put(
 	ctx context.Context, signer kbfscrypto.Signer,
-	ekg encryptionKeyGetter, bsplit BlockSplitter, rmd *RootMetadata,
+	ekg encryptionKeyGetter, bsplit data.BlockSplitter, rmd *RootMetadata,
 	isLocalSquash bool) (
 	mdID kbfsmd.ID, err error) {
 	j.log.CDebugf(ctx, "Putting MD for TLF=%s with rev=%s bid=%s",
@@ -1328,8 +1340,8 @@ func (j *mdJournal) put(
 	}
 
 	// Ensure that the block changes are properly unembedded.
-	if rmd.data.Changes.Info.BlockPointer == zeroPtr &&
-		!bsplit.ShouldEmbedBlockChanges(&rmd.data.Changes) {
+	if rmd.data.Changes.Info.BlockPointer == data.ZeroPtr &&
+		!bsplit.ShouldEmbedData(rmd.data.Changes.SizeEstimate()) {
 		return kbfsmd.ID{},
 			errors.New("MD has embedded block changes, but shouldn't")
 	}
@@ -1341,7 +1353,8 @@ func (j *mdJournal) put(
 	}
 
 	err = rmd.bareMd.IsValidAndSigned(
-		ctx, j.codec, j.teamMemChecker, rmd.extra, j.key)
+		ctx, j.codec, j.teamMemChecker, rmd.extra, j.key,
+		j.osg.OfflineAvailabilityForID(j.tlfID))
 	if err != nil {
 		return kbfsmd.ID{}, err
 	}
@@ -1423,7 +1436,7 @@ func (j *mdJournal) clear(ctx context.Context, bid kbfsmd.BranchID) error {
 
 func (j *mdJournal) resolveAndClear(
 	ctx context.Context, signer kbfscrypto.Signer, ekg encryptionKeyGetter,
-	bsplit BlockSplitter, mdcache MDCache, bid kbfsmd.BranchID, rmd *RootMetadata) (
+	bsplit data.BlockSplitter, mdcache MDCache, bid kbfsmd.BranchID, rmd *RootMetadata) (
 	mdID kbfsmd.ID, err error) {
 	j.log.CDebugf(ctx, "Resolve and clear, branch %s, resolve rev %d",
 		bid, rmd.Revision())
@@ -1486,8 +1499,8 @@ func (j *mdJournal) resolveAndClear(
 	}()
 
 	otherJournal, err := makeMDJournalWithIDJournal(
-		ctx, j.uid, j.key, j.codec, j.crypto, j.clock, j.teamMemChecker,
-		j.tlfID, j.mdVer, j.dir, otherIDJournal, j.log)
+		ctx, j.uid, j.key, j.codec, j.crypto, j.clock, j.teamMemChecker, j.osg,
+		j.tlfID, j.mdVer, j.dir, otherIDJournal, j.log, j.overrideTlfID)
 	if err != nil {
 		return kbfsmd.ID{}, err
 	}

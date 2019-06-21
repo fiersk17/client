@@ -10,6 +10,7 @@ import (
 
 	"encoding/hex"
 
+	"github.com/keybase/client/go/badges"
 	"github.com/keybase/client/go/chat/commands"
 	"github.com/keybase/client/go/chat/globals"
 	"github.com/keybase/client/go/chat/search"
@@ -140,8 +141,18 @@ func (n *chatListener) consumeEphemeralPurge(t *testing.T) chat1.EphemeralPurgeN
 	}
 }
 
+func (n *chatListener) consumeThreadsStale(t *testing.T) []chat1.ConversationStaleUpdate {
+	select {
+	case x := <-n.threadsStale:
+		return x
+	case <-time.After(20 * time.Second):
+		require.Fail(t, "failed to get threadsStale notification")
+		return nil
+	}
+}
+
 func newConvTriple(ctx context.Context, t *testing.T, tc *kbtest.ChatTestContext, username string) chat1.ConversationIDTriple {
-	return newConvTripleWithMembersType(ctx, t, tc, username, chat1.ConversationMembersType_KBFS)
+	return newConvTripleWithMembersType(ctx, t, tc, username, chat1.ConversationMembersType_IMPTEAMNATIVE)
 }
 
 func newConvTripleWithMembersType(ctx context.Context, t *testing.T, tc *kbtest.ChatTestContext,
@@ -172,7 +183,8 @@ func NewChatMockWorld(t *testing.T, name string, numUsers int) (world *kbtest.Ch
 	res := kbtest.NewChatMockWorld(t, name, numUsers)
 	for _, w := range res.Tcs {
 		teams.ServiceInit(w.G)
-		ephemeral.ServiceInit(w.G)
+		mctx := libkb.NewMetaContextTODO(w.G)
+		ephemeral.ServiceInit(mctx)
 	}
 	return res
 }
@@ -225,13 +237,14 @@ func setupTest(t *testing.T, numUsers int) (context.Context, *kbtest.ChatMockWor
 	}
 	chatStorage := storage.New(g, nil)
 	chatStorage.SetClock(world.Fc)
+	g.CtxFactory = NewCtxFactory(g)
 	g.ConvSource = NewHybridConversationSource(g, boxer, chatStorage, getRI)
 	chatStorage.SetAssetDeleter(g.ConvSource)
-	g.InboxSource = NewHybridInboxSource(g, getRI)
+	g.InboxSource = NewHybridInboxSource(g, badges.NewBadger(g.ExternalG()), getRI)
 	g.InboxSource.Start(context.TODO(), uid)
 	g.InboxSource.Connected(context.TODO())
 	g.ServerCacheVersions = storage.NewServerVersions(g)
-	g.NotifyRouter.SetListener(&listener)
+	g.NotifyRouter.AddListener(&listener)
 
 	deliverer := NewDeliverer(g, baseSender)
 	deliverer.SetClock(world.Fc)
@@ -273,15 +286,19 @@ func setupTest(t *testing.T, numUsers int) (context.Context, *kbtest.ChatMockWor
 	searcher.SetPageSize(2)
 	g.RegexpSearcher = searcher
 	indexer := search.NewIndexer(g)
-	ictx := IdentifyModeCtx(context.Background(), keybase1.TLFIdentifyBehavior_CHAT_SKIP, nil)
+	ictx := globals.CtxAddIdentifyMode(context.Background(), keybase1.TLFIdentifyBehavior_CHAT_SKIP, nil)
 	indexer.Start(ictx, uid)
 	indexer.SetPageSize(2)
+	indexer.SetStartSyncDelay(0)
 	g.Indexer = indexer
 	g.AttachmentURLSrv = types.DummyAttachmentHTTPSrv{}
 	g.Unfurler = types.DummyUnfurler{}
 	g.StellarLoader = types.DummyStellarLoader{}
 	g.StellarSender = types.DummyStellarSender{}
+	g.TeamMentionLoader = types.DummyTeamMentionLoader{}
 	g.CommandsSource = commands.NewSource(g)
+	g.CoinFlipManager = NewFlipManager(g, getRI)
+	g.CoinFlipManager.Start(context.TODO(), uid)
 
 	return ctx, world, ri, sender, baseSender, &listener
 }
@@ -307,7 +324,7 @@ func TestNonblockChannel(t *testing.T) {
 		MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 			Body: "hi",
 		}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 
 	select {
@@ -364,7 +381,7 @@ func TestNonblockTimer(t *testing.T) {
 		MessageBody: chat1.MessageBody{},
 	}
 	prepareRes, err := baseSender.Prepare(ctx, firstMessagePlaintext,
-		chat1.ConversationMembersType_KBFS, nil)
+		chat1.ConversationMembersType_KBFS, nil, nil)
 	require.NoError(t, err)
 	firstMessageBoxed := prepareRes.Boxed
 	res, err := ri.NewConversationRemote2(ctx, chat1.NewConversationRemote2Arg{
@@ -387,7 +404,7 @@ func TestNonblockTimer(t *testing.T) {
 			MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 				Body: "hi",
 			}),
-		}, 0, nil)
+		}, 0, nil, nil, nil)
 		require.NoError(t, err)
 		msgID := msgBoxed.GetMessageID()
 		t.Logf("generated msgID: %d", msgID)
@@ -413,7 +430,7 @@ func TestNonblockTimer(t *testing.T) {
 			MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 				Body: "hi",
 			}),
-		}, nil, keybase1.TLFIdentifyBehavior_CHAT_CLI)
+		}, nil, nil, nil, keybase1.TLFIdentifyBehavior_CHAT_CLI)
 		obid := obr.OutboxID
 		t.Logf("generated obid: %s prev: %d", hex.EncodeToString(obid), msgID)
 		require.NoError(t, err)
@@ -446,7 +463,7 @@ func TestNonblockTimer(t *testing.T) {
 			MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 				Body: "hi",
 			}),
-		}, 0, nil)
+		}, 0, nil, nil, nil)
 		require.NoError(t, err)
 		msgID := msgBoxed.GetMessageID()
 		t.Logf("generated msgID: %d", msgID)
@@ -494,12 +511,14 @@ type FailingSender struct {
 var _ types.Sender = (*FailingSender)(nil)
 
 func (f FailingSender) Send(ctx context.Context, convID chat1.ConversationID,
-	msg chat1.MessagePlaintext, clientPrev chat1.MessageID, outboxID *chat1.OutboxID) (chat1.OutboxID, *chat1.MessageBoxed, error) {
+	msg chat1.MessagePlaintext, clientPrev chat1.MessageID, outboxID *chat1.OutboxID,
+	sendOpts *chat1.SenderSendOptions, prepareOpts *chat1.SenderPrepareOptions) (chat1.OutboxID, *chat1.MessageBoxed, error) {
 	return chat1.OutboxID{}, nil, fmt.Errorf("I always fail!!!!")
 }
 
 func (f FailingSender) Prepare(ctx context.Context, msg chat1.MessagePlaintext,
-	membersType chat1.ConversationMembersType, convID *chat1.Conversation) (types.SenderPrepareResult, error) {
+	membersType chat1.ConversationMembersType, conv *chat1.ConversationLocal,
+	opts *chat1.SenderPrepareOptions) (types.SenderPrepareResult, error) {
 	return types.SenderPrepareResult{}, nil
 }
 
@@ -543,7 +562,7 @@ func TestFailingSender(t *testing.T) {
 				TlfName:   u.Username,
 				TlfPublic: false,
 			},
-		}, 0, nil)
+		}, 0, nil, nil, nil)
 		require.NoError(t, err)
 		obids = append(obids, obid)
 	}
@@ -594,7 +613,7 @@ func TestOutboxItemExpiration(t *testing.T) {
 		MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 			Body: "hi",
 		}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	cl.Advance(2 * time.Hour)
 	tc.ChatG.MessageDeliverer.Connected(ctx)
@@ -662,7 +681,7 @@ func TestDisconnectedFailure(t *testing.T) {
 	}
 
 	// If not offline for long enough, we should be able to get a send by just reconnecting
-	obid, _, err := sender.Send(ctx, conv.GetConvID(), mkMsg(), 0, nil)
+	obid, _, err := sender.Send(ctx, conv.GetConvID(), mkMsg(), 0, nil, nil, nil)
 	require.NoError(t, err)
 	cl.Advance(time.Millisecond)
 	select {
@@ -687,7 +706,7 @@ func TestDisconnectedFailure(t *testing.T) {
 	// Send nonblock
 	obids := []chat1.OutboxID{}
 	for i := 0; i < 3; i++ {
-		obid, _, err = sender.Send(ctx, conv.GetConvID(), mkMsg(), 0, nil)
+		obid, _, err = sender.Send(ctx, conv.GetConvID(), mkMsg(), 0, nil, nil, nil)
 		require.NoError(t, err)
 		obids = append(obids, obid)
 		cl.Advance(time.Millisecond)
@@ -767,6 +786,7 @@ func TestDeletionHeaders(t *testing.T) {
 	uid := u.User.GetUID().ToBytes()
 	tc := userTc(t, world, u)
 	conv := newBlankConv(ctx, t, tc, uid, ri, blockingSender, u.Username)
+	localConv := localizeConv(ctx, t, tc, uid, conv)
 
 	// Send a message and two edits.
 	_, firstMessageBoxed, err := blockingSender.Send(ctx, conv.GetConvID(), chat1.MessagePlaintext{
@@ -777,7 +797,7 @@ func TestDeletionHeaders(t *testing.T) {
 			MessageType: chat1.MessageType_TEXT,
 		},
 		MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{Body: "foo"}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	firstMessageID := firstMessageBoxed.GetMessageID()
 	_, editBoxed, err := blockingSender.Send(ctx, conv.GetConvID(), chat1.MessagePlaintext{
@@ -789,7 +809,7 @@ func TestDeletionHeaders(t *testing.T) {
 			Supersedes:  firstMessageID,
 		},
 		MessageBody: chat1.NewMessageBodyWithEdit(chat1.MessageEdit{MessageID: firstMessageID, Body: "bar"}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	editID := editBoxed.GetMessageID()
 	_, editBoxed2, err := blockingSender.Send(ctx, conv.GetConvID(), chat1.MessagePlaintext{
@@ -801,7 +821,7 @@ func TestDeletionHeaders(t *testing.T) {
 			Supersedes:  firstMessageID,
 		},
 		MessageBody: chat1.NewMessageBodyWithEdit(chat1.MessageEdit{MessageID: firstMessageID, Body: "baz"}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	editID2 := editBoxed2.GetMessageID()
 
@@ -817,7 +837,7 @@ func TestDeletionHeaders(t *testing.T) {
 		MessageBody: chat1.NewMessageBodyWithDelete(chat1.MessageDelete{MessageIDs: []chat1.MessageID{firstMessageID}}),
 	}
 	prepareRes, err := blockingSender.Prepare(ctx, deletion,
-		chat1.ConversationMembersType_KBFS, &conv)
+		chat1.ConversationMembersType_KBFS, &localConv, nil)
 	require.NoError(t, err)
 	preparedDeletion := prepareRes.Boxed
 
@@ -851,7 +871,9 @@ func TestAtMentionsText(t *testing.T) {
 	uid1 := u1.User.GetUID().ToBytes()
 	uid2 := u2.User.GetUID().ToBytes()
 	tc := userTc(t, world, u)
-	conv := newBlankConv(ctx, t, tc, uid, ri, blockingSender, u.Username)
+	tlfName := u.Username + "," + u1.Username + "," + u2.Username
+	conv := newBlankConv(ctx, t, tc, uid, ri, blockingSender, tlfName)
+	localConv := localizeConv(ctx, t, tc, uid, conv)
 
 	text := fmt.Sprintf("@%s hello! From @%s. @ksjdskj", u1.Username, u2.Username)
 	t.Logf("text: %s", text)
@@ -859,13 +881,13 @@ func TestAtMentionsText(t *testing.T) {
 		ClientHeader: chat1.MessageClientHeader{
 			Conv:        conv.Metadata.IdTriple,
 			Sender:      uid,
-			TlfName:     u.Username,
+			TlfName:     tlfName,
 			MessageType: chat1.MessageType_TEXT,
 		},
 		MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 			Body: text,
 		}),
-	}, chat1.ConversationMembersType_KBFS, &conv)
+	}, chat1.ConversationMembersType_KBFS, &localConv, nil)
 	require.NoError(t, err)
 	atMentions := prepareRes.AtMentions
 	chanMention := prepareRes.ChannelMention
@@ -877,13 +899,13 @@ func TestAtMentionsText(t *testing.T) {
 		ClientHeader: chat1.MessageClientHeader{
 			Conv:        conv.Metadata.IdTriple,
 			Sender:      uid,
-			TlfName:     u.Username,
+			TlfName:     tlfName,
 			MessageType: chat1.MessageType_TEXT,
 		},
 		MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 			Body: text,
 		}),
-	}, chat1.ConversationMembersType_KBFS, &conv)
+	}, chat1.ConversationMembersType_KBFS, &localConv, nil)
 	require.NoError(t, err)
 	atMentions = prepareRes.AtMentions
 	chanMention = prepareRes.ChannelMention
@@ -902,7 +924,9 @@ func TestAtMentionsEdit(t *testing.T) {
 	uid1 := u1.User.GetUID().ToBytes()
 	uid2 := u2.User.GetUID().ToBytes()
 	tc := userTc(t, world, u)
-	conv := newBlankConv(ctx, t, tc, uid, ri, blockingSender, u.Username)
+	tlfName := u.Username + "," + u1.Username + "," + u2.Username
+	conv := newBlankConv(ctx, t, tc, uid, ri, blockingSender, tlfName)
+	localConv := localizeConv(ctx, t, tc, uid, conv)
 
 	text := fmt.Sprintf("%s hello! From %s. @ksjdskj", u1.Username, u2.Username)
 	t.Logf("text: %s", text)
@@ -910,13 +934,13 @@ func TestAtMentionsEdit(t *testing.T) {
 		ClientHeader: chat1.MessageClientHeader{
 			Conv:        conv.Metadata.IdTriple,
 			Sender:      uid,
-			TlfName:     u.Username,
+			TlfName:     tlfName,
 			MessageType: chat1.MessageType_TEXT,
 		},
 		MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 			Body: text,
 		}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 
 	// edit that message and add atMentions
@@ -926,7 +950,7 @@ func TestAtMentionsEdit(t *testing.T) {
 		ClientHeader: chat1.MessageClientHeader{
 			Conv:        conv.Metadata.IdTriple,
 			Sender:      u.User.GetUID().ToBytes(),
-			TlfName:     u.Username,
+			TlfName:     tlfName,
 			MessageType: chat1.MessageType_EDIT,
 			Supersedes:  firstMessageID,
 		},
@@ -934,7 +958,7 @@ func TestAtMentionsEdit(t *testing.T) {
 			MessageID: firstMessageID,
 			Body:      text,
 		}),
-	}, chat1.ConversationMembersType_KBFS, &conv)
+	}, chat1.ConversationMembersType_KBFS, &localConv, nil)
 	require.NoError(t, err)
 	atMentions := prepareRes.AtMentions
 	chanMention := prepareRes.ChannelMention
@@ -947,7 +971,7 @@ func TestAtMentionsEdit(t *testing.T) {
 		ClientHeader: chat1.MessageClientHeader{
 			Conv:        conv.Metadata.IdTriple,
 			Sender:      uid,
-			TlfName:     u.Username,
+			TlfName:     tlfName,
 			MessageType: chat1.MessageType_EDIT,
 			Supersedes:  firstMessageID,
 		},
@@ -955,7 +979,7 @@ func TestAtMentionsEdit(t *testing.T) {
 			MessageID: firstMessageID,
 			Body:      text,
 		}),
-	}, chat1.ConversationMembersType_KBFS, &conv)
+	}, chat1.ConversationMembersType_KBFS, &localConv, nil)
 	require.NoError(t, err)
 	atMentions = prepareRes.AtMentions
 	chanMention = prepareRes.ChannelMention
@@ -979,7 +1003,7 @@ func TestKBFSFileEditSize(t *testing.T) {
 		tc := userTc(t, world, u)
 		conv, err := NewConversation(ctx, tc.Context(), uid, tlfName, nil, chat1.TopicType_KBFSFILEEDIT,
 			chat1.ConversationMembersType_IMPTEAMNATIVE, keybase1.TLFVisibility_PRIVATE,
-			func() chat1.RemoteInterface { return ri })
+			func() chat1.RemoteInterface { return ri }, NewConvFindExistingNormal)
 		require.NoError(t, err)
 
 		body := strings.Repeat("M", 100000)
@@ -990,7 +1014,7 @@ func TestKBFSFileEditSize(t *testing.T) {
 				MessageType: chat1.MessageType_TEXT,
 			},
 			MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{Body: body}),
-		}, 0, nil)
+		}, 0, nil, nil, nil)
 		require.NoError(t, err)
 	})
 }
@@ -1020,7 +1044,7 @@ func TestKBFSCryptKeysBit(t *testing.T) {
 				MessageType: chat1.MessageType_TEXT,
 			},
 			MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{Body: "foo"}),
-		}, 0, nil)
+		}, 0, nil, nil, nil)
 		require.NoError(t, err)
 		tv, err := tc.ChatG.ConvSource.Pull(ctx, conv.GetConvID(), uid,
 			chat1.GetThreadReason_GENERAL,
@@ -1063,6 +1087,7 @@ func TestPrevPointerAddition(t *testing.T) {
 		uid := u.User.GetUID().ToBytes()
 		tc := userTc(t, world, u)
 		conv := newBlankConv(ctx, t, tc, uid, ri, blockingSender, u.Username)
+		localConv := localizeConv(ctx, t, tc, uid, conv)
 
 		// Send a bunch of messages on this convo
 		for i := 0; i < 10; i++ {
@@ -1075,7 +1100,7 @@ func TestPrevPointerAddition(t *testing.T) {
 					EphemeralMetadata: ephemeralMetadata,
 				},
 				MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{Body: "foo"}),
-			}, 0, nil)
+			}, 0, nil, nil, nil)
 			require.NoError(t, err)
 		}
 
@@ -1097,7 +1122,7 @@ func TestPrevPointerAddition(t *testing.T) {
 					EphemeralMetadata: ephemeralMetadata,
 				},
 				MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{Body: "foo"}),
-			}, mt, &conv)
+			}, mt, &localConv, nil)
 			require.NoError(t, err)
 			boxed := prepareRes.Boxed
 			pendingAssetDeletes := prepareRes.PendingAssetDeletes
@@ -1128,7 +1153,7 @@ func TestPrevPointerAddition(t *testing.T) {
 				MessageType: chat1.MessageType_TEXT,
 			},
 			MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{Body: "foo"}),
-		}, mt, &conv)
+		}, mt, &localConv, nil)
 		require.NoError(t, err)
 		boxed := prepareRes.Boxed
 		pendingAssetDeletes := prepareRes.PendingAssetDeletes
@@ -1153,6 +1178,7 @@ func TestDeletionAssets(t *testing.T) {
 	uid := u.User.GetUID().ToBytes()
 	tc := userTc(t, world, u)
 	conv := newBlankConv(ctx, t, tc, uid, ri, blockingSender, u.Username)
+	localConv := localizeConv(ctx, t, tc, uid, conv)
 	trip := conv.Metadata.IdTriple
 
 	var doomedAssets []chat1.Asset
@@ -1180,7 +1206,7 @@ func TestDeletionAssets(t *testing.T) {
 			Preview:  &tmp1,
 			Previews: []chat1.Asset{mkAsset(), mkAsset()},
 		}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	firstMessageID := firstMessageBoxed.GetMessageID()
 
@@ -1198,7 +1224,7 @@ func TestDeletionAssets(t *testing.T) {
 			Object:    mkAsset(),
 			Previews:  []chat1.Asset{mkAsset(), mkAsset()},
 		}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	edit1ID := edit1Boxed.GetMessageID()
 	_, edit2Boxed, err := blockingSender.Send(ctx, conv.GetConvID(), chat1.MessagePlaintext{
@@ -1208,7 +1234,7 @@ func TestDeletionAssets(t *testing.T) {
 			Object:    mkAsset(),
 			Previews:  []chat1.Asset{mkAsset(), mkAsset()},
 		}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	edit2ID := edit2Boxed.GetMessageID()
 	_, edit3Boxed, err := blockingSender.Send(ctx, conv.GetConvID(), chat1.MessagePlaintext{
@@ -1218,7 +1244,7 @@ func TestDeletionAssets(t *testing.T) {
 			Object:    chat1.Asset{},
 			Previews:  nil,
 		}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	edit3ID := edit3Boxed.GetMessageID()
 
@@ -1236,7 +1262,7 @@ func TestDeletionAssets(t *testing.T) {
 		MessageBody: chat1.NewMessageBodyWithDelete(chat1.MessageDelete{MessageIDs: []chat1.MessageID{firstMessageID}}),
 	}
 	prepareRes, err := blockingSender.Prepare(ctx, deletion,
-		chat1.ConversationMembersType_KBFS, &conv)
+		chat1.ConversationMembersType_KBFS, &localConv, nil)
 	require.NoError(t, err)
 	preparedDeletion := prepareRes.Boxed
 	pendingAssetDeletes := prepareRes.PendingAssetDeletes
@@ -1343,8 +1369,10 @@ func TestPairwiseMACChecker(t *testing.T) {
 
 		tc1 := ctc.world.Tcs[users[0].Username]
 		tc2 := ctc.world.Tcs[users[1].Username]
-		require.NoError(t, tc1.G.GetEKLib().KeygenIfNeeded(ctx1))
-		require.NoError(t, tc2.G.GetEKLib().KeygenIfNeeded(ctx2))
+		require.NoError(t, tc1.G.GetEKLib().KeygenIfNeeded(
+			ctc.as(t, users[0]).h.G().MetaContext(ctx1)))
+		require.NoError(t, tc2.G.GetEKLib().KeygenIfNeeded(
+			ctc.as(t, users[1]).h.G().MetaContext(ctx2)))
 		uid1 := users[0].User.GetUID()
 		uid2 := users[1].User.GetUID()
 		ri1 := ctc.as(t, users[0]).ri
@@ -1358,7 +1386,7 @@ func TestPairwiseMACChecker(t *testing.T) {
 		blockingSender1 := NewBlockingSender(g1, boxer1, getRI1)
 		blockingSender2 := NewBlockingSender(g2, boxer2, getRI2)
 		listener1 := newServerChatListener()
-		ctc.as(t, users[0]).h.G().NotifyRouter.SetListener(listener1)
+		ctc.as(t, users[0]).h.G().NotifyRouter.AddListener(listener1)
 
 		text := "hi"
 		msg := textMsgWithSender(t, text, uid1.ToBytes(), chat1.MessageBoxedVersion_V3)
@@ -1408,7 +1436,7 @@ func TestPairwiseMACChecker(t *testing.T) {
 
 		// Including all devices works
 		msg.ClientHeader.EphemeralMetadata = ephemeralMetadata
-		_, _, err = blockingSender1.Send(ctx1, conv.Id, msg, 0, nil)
+		_, _, err = blockingSender1.Send(ctx1, conv.Id, msg, 0, nil, nil, nil)
 		require.NoError(t, err)
 		select {
 		case <-listener1.newMessageRemote:
@@ -1425,7 +1453,7 @@ func TestPairwiseMACChecker(t *testing.T) {
 		msg2.ClientHeader.TlfName = firstConv.TlfName
 		msg2.ClientHeader.SenderDevice = gregor1.DeviceID(deviceID2)
 		msg2.ClientHeader.EphemeralMetadata = ephemeralMetadata
-		_, _, err = blockingSender2.Send(ctx2, conv.Id, msg2, 0, nil)
+		_, _, err = blockingSender2.Send(ctx2, conv.Id, msg2, 0, nil, nil, nil)
 		require.NoError(t, err)
 		select {
 		case <-listener1.newMessageRemote:
@@ -1454,7 +1482,7 @@ func TestPairwiseMACChecker(t *testing.T) {
 		msg3.ClientHeader.TlfName = firstConv.TlfName
 		msg3.ClientHeader.SenderDevice = gregor1.DeviceID(deviceID1)
 		msg3.ClientHeader.EphemeralMetadata = ephemeralMetadata
-		_, _, err = blockingSender1.Send(ctx1, conv.Id, msg3, 0, nil)
+		_, _, err = blockingSender1.Send(ctx1, conv.Id, msg3, 0, nil, nil, nil)
 		require.NoError(t, err)
 
 		tc1.G.LocalDb.Nuke()
@@ -1487,7 +1515,7 @@ func TestProcessDuplicateReactionMsgs(t *testing.T) {
 		MessageBody: chat1.MessageBody{},
 	}
 	prepareRes, err := baseSender.Prepare(ctx, firstMessagePlaintext,
-		chat1.ConversationMembersType_KBFS, nil)
+		chat1.ConversationMembersType_KBFS, nil, nil)
 	require.NoError(t, err)
 	firstMessageBoxed := prepareRes.Boxed
 	res, err := ri.NewConversationRemote2(ctx, chat1.NewConversationRemote2Arg{
@@ -1508,7 +1536,7 @@ func TestProcessDuplicateReactionMsgs(t *testing.T) {
 		MessageBody: chat1.NewMessageBodyWithText(chat1.MessageText{
 			Body: "hi",
 		}),
-	}, 0, nil)
+	}, 0, nil, nil, nil)
 	require.NoError(t, err)
 	msgTextID := msgTextBoxed.GetMessageID()
 
@@ -1528,7 +1556,7 @@ func TestProcessDuplicateReactionMsgs(t *testing.T) {
 				Body:      ":+1:",
 				MessageID: msgTextID,
 			}),
-		}, 0, nil)
+		}, 0, nil, nil, nil)
 		require.NoError(t, err)
 		msgID := msgBoxed.GetMessageID()
 		t.Logf("generated msgID: %d", msgID)
@@ -1590,7 +1618,7 @@ func TestProcessDuplicateReactionMsgs(t *testing.T) {
 				Body:      ":+1:",
 				MessageID: msgTextID,
 			}),
-		}, nil, keybase1.TLFIdentifyBehavior_CHAT_CLI)
+		}, nil, nil, nil, keybase1.TLFIdentifyBehavior_CHAT_CLI)
 		obid := obr.OutboxID
 		t.Logf("generated obid: %s prev: %d", hex.EncodeToString(obid), msgID)
 		require.NoError(t, err)

@@ -12,11 +12,16 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/keybase/client/go/externals"
+	"github.com/keybase/client/go/kbfs/data"
+	"github.com/keybase/client/go/kbfs/idutil"
 	"github.com/keybase/client/go/kbfs/kbfsblock"
 	"github.com/keybase/client/go/kbfs/kbfscodec"
 	"github.com/keybase/client/go/kbfs/kbfscrypto"
 	"github.com/keybase/client/go/kbfs/kbfsmd"
+	libkeytest "github.com/keybase/client/go/kbfs/libkey/test"
+	"github.com/keybase/client/go/kbfs/test/clocktest"
 	"github.com/keybase/client/go/kbfs/tlf"
+	"github.com/keybase/client/go/kbfs/tlfhandle"
 	kbname "github.com/keybase/client/go/kbun"
 	"github.com/keybase/client/go/protocol/keybase1"
 	"github.com/pkg/errors"
@@ -32,7 +37,7 @@ type shimKMCrypto struct {
 func mockNormalizeSocialAssertion(config *ConfigMock) {
 	config.mockKbpki.EXPECT().NormalizeSocialAssertion(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, assertion string) (keybase1.SocialAssertion, error) {
-			socialAssertion, isSocialAssertion := externals.NormalizeSocialAssertionStatic(assertion)
+			socialAssertion, isSocialAssertion := externals.NormalizeSocialAssertionStatic(context.Background(), assertion)
 			if !isSocialAssertion {
 				return keybase1.SocialAssertion{}, fmt.Errorf("Invalid social assertion")
 			}
@@ -59,8 +64,8 @@ func keyManagerInit(t *testing.T, ver kbfsmd.MetadataVer) (mockCtrl *gomock.Cont
 
 	// Don't test implicit teams.
 	config.mockKbpki.EXPECT().ResolveImplicitTeam(
-		gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().
-		Return(ImplicitTeamInfo{}, errors.New("No such team"))
+		gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().Return(idutil.ImplicitTeamInfo{}, errors.New("No such team"))
 
 	mockNormalizeSocialAssertion(config)
 	return mockCtrl, config, ctx
@@ -103,7 +108,8 @@ func expectUncachedGetTLFCryptKeyAnyDevice(
 	clientHalf := kbfscrypto.MaskTLFCryptKey(serverHalf, tlfCryptKey)
 
 	// get the xor'd key out of the metadata
-	config.mockKbpki.EXPECT().GetCryptPublicKeys(gomock.Any(), uid).
+	config.mockKbpki.EXPECT().GetCryptPublicKeys(
+		gomock.Any(), uid, gomock.Any()).
 		Return([]kbfscrypto.CryptPublicKey{subkey}, nil)
 	config.mockCrypto.EXPECT().DecryptTLFCryptKeyClientHalfAny(gomock.Any(),
 		gomock.Any(), false).Return(clientHalf, 0, nil)
@@ -133,7 +139,8 @@ func expectRekey(config *ConfigMock, bh tlf.Handle, numDevices int,
 	}
 
 	subkey := kbfscrypto.MakeFakeCryptPublicKeyOrBust("crypt public key")
-	config.mockKbpki.EXPECT().GetCryptPublicKeys(gomock.Any(), gomock.Any()).
+	config.mockKbpki.EXPECT().GetCryptPublicKeys(
+		gomock.Any(), gomock.Any(), gomock.Any()).
 		Return([]kbfscrypto.CryptPublicKey{subkey}, nil).Times(numDevices)
 
 	// make keys for the one device
@@ -145,67 +152,12 @@ func expectRekey(config *ConfigMock, bh tlf.Handle, numDevices int,
 		gomock.Any()).AnyTimes()
 }
 
-type emptyKeyMetadata struct {
-	tlfID  tlf.ID
-	keyGen kbfsmd.KeyGen
-}
-
-var _ KeyMetadata = emptyKeyMetadata{}
-
-func (kmd emptyKeyMetadata) TlfID() tlf.ID {
-	return kmd.tlfID
-}
-
-func (kmd emptyKeyMetadata) TypeForKeying() tlf.KeyingType {
-	return kmd.TlfID().Type().ToKeyingType()
-}
-
-// GetTlfHandle just returns nil. This contradicts the requirements
-// for KeyMetadata, but emptyKeyMetadata shouldn't be used in contexts
-// that actually use GetTlfHandle().
-func (kmd emptyKeyMetadata) GetTlfHandle() *TlfHandle {
-	return nil
-}
-
-func (kmd emptyKeyMetadata) IsWriter(
-	_ context.Context, _ kbfsmd.TeamMembershipChecker, _ keybase1.UID,
-	_ kbfscrypto.VerifyingKey) (bool, error) {
-	return false, nil
-}
-
-func (kmd emptyKeyMetadata) LatestKeyGeneration() kbfsmd.KeyGen {
-	return kmd.keyGen
-}
-
-func (kmd emptyKeyMetadata) HasKeyForUser(user keybase1.UID) (bool, error) {
-	return false, nil
-}
-
-func (kmd emptyKeyMetadata) GetTLFCryptKeyParams(
-	keyGen kbfsmd.KeyGen, user keybase1.UID, key kbfscrypto.CryptPublicKey) (
-	kbfscrypto.TLFEphemeralPublicKey, kbfscrypto.EncryptedTLFCryptKeyClientHalf,
-	kbfscrypto.TLFCryptKeyServerHalfID, bool, error) {
-	return kbfscrypto.TLFEphemeralPublicKey{},
-		kbfscrypto.EncryptedTLFCryptKeyClientHalf{},
-		kbfscrypto.TLFCryptKeyServerHalfID{}, false, nil
-}
-
-func (kmd emptyKeyMetadata) StoresHistoricTLFCryptKeys() bool {
-	return false
-}
-
-func (kmd emptyKeyMetadata) GetHistoricTLFCryptKey(
-	codec kbfscodec.Codec, keyGen kbfsmd.KeyGen, key kbfscrypto.TLFCryptKey) (
-	kbfscrypto.TLFCryptKey, error) {
-	return kbfscrypto.TLFCryptKey{}, nil
-}
-
 func testKeyManagerPublicTLFCryptKey(t *testing.T, ver kbfsmd.MetadataVer) {
 	mockCtrl, config, ctx := keyManagerInit(t, ver)
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Public)
-	kmd := emptyKeyMetadata{id, 1}
+	kmd := libkeytest.NewEmptyKeyMetadata(id, 1)
 
 	tlfCryptKey, err := config.KeyManager().
 		GetTLFCryptKeyForEncryption(ctx, kmd)
@@ -230,7 +182,7 @@ func testKeyManagerPublicTLFCryptKey(t *testing.T, ver kbfsmd.MetadataVer) {
 	}
 
 	tlfCryptKey, err = config.KeyManager().
-		GetTLFCryptKeyForBlockDecryption(ctx, kmd, BlockPointer{})
+		GetTLFCryptKeyForBlockDecryption(ctx, kmd, data.BlockPointer{})
 	if err != nil {
 		t.Error(err)
 	}
@@ -246,7 +198,7 @@ func testKeyManagerCachedSecretKeyForEncryptionSuccess(t *testing.T, ver kbfsmd.
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	kmd := emptyKeyMetadata{id, 1}
+	kmd := libkeytest.NewEmptyKeyMetadata(id, 1)
 
 	cachedTLFCryptKey := kbfscrypto.MakeTLFCryptKey([32]byte{0x1})
 	config.KeyCache().PutTLFCryptKey(id, 1, cachedTLFCryptKey)
@@ -262,7 +214,7 @@ func testKeyManagerCachedSecretKeyForMDDecryptionSuccess(t *testing.T, ver kbfsm
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	kmd := emptyKeyMetadata{id, 1}
+	kmd := libkeytest.NewEmptyKeyMetadata(id, 1)
 
 	cachedTLFCryptKey := kbfscrypto.MakeTLFCryptKey([32]byte{0x1})
 	config.KeyCache().PutTLFCryptKey(id, 1, cachedTLFCryptKey)
@@ -278,13 +230,13 @@ func testKeyManagerCachedSecretKeyForBlockDecryptionSuccess(t *testing.T, ver kb
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	kmd := emptyKeyMetadata{id, 2}
+	kmd := libkeytest.NewEmptyKeyMetadata(id, 2)
 
 	cachedTLFCryptKey := kbfscrypto.MakeTLFCryptKey([32]byte{0x1})
 	config.KeyCache().PutTLFCryptKey(id, 1, cachedTLFCryptKey)
 
 	tlfCryptKey, err := config.KeyManager().GetTLFCryptKeyForBlockDecryption(
-		ctx, kmd, BlockPointer{KeyGen: 1})
+		ctx, kmd, data.BlockPointer{KeyGen: 1})
 	require.NoError(t, err)
 	require.Equal(t, cachedTLFCryptKey, tlfCryptKey)
 }
@@ -407,7 +359,7 @@ func testKeyManagerUncachedSecretKeyForBlockDecryptionSuccess(t *testing.T, ver 
 		storedTLFCryptKey2)
 
 	tlfCryptKey, err := config.KeyManager().GetTLFCryptKeyForBlockDecryption(
-		ctx, rmd, BlockPointer{KeyGen: 1})
+		ctx, rmd, data.BlockPointer{KeyGen: 1})
 	require.NoError(t, err)
 	require.Equal(t, storedTLFCryptKey1, tlfCryptKey)
 }
@@ -438,14 +390,15 @@ func testKeyManagerRekeyResolveAgainSuccessPublic(t *testing.T, ver kbfsmd.Metad
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Public)
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), constIDGetter{id}, "alice,bob@twitter", tlf.Public)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), tlfhandle.ConstIDGetter{ID: id}, nil,
+		"alice,bob@twitter", tlf.Public)
 	require.NoError(t, err)
 	rmd, err := makeInitialRootMetadata(config.MetadataVersion(), id, h)
 	require.NoError(t, err)
 
 	daemon := config.KeybaseService().(*KeybaseDaemonLocal)
-	daemon.addNewAssertionForTestOrBust("bob", "bob@twitter")
+	daemon.AddNewAssertionForTestOrBust("bob", "bob@twitter")
 
 	config.mockMdops.EXPECT().GetLatestHandleForTLF(gomock.Any(), gomock.Any()).
 		Return(rmd.tlfHandle.ToBareHandleOrBust(), nil)
@@ -478,16 +431,16 @@ func testKeyManagerRekeyResolveAgainSuccessPublicSelf(t *testing.T, ver kbfsmd.M
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Public)
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), constIDGetter{id},
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), tlfhandle.ConstIDGetter{ID: id}, nil,
 		"alice@twitter,bob,charlie@twitter", tlf.Public)
 	require.NoError(t, err)
 	rmd, err := makeInitialRootMetadata(config.MetadataVersion(), id, h)
 	require.NoError(t, err)
 
 	daemon := config.KeybaseService().(*KeybaseDaemonLocal)
-	daemon.addNewAssertionForTestOrBust("alice", "alice@twitter")
-	daemon.addNewAssertionForTestOrBust("charlie", "charlie@twitter")
+	daemon.AddNewAssertionForTestOrBust("alice", "alice@twitter")
+	daemon.AddNewAssertionForTestOrBust("charlie", "charlie@twitter")
 
 	config.mockMdops.EXPECT().GetLatestHandleForTLF(gomock.Any(), gomock.Any()).
 		Return(rmd.tlfHandle.ToBareHandleOrBust(), nil)
@@ -514,8 +467,8 @@ func testKeyManagerRekeyResolveAgainSuccessPrivate(t *testing.T, ver kbfsmd.Meta
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), constIDGetter{id},
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), tlfhandle.ConstIDGetter{ID: id}, nil,
 		"alice,bob@twitter,dave@twitter#charlie@twitter", tlf.Private)
 	if err != nil {
 		t.Fatal(err)
@@ -530,8 +483,8 @@ func testKeyManagerRekeyResolveAgainSuccessPrivate(t *testing.T, ver kbfsmd.Meta
 
 	// Pretend that {bob,charlie}@twitter now resolve to {bob,charlie}.
 	daemon := config.KeybaseService().(*KeybaseDaemonLocal)
-	daemon.addNewAssertionForTestOrBust("bob", "bob@twitter")
-	daemon.addNewAssertionForTestOrBust("charlie", "charlie@twitter")
+	daemon.AddNewAssertionForTestOrBust("bob", "bob@twitter")
+	daemon.AddNewAssertionForTestOrBust("charlie", "charlie@twitter")
 
 	if done, _, err := config.KeyManager().Rekey(ctx, rmd, false); !done || err != nil {
 		t.Fatalf("Got error on rekey: %t, %+v", done, err)
@@ -555,7 +508,7 @@ func testKeyManagerRekeyResolveAgainSuccessPrivate(t *testing.T, ver kbfsmd.Meta
 
 	// Now resolve using only a device addition, which won't bump the
 	// generation number.
-	daemon.addNewAssertionForTestOrBust("dave", "dave@twitter")
+	daemon.AddNewAssertionForTestOrBust("dave", "dave@twitter")
 	oldKeyGen = rmd.LatestKeyGeneration()
 
 	tlfCryptKey2 := kbfscrypto.MakeTLFCryptKey([32]byte{0x2})
@@ -563,7 +516,8 @@ func testKeyManagerRekeyResolveAgainSuccessPrivate(t *testing.T, ver kbfsmd.Meta
 
 	expectRekey(config, oldHandle.ToBareHandleOrBust(), 1, true, false, tlfCryptKey2)
 	subkey := kbfscrypto.MakeFakeCryptPublicKeyOrBust("crypt public key")
-	config.mockKbpki.EXPECT().GetCryptPublicKeys(gomock.Any(), gomock.Any()).
+	config.mockKbpki.EXPECT().GetCryptPublicKeys(
+		gomock.Any(), gomock.Any(), gomock.Any()).
 		Return([]kbfscrypto.CryptPublicKey{subkey}, nil).Times(3)
 	if done, _, err :=
 		config.KeyManager().Rekey(ctx, rmd, false); !done || err != nil {
@@ -605,7 +559,8 @@ func testKeyManagerPromoteReaderSuccess(t *testing.T, ver kbfsmd.MetadataVer) {
 	defer CheckConfigAndShutdown(ctx, t, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	h, err := ParseTlfHandle(ctx, config.KBPKI(), constIDGetter{id},
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), tlfhandle.ConstIDGetter{ID: id}, nil,
 		"alice,bob@twitter#bob", tlf.Private)
 	require.NoError(t, err)
 
@@ -627,7 +582,7 @@ func testKeyManagerPromoteReaderSuccess(t *testing.T, ver kbfsmd.MetadataVer) {
 
 	// Pretend that bob@twitter now resolves to bob.
 	daemon := config.KeybaseService().(*KeybaseDaemonLocal)
-	daemon.addNewAssertionForTestOrBust("bob", "bob@twitter")
+	daemon.AddNewAssertionForTestOrBust("bob", "bob@twitter")
 
 	// Rekey as alice.
 	done, _, err = config.KeyManager().Rekey(ctx, rmd, false)
@@ -653,7 +608,8 @@ func testKeyManagerPromoteReaderSelf(t *testing.T, ver kbfsmd.MetadataVer) {
 	defer CheckConfigAndShutdown(ctx, t, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	h, err := ParseTlfHandle(ctx, config.KBPKI(), constIDGetter{id},
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), tlfhandle.ConstIDGetter{ID: id}, nil,
 		"alice,bob@twitter#bob", tlf.Private)
 	require.NoError(t, err)
 
@@ -677,7 +633,7 @@ func testKeyManagerPromoteReaderSelf(t *testing.T, ver kbfsmd.MetadataVer) {
 
 	// Pretend that bob@twitter now resolves to bob.
 	daemon := config2.KeybaseService().(*KeybaseDaemonLocal)
-	daemon.addNewAssertionForTestOrBust("bob", "bob@twitter")
+	daemon.AddNewAssertionForTestOrBust("bob", "bob@twitter")
 
 	// Rekey as bob, which should still succeed.
 	done, _, err = config2.KeyManager().Rekey(ctx, rmd, false)
@@ -703,7 +659,8 @@ func testKeyManagerReaderRekeyShouldNotPromote(t *testing.T, ver kbfsmd.Metadata
 	defer CheckConfigAndShutdown(ctx, t, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	h, err := ParseTlfHandle(ctx, config.KBPKI(), constIDGetter{id},
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), tlfhandle.ConstIDGetter{ID: id}, nil,
 		"alice,charlie@twitter#bob,charlie", tlf.Private)
 	require.NoError(t, err)
 
@@ -727,7 +684,7 @@ func testKeyManagerReaderRekeyShouldNotPromote(t *testing.T, ver kbfsmd.Metadata
 
 	// Pretend that charlie@twitter now resolves to charlie.
 	daemon := config2.KeybaseService().(*KeybaseDaemonLocal)
-	daemon.addNewAssertionForTestOrBust("charlie", "charlie@twitter")
+	daemon.AddNewAssertionForTestOrBust("charlie", "charlie@twitter")
 
 	AddDeviceForLocalUserOrBust(t, config2, bobUID)
 
@@ -746,7 +703,8 @@ func testKeyManagerReaderRekeyResolveAgainSuccessPrivate(t *testing.T, ver kbfsm
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	h, err := ParseTlfHandle(ctx, config.KBPKI(), constIDGetter{id},
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), tlfhandle.ConstIDGetter{ID: id}, nil,
 		"alice,dave@twitter#bob@twitter,charlie@twitter", tlf.Private)
 	if err != nil {
 		t.Fatal(err)
@@ -775,15 +733,16 @@ func testKeyManagerReaderRekeyResolveAgainSuccessPrivate(t *testing.T, ver kbfsm
 
 	// Now resolve everyone, but have reader bob to do the rekey
 	daemon := config.KeybaseService().(*KeybaseDaemonLocal)
-	daemon.addNewAssertionForTestOrBust("bob", "bob@twitter")
-	daemon.addNewAssertionForTestOrBust("charlie", "charlie@twitter")
-	daemon.addNewAssertionForTestOrBust("dave", "dave@twitter")
+	daemon.AddNewAssertionForTestOrBust("bob", "bob@twitter")
+	daemon.AddNewAssertionForTestOrBust("charlie", "charlie@twitter")
+	daemon.AddNewAssertionForTestOrBust("dave", "dave@twitter")
 
-	_, bobID, err := daemon.Resolve(ctx, "bob")
+	_, bobID, err := daemon.Resolve(
+		ctx, "bob", keybase1.OfflineAvailability_NONE)
 	require.NoError(t, err)
 	bobUID, err := bobID.AsUser()
 	require.NoError(t, err)
-	daemon.setCurrentUID(bobUID)
+	daemon.SetCurrentUID(bobUID)
 
 	// Now resolve using only a device addition, which won't bump the
 	// generation number.
@@ -796,7 +755,8 @@ func testKeyManagerReaderRekeyResolveAgainSuccessPrivate(t *testing.T, ver kbfsm
 
 	expectRekey(config, h.ToBareHandleOrBust(), 1, false, false, tlfCryptKey2)
 	subkey := kbfscrypto.MakeFakeCryptPublicKeyOrBust("crypt public key")
-	config.mockKbpki.EXPECT().GetCryptPublicKeys(gomock.Any(), gomock.Any()).
+	config.mockKbpki.EXPECT().GetCryptPublicKeys(
+		gomock.Any(), gomock.Any(), gomock.Any()).
 		Return([]kbfscrypto.CryptPublicKey{subkey}, nil)
 	if done, _, err :=
 		config.KeyManager().Rekey(ctx, rmd, false); !done || err != nil {
@@ -826,9 +786,9 @@ func testKeyManagerRekeyResolveAgainNoChangeSuccessPrivate(t *testing.T, ver kbf
 	defer keyManagerShutdown(mockCtrl, config)
 
 	id := tlf.FakeID(1, tlf.Private)
-	h, err := ParseTlfHandle(
-		ctx, config.KBPKI(), constIDGetter{id}, "alice,bob,bob@twitter",
-		tlf.Private)
+	h, err := tlfhandle.ParseHandle(
+		ctx, config.KBPKI(), tlfhandle.ConstIDGetter{ID: id}, nil,
+		"alice,bob,bob@twitter", tlf.Private)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -856,7 +816,7 @@ func testKeyManagerRekeyResolveAgainNoChangeSuccessPrivate(t *testing.T, ver kbf
 
 	// Now resolve everyone, but have reader bob to do the rekey
 	daemon := config.KeybaseService().(*KeybaseDaemonLocal)
-	daemon.addNewAssertionForTestOrBust("bob", "bob@twitter")
+	daemon.AddNewAssertionForTestOrBust("bob", "bob@twitter")
 
 	// Now resolve which gets rid of the unresolved writers, but
 	// doesn't otherwise change the handle since bob is already in it.
@@ -866,7 +826,8 @@ func testKeyManagerRekeyResolveAgainNoChangeSuccessPrivate(t *testing.T, ver kbf
 		kbfscrypto.TLFEphemeralPrivateKey{}, nil)
 
 	subkey := kbfscrypto.MakeFakeCryptPublicKeyOrBust("crypt public key")
-	config.mockKbpki.EXPECT().GetCryptPublicKeys(gomock.Any(), gomock.Any()).
+	config.mockKbpki.EXPECT().GetCryptPublicKeys(
+		gomock.Any(), gomock.Any(), gomock.Any()).
 		Return([]kbfscrypto.CryptPublicKey{subkey}, nil).Times(2)
 	if done, _, err :=
 		config.KeyManager().Rekey(ctx, rmd, false); !done || err != nil {
@@ -893,8 +854,8 @@ func testKeyManagerRekeyResolveAgainNoChangeSuccessPrivate(t *testing.T, ver kbf
 func testKeyManagerRekeyAddAndRevokeDevice(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
-	clock := newTestClockNow()
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
+	clock := clocktest.NewTestClockNow()
 	config1.SetClock(clock)
 
 	config1.SetMetadataVersion(ver)
@@ -1079,6 +1040,7 @@ func testKeyManagerRekeyAddAndRevokeDevice(t *testing.T, ver kbfsmd.MetadataVer)
 	rootNode2Dev2 := GetRootNodeOrBust(ctx, t, config2Dev2, name, tlf.Private)
 
 	children, err := kbfsOps2Dev2.GetDirChildren(ctx, rootNode2Dev2)
+	require.NoError(t, err)
 	if _, ok := children["d"]; !ok {
 		t.Fatalf("Device 2 couldn't see the new dir entry")
 	}
@@ -1098,6 +1060,7 @@ func testKeyManagerRekeyAddAndRevokeDevice(t *testing.T, ver kbfsmd.MetadataVer)
 	// Should still be seeing the old children, since the updates from
 	// the latest revision were never applied.
 	children, err = kbfsOps2.GetDirChildren(ctx, rootNode2)
+	require.NoError(t, err)
 	if _, ok := children["d"]; ok {
 		t.Fatalf("Found c unexpectedly: %v", children)
 	}
@@ -1152,12 +1115,13 @@ func testKeyManagerRekeyAddAndRevokeDevice(t *testing.T, ver kbfsmd.MetadataVer)
 func testKeyManagerRekeyAddWriterAndReaderDevice(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2, u3 kbname.NormalizedUsername = "u1", "u2", "u3"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2, u3)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
 
 	config1.SetMetadataVersion(ver)
 
 	// Revoke user 3's device for now, to test the "other" rekey error.
-	_, id3, err := config1.KBPKI().Resolve(ctx, u3.String())
+	_, id3, err := config1.KBPKI().Resolve(
+		ctx, u3.String(), keybase1.OfflineAvailability_NONE)
 	if err != nil {
 		t.Fatalf("Couldn't resolve u3: %+v", err)
 	}
@@ -1259,7 +1223,7 @@ func testKeyManagerRekeyAddWriterAndReaderDevice(t *testing.T, ver kbfsmd.Metada
 func testKeyManagerSelfRekeyAcrossDevices(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
 
 	config1.SetMetadataVersion(ver)
 
@@ -1322,6 +1286,7 @@ func testKeyManagerSelfRekeyAcrossDevices(t *testing.T, ver kbfsmd.MetadataVer) 
 	t.Log("User 2 device 2 reads user 1's file")
 	kbfsOps2Dev2 := config2Dev2.KBFSOps()
 	children2, err := kbfsOps2Dev2.GetDirChildren(ctx, root2dev2)
+	require.NoError(t, err)
 	if _, ok := children2["a"]; !ok {
 		t.Fatalf("Device 2 couldn't see user 1's dir entry")
 	}
@@ -1345,6 +1310,7 @@ func testKeyManagerSelfRekeyAcrossDevices(t *testing.T, ver kbfsmd.MetadataVer) 
 
 	t.Log("User 1 should be able to read the file that user 2 device 2 created")
 	children1, err := kbfsOps1.GetDirChildren(ctx, rootNode1)
+	require.NoError(t, err)
 	if _, ok := children1["b"]; !ok {
 		t.Fatalf("Device 1 couldn't see the new dir entry")
 	}
@@ -1353,8 +1319,9 @@ func testKeyManagerSelfRekeyAcrossDevices(t *testing.T, ver kbfsmd.MetadataVer) 
 func testKeyManagerReaderRekey(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
 	session1, err := config1.KBPKI().GetCurrentSession(ctx)
+	require.NoError(t, err)
 
 	config1.SetMetadataVersion(ver)
 
@@ -1434,6 +1401,7 @@ func testKeyManagerReaderRekey(t *testing.T, ver kbfsmd.MetadataVer) {
 
 	t.Log("User 2 device 2 reads user 1's file")
 	children2, err := kbfsOps2Dev2.GetDirChildren(ctx, root2dev2)
+	require.NoError(t, err)
 	if _, ok := children2["a"]; !ok {
 		t.Fatalf("Device 2 couldn't see user 1's dir entry")
 	}
@@ -1442,8 +1410,8 @@ func testKeyManagerReaderRekey(t *testing.T, ver kbfsmd.MetadataVer) {
 func testKeyManagerReaderRekeyAndRevoke(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
-	clock := newTestClockNow()
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
+	clock := clocktest.NewTestClockNow()
 	config1.SetClock(clock)
 
 	config1.SetMetadataVersion(ver)
@@ -1536,7 +1504,7 @@ func testKeyManagerReaderRekeyAndRevoke(t *testing.T, ver kbfsmd.MetadataVer) {
 }
 
 func keyManagerTestSimulateSelfRekeyBit(
-	t *testing.T, ctx context.Context, config Config, tlfID tlf.ID) {
+	ctx context.Context, t *testing.T, config Config, tlfID tlf.ID) {
 	// Simulate the mdserver sending back this node's own rekey
 	// request.  This shouldn't increase the MD version.  Since this
 	// doesn't kick off a rekey request, we don't need to wait for the
@@ -1572,7 +1540,7 @@ func testKeyManagerRekeyBit(t *testing.T, ver kbfsmd.MetadataVer) {
 	doShutdown1 := true
 	defer func() {
 		if doShutdown1 {
-			kbfsConcurTestShutdown(t, config1, ctx, cancel)
+			kbfsConcurTestShutdown(ctx, t, config1, cancel)
 		}
 	}()
 
@@ -1646,7 +1614,7 @@ func testKeyManagerRekeyBit(t *testing.T, ver kbfsmd.MetadataVer) {
 	// Do it again, to simulate the mdserver sending back this node's
 	// own rekey request.
 	keyManagerTestSimulateSelfRekeyBit(
-		t, ctx, config2Dev2, rootNode1.GetFolderBranch().Tlf)
+		ctx, t, config2Dev2, rootNode1.GetFolderBranch().Tlf)
 
 	// user 1 syncs from server
 	err = kbfsOps1.SyncFromServer(ctx,
@@ -1752,7 +1720,7 @@ func testKeyManagerRekeyBit(t *testing.T, ver kbfsmd.MetadataVer) {
 
 	// Explicitly run the checks with config1 before the deferred shutdowns begin.
 	// This way the shared mdserver hasn't been shutdown.
-	kbfsConcurTestShutdown(t, config1, ctx, cancel)
+	kbfsConcurTestShutdown(ctx, t, config1, cancel)
 	doShutdown1 = false
 }
 
@@ -1762,8 +1730,8 @@ func testKeyManagerRekeyBit(t *testing.T, ver kbfsmd.MetadataVer) {
 func testKeyManagerRekeyAddAndRevokeDeviceWithConflict(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
-	clock := newTestClockNow()
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
+	clock := clocktest.NewTestClockNow()
 	config1.SetClock(clock)
 
 	config1.SetMetadataVersion(ver)
@@ -1889,6 +1857,7 @@ func testKeyManagerRekeyAddAndRevokeDeviceWithConflict(t *testing.T, ver kbfsmd.
 	rootNode1 = GetRootNodeOrBust(ctx, t, config1, name, tlf.Private)
 
 	children, err := kbfsOps1.GetDirChildren(ctx, rootNode1)
+	require.NoError(t, err)
 	if _, ok := children["b"]; !ok {
 		t.Fatalf("Device 1 couldn't see the new dir entry")
 	}
@@ -1920,7 +1889,7 @@ func (clta *cryptoLocalTrapAny) DecryptTLFCryptKeyClientHalfAny(
 func testKeyManagerRekeyAddDeviceWithPrompt(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
 
 	config1.SetMetadataVersion(ver)
 
@@ -1977,7 +1946,7 @@ func testKeyManagerRekeyAddDeviceWithPrompt(t *testing.T, ver kbfsmd.MetadataVer
 	// Do it again, to simulate the mdserver sending back this node's
 	// own rekey request.
 	keyManagerTestSimulateSelfRekeyBit(
-		t, ctx, config2Dev2, rootNode1.GetFolderBranch().Tlf)
+		ctx, t, config2Dev2, rootNode1.GetFolderBranch().Tlf)
 
 	t.Log("Switching crypto")
 
@@ -2005,6 +1974,7 @@ func testKeyManagerRekeyAddDeviceWithPrompt(t *testing.T, ver kbfsmd.MetadataVer
 
 	kbfsOps2 := config2Dev2.KBFSOps()
 	children, err := kbfsOps2.GetDirChildren(ctx, rootNode2Dev2)
+	require.NoError(t, err)
 	if _, ok := children["a"]; !ok {
 		t.Fatalf("Device 2 couldn't see the dir entry after rekey")
 	}
@@ -2025,6 +1995,7 @@ func testKeyManagerRekeyAddDeviceWithPrompt(t *testing.T, ver kbfsmd.MetadataVer
 		t.Fatalf("Couldn't sync from server: %+v", err)
 	}
 	children, err = kbfsOps1.GetDirChildren(ctx, rootNode1)
+	require.NoError(t, err)
 	if _, ok := children["b"]; !ok {
 		t.Fatalf("Device 2 couldn't see the dir entry after rekey")
 	}
@@ -2033,8 +2004,8 @@ func testKeyManagerRekeyAddDeviceWithPrompt(t *testing.T, ver kbfsmd.MetadataVer
 func testKeyManagerRekeyAddDeviceWithPromptAfterRestart(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, uid1, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
-	clock := newTestClockNow()
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
+	clock := clocktest.NewTestClockNow()
 	config1.SetClock(clock)
 
 	config1.SetMetadataVersion(ver)
@@ -2102,7 +2073,7 @@ func testKeyManagerRekeyAddDeviceWithPromptAfterRestart(t *testing.T, ver kbfsmd
 	// Do it again, to simulate the mdserver sending back this node's
 	// own rekey request.
 	keyManagerTestSimulateSelfRekeyBit(
-		t, ctx, config2Dev2, rootNode1.GetFolderBranch().Tlf)
+		ctx, t, config2Dev2, rootNode1.GetFolderBranch().Tlf)
 
 	// Simulate a restart after the rekey bit was set
 	ops := getOps(config2Dev2, rootNode1.GetFolderBranch().Tlf)
@@ -2143,6 +2114,7 @@ func testKeyManagerRekeyAddDeviceWithPromptAfterRestart(t *testing.T, ver kbfsmd
 
 	kbfsOps2 := config2Dev2.KBFSOps()
 	children, err := kbfsOps2.GetDirChildren(ctx, rootNode2Dev2)
+	require.NoError(t, err)
 	if _, ok := children["a"]; !ok {
 		t.Fatalf("Device 2 couldn't see the dir entry after rekey")
 	}
@@ -2160,7 +2132,7 @@ func testKeyManagerRekeyAddDeviceWithPromptAfterRestart(t *testing.T, ver kbfsmd
 func testKeyManagerRekeyAddDeviceWithPromptViaFolderAccess(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
 
 	config1.SetMetadataVersion(ver)
 
@@ -2272,8 +2244,8 @@ func testKeyManagerRekeyAddDeviceWithPromptViaFolderAccess(t *testing.T, ver kbf
 func testKeyManagerRekeyMinimal(t *testing.T, ver kbfsmd.MetadataVer) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
-	clock := newTestClockNow()
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
+	clock := clocktest.NewTestClockNow()
 	config1.SetClock(clock)
 
 	config1.SetMetadataVersion(ver)
@@ -2339,6 +2311,7 @@ func testKeyManagerRekeyMinimal(t *testing.T, ver kbfsmd.MetadataVer) {
 	}
 
 	children, err := kbfsOps2Dev2.GetDirChildren(ctx, root2Dev2)
+	require.NoError(t, err)
 	if _, ok := children["a"]; !ok {
 		t.Fatalf("Device 2 couldn't see the dir entry")
 	}
@@ -2367,7 +2340,7 @@ func (c *protectedContext) maybeReplaceContext(newCtx context.Context) {
 func TestKeyManagerGetTeamTLFCryptKey(t *testing.T) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, uid1, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
 
 	config2 := ConfigAsUser(config1, u2)
 	defer CheckConfigAndShutdown(ctx, t, config2)
@@ -2389,19 +2362,17 @@ func TestKeyManagerGetTeamTLFCryptKey(t *testing.T) {
 	AddTeamWriterForTestOrBust(t, config2, tid, uid2)
 
 	tlfID := tlf.FakeID(1, tlf.SingleTeam)
-	h := &TlfHandle{
-		tlfType: tlf.SingleTeam,
-		resolvedWriters: map[keybase1.UserOrTeamID]kbname.NormalizedUsername{
+	h := tlfhandle.NewHandle(
+		tlf.SingleTeam,
+		map[keybase1.UserOrTeamID]kbname.NormalizedUsername{
 			tid.AsUserOrTeam(): name,
-		},
-		name: tlf.CanonicalName(name),
-	}
+		}, nil, nil, tlf.CanonicalName(name), tlf.NullID)
 
 	rmd, err := makeInitialRootMetadata(kbfsmd.SegregatedKeyBundlesVer, tlfID, h)
 	require.NoError(t, err)
 	rmd.bareMd.SetLatestKeyGenerationForTeamTLF(teamInfos[0].LatestKeyGen)
 	// Make sure the MD looks readable.
-	rmd.data.Dir.BlockPointer = BlockPointer{ID: kbfsblock.FakeID(1)}
+	rmd.data.Dir.BlockPointer = data.BlockPointer{ID: kbfsblock.FakeID(1)}
 
 	// Both users should see the same key.
 	key1, err := config1.KeyManager().GetTLFCryptKeyForEncryption(ctx, rmd)
@@ -2416,7 +2387,7 @@ func TestKeyManagerGetTeamTLFCryptKey(t *testing.T) {
 	rmd2, err := rmd.MakeSuccessor(context.Background(),
 		config1.MetadataVersion(), config1.Codec(),
 		config1.KeyManager(), config1.KBPKI(), config1.KBPKI(),
-		kbfsmd.FakeID(2), true)
+		config1, kbfsmd.FakeID(2), true)
 	require.NoError(t, err)
 
 	// Both users should see the same new key.
@@ -2431,7 +2402,7 @@ func TestKeyManagerGetTeamTLFCryptKey(t *testing.T) {
 func testKeyManagerGetImplicitTeamTLFCryptKey(t *testing.T, ty tlf.Type) {
 	var u1, u2 kbname.NormalizedUsername = "u1", "u2"
 	config1, _, ctx, cancel := kbfsOpsConcurInit(t, u1, u2)
-	defer kbfsConcurTestShutdown(t, config1, ctx, cancel)
+	defer kbfsConcurTestShutdown(ctx, t, config1, cancel)
 
 	config2 := ConfigAsUser(config1, u2)
 	defer CheckConfigAndShutdown(ctx, t, config2)
@@ -2446,23 +2417,21 @@ func testKeyManagerGetImplicitTeamTLFCryptKey(t *testing.T, ty tlf.Type) {
 	tlfID := tlf.FakeID(1, ty)
 
 	asUserName := kbname.NormalizedUsername(iname)
-	h := &TlfHandle{
-		tlfType: ty,
-		resolvedWriters: map[keybase1.UserOrTeamID]kbname.NormalizedUsername{
+	h := tlfhandle.NewHandle(
+		ty, map[keybase1.UserOrTeamID]kbname.NormalizedUsername{
 			teamID.AsUserOrTeam(): asUserName,
-		},
-		name:  tlf.CanonicalName(asUserName),
-		tlfID: tlfID,
-	}
+		}, nil, nil, tlf.CanonicalName(asUserName), tlfID)
 
 	_, latestKeyGen, err := config1.KBPKI().GetTeamTLFCryptKeys(
-		ctx, teamID, kbfsmd.UnspecifiedKeyGen)
+		ctx, teamID, kbfsmd.UnspecifiedKeyGen,
+		keybase1.OfflineAvailability_NONE)
+	require.NoError(t, err)
 
 	rmd, err := makeInitialRootMetadata(config1.MetadataVersion(), tlfID, h)
 	require.NoError(t, err)
 	rmd.bareMd.SetLatestKeyGenerationForTeamTLF(latestKeyGen)
 	// Make sure the MD looks readable.
-	rmd.data.Dir.BlockPointer = BlockPointer{ID: kbfsblock.FakeID(1)}
+	rmd.data.Dir.BlockPointer = data.BlockPointer{ID: kbfsblock.FakeID(1)}
 
 	// Both users should see the same key.
 	key1, err := config1.KeyManager().GetTLFCryptKeyForEncryption(ctx, rmd)
@@ -2477,7 +2446,7 @@ func testKeyManagerGetImplicitTeamTLFCryptKey(t *testing.T, ty tlf.Type) {
 	rmd2, err := rmd.MakeSuccessor(context.Background(),
 		config1.MetadataVersion(), config1.Codec(),
 		config1.KeyManager(), config1.KBPKI(), config1.KBPKI(),
-		kbfsmd.FakeID(2), true)
+		config1, kbfsmd.FakeID(2), true)
 	require.NoError(t, err)
 
 	// Both users should see the same new key.

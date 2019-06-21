@@ -4,6 +4,38 @@ import groovy.json.JsonSlurperClassic
 
 helpers = fileLoader.fromGit('helpers', 'https://github.com/keybase/jenkins-helpers.git', 'master', null, 'linux')
 
+def withKbweb(closure) {
+  try {
+    retry(5) {
+      sh "docker-compose up -d mysql.local"
+    }
+    // Give MySQL a few seconds to start up.
+    sleep(10)
+    sh "docker-compose up -d kbweb.local"
+
+    closure()
+  } catch (ex) {
+    def kbwebName = helpers.containerName('docker-compose', 'kbweb')
+    println "kbweb is running in ${kbwebName}"
+
+    println "Dockers:"
+    sh "docker ps -a"
+    sh "docker-compose stop"
+    helpers.logContainer('docker-compose', 'mysql')
+    helpers.logContainer('docker-compose', 'gregor')
+    logKbwebServices(kbwebName)
+    throw ex
+  } finally {
+    sh "docker-compose down"
+  }
+}
+
+def logKbwebServices(container) {
+  sh "docker cp ${container}:/keybase/logs ./kbweb-logs"
+  sh "tar -C kbweb-logs -czvf kbweb-logs.tar.gz ."
+  archive("kbweb-logs.tar.gz")
+}
+
 helpers.rootLinuxNode(env, {
   helpers.slackOnError("client", env, currentBuild)
 }, {}) {
@@ -85,9 +117,21 @@ helpers.rootLinuxNode(env, {
     def hasJSChanges = helpers.hasChanges('shared', env)
     println "Has go changes: " + hasGoChanges
     println "Has JS changes: " + hasJSChanges
+    def dependencyFiles = [:]
+
+    if (hasGoChanges && env.CHANGE_TARGET) {
+      dir("go") {
+        sh "make gen-deps"
+        dependencyFiles = [
+          linux: sh(returnStdout: true, script: "cat .go_package_deps_linux"),
+          darwin: sh(returnStdout: true, script: "cat .go_package_deps_darwin"),
+          windows: sh(returnStdout: true, script: "cat .go_package_deps_windows"),
+        ]
+      }
+    }
 
     stage("Test") {
-      helpers.withKbweb() {
+      withKbweb() {
         parallel (
           test_linux_deps: {
             if (hasGoChanges) {
@@ -106,27 +150,18 @@ helpers.rootLinuxNode(env, {
               test_linux: {
                 def packagesToTest = [:]
                 if (hasGoChanges) {
-                  packagesToTest = getPackagesToTest()
+                  packagesToTest = getPackagesToTest(dependencyFiles)
                 } else {
                   // Ensure that the change target branch has been fetched,
                   // since Jenkins only does a sparse checkout by default.
                   fetchChangeTarget()
                 }
                 parallel (
-                  check_deps: {
-                    // Checking deps can happen in parallel
-                    // since we won't be rebuilding anything in Go.
-                    if (hasGoChanges) {
-                      dir('go') {
-                        sh "make gen-deps"
-                        checkDiffs(['./'], 'Please run \\"make gen-deps\\" inside the client/go directory.')
-                      }
-                    }
-                  },
                   test_linux_go: { withEnv([
                     "PATH=${env.PATH}:${env.GOPATH}/bin",
                     "KEYBASE_SERVER_URI=http://${kbwebNodePrivateIP}:3000",
                     "KEYBASE_PUSH_SERVER_URI=fmprpc://${kbwebNodePrivateIP}:9911",
+                    "GPG=/usr/bin/gpg.distrib",
                   ]) {
                     if (hasGoChanges) {
                       dir("go/keybase") {
@@ -219,12 +254,9 @@ helpers.rootLinuxNode(env, {
                       // other than Go tests on Windows,
                       // add a `hasGoChanges` check here.
                       dir("go/keybase") {
-                        bat "go build --tags=production"
+                        bat "go build -ldflags \"-s -w\" --tags=production"
                       }
-                      dir("go/keybase") {
-                        bat "go build"
-                      }
-                      testGo("test_windows_go_", getPackagesToTest())
+                      testGo("test_windows_go_", getPackagesToTest(dependencyFiles))
                     }
                   )
                 }}
@@ -269,9 +301,9 @@ helpers.rootLinuxNode(env, {
                   test_macos_go: {
                     if (hasGoChanges) {
                       dir("go/keybase") {
-                        sh "go build --tags=production"
+                        sh "go build -ldflags \"-s -w\" --tags=production"
                       }
-                      testGo("test_macos_go_", getPackagesToTest())
+                      testGo("test_macos_go_", getPackagesToTest(dependencyFiles))
                     }
                   }
                 )
@@ -318,7 +350,7 @@ def fetchChangeTarget() {
   }
 }
 
-def getPackagesToTest() {
+def getPackagesToTest(dependencyFiles) {
   def packagesToTest = [:]
   dir('go') {
     if (env.CHANGE_TARGET) {
@@ -334,8 +366,7 @@ def getPackagesToTest() {
 
         // Load list of dependencies and mark all dependent packages to test.
         def goos = sh(returnStdout: true, script: "go env GOOS").trim()
-        def dependencyFile = sh(returnStdout: true, script: "cat .go_package_deps_${goos}")
-        def dependencyMap = new JsonSlurperClassic().parseText(dependencyFile)
+        def dependencyMap = new JsonSlurperClassic().parseText(dependencyFiles[goos])
         diffPackageList.each { pkg ->
           // pkg changed; we need to load it from dependencyMap to see
           // which tests should be run.
@@ -380,6 +411,37 @@ def testGo(prefix, packagesToTest) {
         sh 'make -s lint'
       }
     }
+
+    if (isUnix()) {
+      // Windows `gofmt` pukes on CRLF, so only run on *nix.
+      println "Running mockgen"
+      retry(5) {
+        sh 'go get -u github.com/golang/mock/mockgen'
+      }
+      dir('kbfs/data') {
+        retry(5) {
+          timeout(activity: true, time: 90, unit: 'SECONDS') {
+            sh '''
+              set -e -x
+              ./gen_mocks.sh
+              git diff --exit-code
+            '''
+          }
+        }
+      }
+      dir('kbfs/libkbfs') {
+        retry(5) {
+          timeout(activity: true, time: 90, unit: 'SECONDS') {
+            sh '''
+              set -e -x
+              ./gen_mocks.sh
+              git diff --exit-code
+            '''
+          }
+        }
+      }
+    }
+
     // Make sure we don't accidentally pull in the testing package.
     sh '! go list -f \'{{ join .Deps "\\n" }}\' github.com/keybase/client/go/keybase | grep testing'
 
@@ -397,14 +459,36 @@ def testGo(prefix, packagesToTest) {
           timeout: '15m',
         ],
         'github.com/keybase/client/go/kbfs/libfuse': [
-          flags: '',
           timeout: '3m',
+        ],
+        'github.com/keybase/client/go/libkb': [
+          timeout: '5m',
+        ],
+        'github.com/keybase/client/go/install': [
+          timeout: '30s',
+        ],
+        'github.com/keybase/client/go/launchd': [
+          timeout: '30s',
         ],
       ],
       test_linux_go_: [
         '*': [],
+        'github.com/keybase/client/go/kbfs/test': [
+          name: 'kbfs_test_fuse',
+          flags: '-tags fuse',
+          timeout: '15m',
+        ],
+        'github.com/keybase/client/go/kbfs/data': [
+          flags: '-race',
+          timeout: '30s',
+        ],
         'github.com/keybase/client/go/kbfs/libfuse': [
-          disable: true,
+          flags: '',
+          timeout: '3m',
+        ],
+        'github.com/keybase/client/go/kbfs/idutil': [
+          flags: '-race',
+          timeout: '30s',
         ],
         'github.com/keybase/client/go/kbfs/kbfsblock': [
           flags: '-race',
@@ -442,6 +526,10 @@ def testGo(prefix, packagesToTest) {
           flags: '-race',
           timeout: '30s',
         ],
+        'github.com/keybase/client/go/kbfs/libcontext': [
+          flags: '-race',
+          timeout: '10m',
+        ],
         'github.com/keybase/client/go/kbfs/libfs': [
           flags: '-race',
           timeout: '10m',
@@ -453,6 +541,10 @@ def testGo(prefix, packagesToTest) {
         'github.com/keybase/client/go/kbfs/libhttpserver': [
           flags: '-race',
           timeout: '30s',
+        ],
+        'github.com/keybase/client/go/kbfs/libkey': [
+          flags: '-race',
+          timeout: '5m',
         ],
         'github.com/keybase/client/go/kbfs/libkbfs': [
           flags: '-race',
@@ -479,14 +571,28 @@ def testGo(prefix, packagesToTest) {
           flags: '-race',
           timeout: '30s',
         ],
+        'github.com/keybase/client/go/kbfs/tlfhandle': [
+          flags: '-race',
+          timeout: '30s',
+        ],
       ],
       test_windows_go_: [
         '*': [],
         'github.com/keybase/client/go/systests': [
           disable: true,
         ],
+        'github.com/keybase/client/go/chat': [
+          disable: true,
+        ],
       ],
     ]
+    def getOverallTimeout = { testSpec ->
+      def timeoutMatches = (testSpec.timeout =~ /(\d+)([ms])/)
+      return [
+        time: 1 + (timeoutMatches[0][1] as Integer),
+        unit: timeoutMatches[0][2] == 's' ? 'SECONDS' : 'MINUTES',
+      ]
+    }
     def defaultPackageTestSpec = { pkg ->
       def dirPath = pkg.replaceAll('github.com/keybase/client/go/', '')
       def testName = dirPath.replaceAll('/', '_')
@@ -520,7 +626,7 @@ def testGo(prefix, packagesToTest) {
       }
 
       println "Running go vet for ${pkg}"
-      sh "go vet ${pkg}"
+      sh "go vet ${pkg} || (ERR=\$? && echo \"go vet failed with error code \$ERR\" && exit \$ERR)"
 
       if (isUnix()) {
         // Windows `gofmt` pukes on CRLF, so only run on *nix.
@@ -537,8 +643,11 @@ def testGo(prefix, packagesToTest) {
         if (fileExists(testBinary)) {
           def test = {
             dir(testSpec.dirPath) {
-              println "Running tests for ${testSpec.dirPath}"
-              sh "./${testBinary} -test.timeout ${testSpec.timeout}"
+              def t = getOverallTimeout(testSpec)
+              timeout(activity: true, time: t.time, unit: t.unit) {
+                println "Running tests for ${testSpec.dirPath}"
+                sh "./${testBinary} -test.timeout ${testSpec.timeout}"
+              }
             }
           }
           if (testSpec.name in specialTestFilter) {

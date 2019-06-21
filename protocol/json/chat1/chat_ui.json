@@ -66,6 +66,10 @@
         },
         {
           "type": "string",
+          "name": "headlineDecorated"
+        },
+        {
+          "type": "string",
           "name": "snippet"
         },
         {
@@ -142,6 +146,10 @@
         {
           "type": "ConversationVers",
           "name": "version"
+        },
+        {
+          "type": "LocalConversationVers",
+          "name": "localVersion"
         },
         {
           "type": [
@@ -268,6 +276,10 @@
           "name": "headline"
         },
         {
+          "type": "string",
+          "name": "headlineDecorated"
+        },
+        {
           "type": "keybase1.TLFVisibility",
           "name": "visibility"
         },
@@ -330,6 +342,10 @@
         {
           "type": "ConversationVers",
           "name": "version"
+        },
+        {
+          "type": "LocalConversationVers",
+          "name": "localVersion"
         },
         {
           "type": "MessageID",
@@ -642,6 +658,10 @@
         },
         {
           "type": "string",
+          "name": "bodySummary"
+        },
+        {
+          "type": "string",
           "name": "senderUsername"
         },
         {
@@ -747,6 +767,28 @@
         {
           "type": "boolean",
           "name": "isCollapsed"
+        },
+        {
+          "type": [
+            null,
+            "string"
+          ],
+          "name": "flipGameID"
+        },
+        {
+          "type": "boolean",
+          "name": "isDeleteable"
+        },
+        {
+          "type": "boolean",
+          "name": "isEditable"
+        },
+        {
+          "type": [
+            null,
+            "UIMessage"
+          ],
+          "name": "replyTo"
         }
       ]
     },
@@ -788,6 +830,20 @@
         {
           "type": "boolean",
           "name": "isEphemeral"
+        },
+        {
+          "type": [
+            null,
+            "string"
+          ],
+          "name": "flipGameID"
+        },
+        {
+          "type": [
+            null,
+            "UIMessage"
+          ],
+          "name": "replyTo"
         },
         {
           "type": "string",
@@ -875,12 +931,119 @@
       ]
     },
     {
+      "type": "record",
+      "name": "UITeamMention",
+      "fields": [
+        {
+          "type": "boolean",
+          "name": "inTeam"
+        },
+        {
+          "type": "boolean",
+          "name": "open"
+        },
+        {
+          "type": [
+            null,
+            "string"
+          ],
+          "name": "description"
+        },
+        {
+          "type": [
+            null,
+            "int"
+          ],
+          "name": "numMembers"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "name": "publicAdmins"
+        },
+        {
+          "type": [
+            null,
+            "string"
+          ],
+          "name": "convID"
+        }
+      ]
+    },
+    {
       "type": "enum",
       "name": "UITextDecorationTyp",
       "symbols": [
         "PAYMENT_0",
         "ATMENTION_1",
-        "CHANNELNAMEMENTION_2"
+        "CHANNELNAMEMENTION_2",
+        "MAYBEMENTION_3",
+        "LINK_4",
+        "MAILTO_5"
+      ]
+    },
+    {
+      "type": "enum",
+      "name": "UIMaybeMentionStatus",
+      "symbols": [
+        "UNKNOWN_0",
+        "USER_1",
+        "TEAM_2",
+        "NOTHING_3"
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UILinkDecoration",
+      "fields": [
+        {
+          "type": "string",
+          "name": "display"
+        },
+        {
+          "type": "string",
+          "name": "url"
+        }
+      ]
+    },
+    {
+      "type": "variant",
+      "name": "UIMaybeMentionInfo",
+      "switch": {
+        "type": "UIMaybeMentionStatus",
+        "name": "status"
+      },
+      "cases": [
+        {
+          "label": {
+            "name": "UNKNOWN",
+            "def": false
+          },
+          "body": null
+        },
+        {
+          "label": {
+            "name": "USER",
+            "def": false
+          },
+          "body": null
+        },
+        {
+          "label": {
+            "name": "TEAM",
+            "def": false
+          },
+          "body": "UITeamMention"
+        },
+        {
+          "label": {
+            "name": "NOTHING",
+            "def": false
+          },
+          "body": null
+        }
       ]
     },
     {
@@ -911,6 +1074,66 @@
             "def": false
           },
           "body": "UIChannelNameMention"
+        },
+        {
+          "label": {
+            "name": "MAYBEMENTION",
+            "def": false
+          },
+          "body": "MaybeMention"
+        },
+        {
+          "label": {
+            "name": "LINK",
+            "def": false
+          },
+          "body": "UILinkDecoration"
+        },
+        {
+          "label": {
+            "name": "MAILTO",
+            "def": false
+          },
+          "body": "UILinkDecoration"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UIChatSearchConvHit",
+      "fields": [
+        {
+          "type": "string",
+          "name": "convID"
+        },
+        {
+          "type": "TeamType",
+          "name": "teamType"
+        },
+        {
+          "type": "string",
+          "name": "name"
+        },
+        {
+          "type": "gregor1.Time",
+          "name": "mtime"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UIChatSearchConvHits",
+      "fields": [
+        {
+          "type": {
+            "type": "array",
+            "items": "UIChatSearchConvHit"
+          },
+          "name": "hits"
+        },
+        {
+          "type": "boolean",
+          "name": "unreadMatches"
         }
       ]
     },
@@ -964,6 +1187,349 @@
             "items": "UIChatPayment"
           },
           "name": "payments"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "GiphySearchResult",
+      "fields": [
+        {
+          "type": "string",
+          "name": "targetUrl"
+        },
+        {
+          "type": "string",
+          "name": "previewUrl"
+        },
+        {
+          "type": "int",
+          "name": "previewWidth"
+        },
+        {
+          "type": "int",
+          "name": "previewHeight"
+        },
+        {
+          "type": "boolean",
+          "name": "previewIsVideo"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "GiphySearchResults",
+      "fields": [
+        {
+          "type": {
+            "type": "array",
+            "items": "GiphySearchResult"
+          },
+          "name": "results"
+        },
+        {
+          "type": "string",
+          "name": "galleryUrl"
+        }
+      ]
+    },
+    {
+      "type": "enum",
+      "name": "UICoinFlipPhase",
+      "symbols": [
+        "COMMITMENT_0",
+        "REVEALS_1",
+        "COMPLETE_2",
+        "ERROR_3"
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UICoinFlipErrorParticipant",
+      "fields": [
+        {
+          "type": "string",
+          "name": "user"
+        },
+        {
+          "type": "string",
+          "name": "device"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UICoinFlipAbsenteeError",
+      "fields": [
+        {
+          "type": {
+            "type": "array",
+            "items": "UICoinFlipErrorParticipant"
+          },
+          "name": "absentees"
+        }
+      ]
+    },
+    {
+      "type": "enum",
+      "name": "UICoinFlipErrorTyp",
+      "symbols": [
+        "GENERIC_0",
+        "ABSENTEE_1",
+        "TIMEOUT_2",
+        "ABORTED_3",
+        "DUPREG_4",
+        "DUPCOMMITCOMPLETE_5",
+        "DUPREVEAL_6",
+        "COMMITMISMATCH_7"
+      ]
+    },
+    {
+      "type": "variant",
+      "name": "UICoinFlipError",
+      "switch": {
+        "type": "UICoinFlipErrorTyp",
+        "name": "typ"
+      },
+      "cases": [
+        {
+          "label": {
+            "name": "GENERIC",
+            "def": false
+          },
+          "body": "string"
+        },
+        {
+          "label": {
+            "name": "ABSENTEE",
+            "def": false
+          },
+          "body": "UICoinFlipAbsenteeError"
+        },
+        {
+          "label": {
+            "name": "TIMEOUT",
+            "def": false
+          },
+          "body": null
+        },
+        {
+          "label": {
+            "name": "ABORTED",
+            "def": false
+          },
+          "body": null
+        },
+        {
+          "label": {
+            "name": "DUPREG",
+            "def": false
+          },
+          "body": "UICoinFlipErrorParticipant"
+        },
+        {
+          "label": {
+            "name": "DUPCOMMITCOMPLETE",
+            "def": false
+          },
+          "body": "UICoinFlipErrorParticipant"
+        },
+        {
+          "label": {
+            "name": "DUPREVEAL",
+            "def": false
+          },
+          "body": "UICoinFlipErrorParticipant"
+        },
+        {
+          "label": {
+            "name": "COMMITMISMATCH",
+            "def": false
+          },
+          "body": "UICoinFlipErrorParticipant"
+        }
+      ]
+    },
+    {
+      "type": "enum",
+      "name": "UICoinFlipResultTyp",
+      "symbols": [
+        "NUMBER_0",
+        "SHUFFLE_1",
+        "DECK_2",
+        "HANDS_3",
+        "COIN_4"
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UICoinFlipHand",
+      "fields": [
+        {
+          "type": "string",
+          "name": "target"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "int"
+          },
+          "name": "hand"
+        }
+      ]
+    },
+    {
+      "type": "variant",
+      "name": "UICoinFlipResult",
+      "switch": {
+        "type": "UICoinFlipResultTyp",
+        "name": "typ"
+      },
+      "cases": [
+        {
+          "label": {
+            "name": "NUMBER",
+            "def": false
+          },
+          "body": "string"
+        },
+        {
+          "label": {
+            "name": "SHUFFLE",
+            "def": false
+          },
+          "body": {
+            "type": "array",
+            "items": "string"
+          }
+        },
+        {
+          "label": {
+            "name": "DECK",
+            "def": false
+          },
+          "body": {
+            "type": "array",
+            "items": "int"
+          }
+        },
+        {
+          "label": {
+            "name": "HANDS",
+            "def": false
+          },
+          "body": {
+            "type": "array",
+            "items": "UICoinFlipHand"
+          }
+        },
+        {
+          "label": {
+            "name": "COIN",
+            "def": false
+          },
+          "body": "bool"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UICoinFlipParticipant",
+      "fields": [
+        {
+          "type": "string",
+          "name": "uid"
+        },
+        {
+          "type": "string",
+          "name": "deviceID"
+        },
+        {
+          "type": "string",
+          "name": "username"
+        },
+        {
+          "type": "string",
+          "name": "deviceName"
+        },
+        {
+          "type": "string",
+          "name": "commitment"
+        },
+        {
+          "type": [
+            null,
+            "string"
+          ],
+          "name": "reveal"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UICoinFlipStatus",
+      "fields": [
+        {
+          "type": "string",
+          "name": "gameID"
+        },
+        {
+          "type": "UICoinFlipPhase",
+          "name": "phase"
+        },
+        {
+          "type": "string",
+          "name": "progressText"
+        },
+        {
+          "type": "string",
+          "name": "resultText"
+        },
+        {
+          "type": "string",
+          "name": "commitmentVisualization"
+        },
+        {
+          "type": "string",
+          "name": "revealVisualization"
+        },
+        {
+          "type": {
+            "type": "array",
+            "items": "UICoinFlipParticipant"
+          },
+          "name": "participants"
+        },
+        {
+          "type": [
+            null,
+            "UICoinFlipError"
+          ],
+          "name": "errorInfo"
+        },
+        {
+          "type": [
+            null,
+            "UICoinFlipResult"
+          ],
+          "name": "resultInfo"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "UICommandMarkdown",
+      "fields": [
+        {
+          "type": "string",
+          "name": "body"
+        },
+        {
+          "type": [
+            null,
+            "string"
+          ],
+          "name": "title"
         }
       ]
     }
@@ -1105,6 +1671,15 @@
       ],
       "response": null
     },
+    "chatSearchInboxStart": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        }
+      ],
+      "response": null
+    },
     "chatSearchInboxHit": {
       "request": [
         {
@@ -1140,6 +1715,19 @@
         {
           "name": "status",
           "type": "ChatSearchIndexStatus"
+        }
+      ],
+      "response": null
+    },
+    "chatSearchConvHits": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        },
+        {
+          "name": "hits",
+          "type": "UIChatSearchConvHits"
         }
       ],
       "response": null
@@ -1186,8 +1774,8 @@
           "type": "int"
         },
         {
-          "name": "message",
-          "type": "string"
+          "name": "error",
+          "type": "keybase1.Status"
         }
       ],
       "response": "boolean"
@@ -1205,6 +1793,44 @@
       ],
       "response": null
     },
+    "chatGiphySearchResults": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        },
+        {
+          "name": "convID",
+          "type": "string"
+        },
+        {
+          "name": "results",
+          "type": "GiphySearchResults"
+        }
+      ],
+      "response": null
+    },
+    "chatGiphyToggleResultWindow": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        },
+        {
+          "name": "convID",
+          "type": "string"
+        },
+        {
+          "name": "show",
+          "type": "boolean"
+        },
+        {
+          "name": "clearInput",
+          "type": "boolean"
+        }
+      ],
+      "response": null
+    },
     "chatShowManageChannels": {
       "request": [
         {
@@ -1217,6 +1843,85 @@
         }
       ],
       "response": null
+    },
+    "chatCoinFlipStatus": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        },
+        {
+          "name": "statuses",
+          "type": {
+            "type": "array",
+            "items": "UICoinFlipStatus"
+          }
+        }
+      ],
+      "response": null
+    },
+    "chatCommandMarkdown": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        },
+        {
+          "name": "convID",
+          "type": "string"
+        },
+        {
+          "name": "md",
+          "type": [
+            null,
+            "UICommandMarkdown"
+          ]
+        }
+      ],
+      "response": null
+    },
+    "chatMaybeMentionUpdate": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        },
+        {
+          "name": "teamName",
+          "type": "string"
+        },
+        {
+          "name": "channel",
+          "type": "string"
+        },
+        {
+          "name": "info",
+          "type": "UIMaybeMentionInfo"
+        }
+      ],
+      "response": null
+    },
+    "chatLoadGalleryHit": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        },
+        {
+          "name": "message",
+          "type": "UIMessage"
+        }
+      ],
+      "response": null
+    },
+    "chatGetCoordinate": {
+      "request": [
+        {
+          "name": "sessionID",
+          "type": "int"
+        }
+      ],
+      "response": "Coordinate"
     }
   },
   "namespace": "chat.1"
