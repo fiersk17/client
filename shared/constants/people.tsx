@@ -151,7 +151,7 @@ export const reduceRPCItemToPeopleItem = (
   const badged = item.badged
   if (item.data.t === RPCTypes.HomeScreenItemType.todo) {
     // Todo item
-    // @ts-ignore todo is actually typed as void?
+    // @ts-ignore todo is actually typed as void? (variant miscompilation)
     const todoType = todoTypeEnumToType[(item.data.todo && item.data.todo.t) || 0]
     return list.push(
       makeTodo({
