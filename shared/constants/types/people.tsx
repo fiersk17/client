@@ -20,7 +20,6 @@ export type _Todo = {
   confirmLabel: string
   dismissable: boolean
   icon: IconType
-  userData: string
 }
 export type Todo = I.RecordOf<_Todo>
 

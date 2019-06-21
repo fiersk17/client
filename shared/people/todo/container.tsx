@@ -21,7 +21,6 @@ type TodoOwnProps = {
   subText: string
   todoType: Types.TodoType
   buttons: Array<TaskButton>
-  userData: string
 }
 
 const installLinkURL = 'https://keybase.io/download'
@@ -219,7 +218,6 @@ const VerifyAllEmailConnector = connect(
       },
     ] as Array<TaskButton>,
     confirmLabel: '',
-    instructions: `Your email address ${ownProps.userData} is unverified.`,
     onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
     onDismiss: dispatchProps.onDismiss,
   })
@@ -247,7 +245,6 @@ const VerifyAllPhoneNumberConnector = connect(
       },
     ] as Array<TaskButton>,
     confirmLabel: '',
-    instructions: `Your number ${ownProps.userData} is unverified.`,
     onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
     onDismiss: dispatchProps.onDismiss,
   })
@@ -268,7 +265,6 @@ const LegacyEmailVisibilityConnector = connect(
         type: 'Success',
       },
     ] as Array<TaskButton>,
-    instructions: `Allow friends to find you using ${ownProps.userData}`,
     onConfirm: () => dispatchProps._onConfirm(stateProps.myUsername),
     onDismiss: dispatchProps.onDismiss,
     subText: 'Your email will never appear on your public profile.',
@@ -303,14 +299,14 @@ const TaskChooser = (props: TodoOwnProps) => {
       return <FolderConnector {...props} />
     case todoTypes.gitRepo:
       return <GitRepoConnector {...props} />
+    case todoTypes.legacyEmailVisibility:
+      return <LegacyEmailVisibilityConnector {...props} />
     case todoTypes.teamShowcase:
       return <TeamShowcaseConnector {...props} />
     case todoTypes.verifyAllEmail:
       return <VerifyAllEmailConnector {...props} />
     case todoTypes.verifyAllPhoneNumber:
       return <VerifyAllPhoneNumberConnector {...props} />
-    case todoTypes.legacyEmailVisibility:
-      return <LegacyEmailVisibilityConnector {...props} />
   }
   return null
 }

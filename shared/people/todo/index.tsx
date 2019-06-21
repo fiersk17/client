@@ -41,8 +41,7 @@ export const Task = (props: Props) => (
           style={{marginRight: Styles.globalMargins.tiny}}
         />
       )}
-      {props.buttons &&
-        props.buttons.length &&
+      {props.buttons.length > 0 &&
         props.buttons.map(b => (
           <Button key={b.label} small={true} style={{marginRight: Styles.globalMargins.tiny}} {...b} />
         ))}
